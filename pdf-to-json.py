@@ -12,7 +12,7 @@ from pydantic import BaseModel
 PROMPT = "Summarize this document"
 INPUT_DIR = "pdf_files"
 OUTPUT_DIR = "json_output"
-LOG_FILE = "log.log"
+LOG_FILE = "pdf-to-json.log"
 MODEL_NAME = "gemini-2.0-flash"
 
 # -------- Datenmodell --------

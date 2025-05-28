@@ -1,0 +1,103 @@
+import os
+import glob
+import json
+import logging
+from pathlib import Path
+
+from langchain.embeddings import OllamaEmbeddings
+from langchain.vectorstores import Chroma
+
+# -------- Konfiguration --------
+JSON_INPUT_DIR = "json_output"
+CHROMA_PERSIST_DIR = "chroma_db"
+LOG_FILE = "chroma_store.log"
+EMBEDDING_MODEL = "nomic-embed-text"
+
+# -------- Logging --------
+def configure_logging(log_file_path=LOG_FILE):
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        filename=log_file_path,
+        filemode='a'
+    )
+
+# -------- Embedding- und Vektordatenbank-Initialisierung --------
+def initialize_embedding():
+    """
+    Erstellt ein OllamaEmbeddings-Objekt für das lokale embedding Modell.
+    """
+    return OllamaEmbeddings(model=EMBEDDING_MODEL)
+
+
+def initialize_chroma(embedding_func):
+    """
+    Verbindet oder erstellt eine Chroma Vektordatenbank mit persistentem Speicherort.
+    """
+    return Chroma(
+        embedding_function=embedding_func,
+        persist_directory=CHROMA_PERSIST_DIR
+    )
+
+# -------- JSON-Verarbeitung --------
+def get_json_files(folder_path=JSON_INPUT_DIR):
+    """
+    Liefert alle JSON-Dateien im Eingabeordner.
+    """
+    os.makedirs(folder_path, exist_ok=True)
+    return glob.glob(os.path.join(folder_path, "*.json"))
+
+
+def load_records(json_file_path):
+    """
+    Lädt eine JSON-Datei und gibt eine Liste von Einträgen zurück.
+    Jeder Eintrag enthält die Felder 'top' und 'inhalt'.
+    """
+    with open(json_file_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+# -------- Hauptverarbeitung --------
+def store_json_in_chroma():
+    configure_logging()
+    logging.info("Starte Speicherung in ChromaDB...")
+
+    # Embeddings-Client und Vektordatenbank initialisieren
+    embedding_func = initialize_embedding()
+    vectordb = initialize_chroma(embedding_func)
+
+    # JSON-Dateien einlesen
+    json_files = get_json_files(JSON_INPUT_DIR)
+    total_added = 0
+
+    for json_path in json_files:
+        logging.info(f"Verarbeite JSON-Datei: {json_path}")
+        try:
+            records = load_records(json_path)
+            texts = []
+            metadatas = []
+
+            for rec in records:
+                top = rec.get('top', '')
+                inhalt = rec.get('inhalt', '')
+                combined = f"{top}\n\n{inhalt}".strip()
+                texts.append(combined)
+                metadatas.append({'top': top, 'inhalt': inhalt})
+
+            if texts:
+                vectordb.add_texts(texts=texts, metadatas=metadatas)
+                added = len(texts)
+                total_added += added
+                logging.info(f"Hinzugefügt {added} Einträge aus {json_path}")
+            else:
+                logging.info(f"Keine Einträge in {json_path} gefunden.")
+
+        except Exception as e:
+            logging.error(f"Fehler beim Verarbeiten von {json_path}: {e}", exc_info=True)
+
+    # Änderungen persistieren
+    vectordb.persist()
+    logging.info(f"Speicherung abgeschlossen. Insgesamt hinzugefügt: {total_added} Einträge.")
+    print(f"Speicherung abgeschlossen. Insgesamt hinzugefügt: {total_added} Einträge.")
+
+if __name__ == "__main__":
+    store_json_in_chroma()
