@@ -14,6 +14,7 @@ INPUT_DIR = "pdf_files"
 OUTPUT_DIR = "json_output"
 LOG_FILE = "pdf-to-json.log"
 MODEL_NAME = "gemini-2.0-flash"
+PROCESSED_FILE = "processed_files.txt"
 
 # -------- Datenmodell --------
 class Protokoll(BaseModel):
@@ -40,19 +41,28 @@ def initialize_client():
 def get_pdf_files(folder_path=INPUT_DIR):
     return glob.glob(os.path.join(folder_path, "*.pdf"))
 
+def get_processed_files(processed_file=PROCESSED_FILE):
+    if not os.path.exists(processed_file):
+        return set()
+    with open(processed_file, 'r', encoding='utf-8') as f:
+        return set(line.strip() for line in f if line.strip())
+
+def mark_file_as_processed(pdf_filename, processed_file=PROCESSED_FILE):
+    with open(processed_file, 'a', encoding='utf-8') as f:
+        f.write(f"{pdf_filename}\n")
+
 # -------- Verarbeitung einer einzelnen PDF --------
-def process_pdf_file(client, pdf_file, prompt=PROMPT):
+def process_pdf_file(client, pdf_file, processed_files, prompt=PROMPT):
     pdf_path = pathlib.Path(pdf_file)
+    pdf_name = pdf_path.name
+    # Überspringen, wenn PDF schon verarbeitet wurde
+    if pdf_name in processed_files:
+        logging.info(f"Übersprungen (bereits verarbeitet): {pdf_name}")
+        return
     # JSON-Ausgabepfad zusammenstellen
     json_dir = pathlib.Path(OUTPUT_DIR)
     json_dir.mkdir(exist_ok=True)
     json_path = json_dir / (pdf_path.stem + ".json")
-
-    # Variante B: Überspringen, wenn JSON schon existiert
-    if json_path.exists():
-        logging.info(f"Übersprungen (bereits da): {pdf_path.name}")
-        return
-
     logging.info(f"Verarbeite: {pdf_path.name}")
     try:
         response = client.models.generate_content(
@@ -72,9 +82,9 @@ def process_pdf_file(client, pdf_file, prompt=PROMPT):
         data = json.loads(response.text)
         with open(json_path, 'w') as f:
             json.dump(data, f, indent=2)
-
         logging.info(f"Gespeichert: {json_path}")
         print(f"Saved JSON output to {json_path}")
+        mark_file_as_processed(pdf_name)
     except Exception as e:
         logging.error(f"Fehler bei {pdf_path.name}: {e}", exc_info=True)
 
@@ -83,6 +93,6 @@ if __name__ == "__main__":
     configure_logging()
     client = initialize_client()
     pdf_files = get_pdf_files()
-
+    processed_files = get_processed_files()
     for pdf_file in pdf_files:
-        process_pdf_file(client, pdf_file)
+        process_pdf_file(client, pdf_file, processed_files)

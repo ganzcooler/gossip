@@ -29,7 +29,6 @@ def initialize_embedding():
     """
     return OllamaEmbeddings(model=EMBEDDING_MODEL)
 
-
 def initialize_chroma(embedding_func):
     """
     Verbindet oder erstellt eine Chroma Vektordatenbank mit persistentem Speicherort.
@@ -46,7 +45,6 @@ def get_json_files(folder_path=JSON_INPUT_DIR):
     """
     os.makedirs(folder_path, exist_ok=True)
     return glob.glob(os.path.join(folder_path, "*.json"))
-
 
 def load_records(json_file_path):
     """
