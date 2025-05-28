@@ -81,7 +81,11 @@ def store_json_in_chroma():
                 inhalt = rec.get('inhalt', '')
                 combined = f"{top}\n\n{inhalt}".strip()
                 texts.append(combined)
-                metadatas.append({'top': top, 'inhalt': inhalt})
+                metadatas.append({
+                    'top': top,
+                    'inhalt': inhalt,
+                    'source_file': os.path.basename(json_path)
+                })
 
             if texts:
                 vectordb.add_texts(texts=texts, metadatas=metadatas)
