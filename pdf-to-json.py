@@ -1,98 +1,103 @@
-import logging
-import os
-import glob
-import pathlib
-import json
-
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
+import os, pathlib, json
+import logging
 
-# -------- Konfiguration --------
-PROMPT = "Summarize this document"
-INPUT_DIR = "pdf_files"
-OUTPUT_DIR = "json_output"
-LOG_FILE = "pdf-to-json.log"
-MODEL_NAME = "gemini-2.0-flash"
-PROCESSED_FILE = "processed_files.txt"
+# -------- CONFIG --------
+PDF_DIRNAME = "pdf_files"
+JSON_DIRNAME = "json-files"
+LOG_FILENAME = "pdf-to-json.log"
+MODEL_NAME = "gemini-2.5-flash-preview-05-20"
+# -------------------------
 
-# -------- Datenmodell --------
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)s: %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILENAME, encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+log = logging.getLogger(__name__)
+
+class TOP(BaseModel):
+    top_id: str
+    content: str
+
 class Protokoll(BaseModel):
-    top: str
-    inhalt: str
+    title: str
+    datum: str
+    tops: list[TOP]
 
-# -------- Logging --------
-def configure_logging(log_file_path=LOG_FILE):
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        filename=log_file_path,
-        filemode='a'
-    )
+# Suche nach der PDF-Datei im aktuellen Verzeichnis im Unterordner "pdfs"
+current_dir = pathlib.Path(__file__).parent
+pdf_dir = current_dir / PDF_DIRNAME
 
-# -------- API-Client --------
-def initialize_client():
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        raise RuntimeError("GOOGLE_API_KEY fehlt!")
-    return genai.Client(api_key=api_key)
+# Suche nach allen PDF-Dateien im Unterordner "pdfs" und speichere sie in einer Liste
+pdf_files = list((current_dir / PDF_DIRNAME).glob("*.pdf"))
 
-# -------- PDF-Erkennung --------
-def get_pdf_files(folder_path=INPUT_DIR):
-    return glob.glob(os.path.join(folder_path, "*.pdf"))
+prompt = '''
+Du bist ein KI-Assistent.
+Extrahiere die Tagesordnungspunkte mitsamt deren Inhalt aus dem PDF-Dokument und gib sie im JSON-Format zurück.
+Schreibe in "top_id" die ID des Tagesordnungspunktes.
+In "content" soll die Überschrift des Tagesordnungspunktes und dessen Inhalt stehen.
+In "datum" soll das Datum des Protokolls im Format "YYYY-MM-DD" stehen.
+In "title" soll der Titel des Ausschusses oder der Sitzung stehen, z.B. "Jugendausschuss".
 
-def get_processed_files(processed_file=PROCESSED_FILE):
-    if not os.path.exists(processed_file):
-        return set()
-    with open(processed_file, 'r', encoding='utf-8') as f:
-        return set(line.strip() for line in f if line.strip())
+Hier ein Beispiel für das JSON-Format:
+{
+  "title": "Jugendausschuss",
+  "datum": "2023-10-01",
+  "tops": [
+    {
+      "top_id": "1",
+      "content": "Erster Tagesordnungspunkt Inhalt"
+    },
+    {
+      "top_id": "2",
+      "content": "Zweiter Tagesordnungspunkt Inhalt"
+    }
+  ]
+}
+'''
 
-def mark_file_as_processed(pdf_filename, processed_file=PROCESSED_FILE):
-    with open(processed_file, 'a', encoding='utf-8') as f:
-        f.write(f"{pdf_filename}\n")
+for filepath in pdf_files:
+    json_dir = current_dir / JSON_DIRNAME
+    json_filepath = json_dir / (filepath.stem + ".json")
+    if json_filepath.exists():
+        log.info(f"JSON file already exists for {filepath.name}, skipping.")
+        continue
 
-# -------- Verarbeitung einer einzelnen PDF --------
-def process_pdf_file(client, pdf_file, processed_files, prompt=PROMPT):
-    pdf_path = pathlib.Path(pdf_file)
-    pdf_name = pdf_path.name
-    # Überspringen, wenn PDF schon verarbeitet wurde
-    if pdf_name in processed_files:
-        logging.info(f"Übersprungen (bereits verarbeitet): {pdf_name}")
-        return
-    # JSON-Ausgabepfad zusammenstellen
-    json_dir = pathlib.Path(OUTPUT_DIR)
+    log.info(f"Processing PDF: {filepath.name}")
+    client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+    response = client.models.generate_content(
+    model=MODEL_NAME,
+    contents=[
+        types.Part.from_bytes(
+            data=filepath.read_bytes(),
+            mime_type='application/pdf',
+        ),
+        prompt],
+        config={
+            "response_mime_type": "application/json",
+            "response_schema": Protokoll,
+        })
+
+    if response.text is not None:
+        response_json = json.loads(response.text)
+        log.info(f"Successfully received response for {filepath.name}")
+    else:
+        response_json = None
+        log.error(f"No response text received for {filepath.name}.")
+
+    # Speichern der Antwort im JSON-Format im Unterordner "json-files"
+    json_dir = current_dir / JSON_DIRNAME
     json_dir.mkdir(exist_ok=True)
-    json_path = json_dir / (pdf_path.stem + ".json")
-    logging.info(f"Verarbeite: {pdf_path.name}")
-    try:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=[
-                types.Part.from_bytes(
-                    data=pdf_path.read_bytes(),
-                    mime_type='application/pdf'
-                ),
-                prompt
-            ],
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": list[Protokoll],
-            },
-        )
-        data = json.loads(response.text)
-        with open(json_path, 'w') as f:
-            json.dump(data, f, indent=2)
-        logging.info(f"Gespeichert: {json_path}")
-        print(f"Saved JSON output to {json_path}")
-        mark_file_as_processed(pdf_name)
-    except Exception as e:
-        logging.error(f"Fehler bei {pdf_path.name}: {e}", exc_info=True)
-
-# -------- Hauptprogramm --------
-if __name__ == "__main__":
-    configure_logging()
-    client = initialize_client()
-    pdf_files = get_pdf_files()
-    processed_files = get_processed_files()
-    for pdf_file in pdf_files:
-        process_pdf_file(client, pdf_file, processed_files)
+    json_filepath = json_dir / (filepath.stem + ".json")
+    if response_json is not None:
+        with open(json_filepath, "w", encoding="utf-8") as f:
+            json.dump(response_json, f, ensure_ascii=False, indent=2)
+        log.info(f"Saved JSON to {json_filepath}")
+    else:
+        log.error(f"No JSON to save for {filepath.name}")
