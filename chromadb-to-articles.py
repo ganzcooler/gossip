@@ -16,7 +16,7 @@ ARTICLE_OUTPUT_DIR = "articles"
 LOG_FILE = "chroma_article.log"
 EMBEDDING_MODEL = "nomic-embed-text"
 SIMILARITY_THRESHOLD = 0.8
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "gemini-2.5-flash-preview-05-20"
 
 # -------- Logging --------
 def configure_logging(log_file_path=LOG_FILE):
