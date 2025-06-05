@@ -63,41 +63,58 @@ Hier ein Beispiel für das JSON-Format:
 '''
 
 for filepath in pdf_files:
-    json_dir = current_dir / JSON_DIRNAME
-    json_filepath = json_dir / (filepath.stem + ".json")
-    if json_filepath.exists():
-        log.info(f"JSON file already exists for {filepath.name}, skipping.")
-        continue
+    try:
+        json_dir = current_dir / JSON_DIRNAME
+        json_filepath = json_dir / (filepath.stem + ".json")
+        if json_filepath.exists():
+            log.info(f"JSON file already exists for {filepath.name}, skipping.")
+            continue
 
-    log.info(f"Processing PDF: {filepath.name}")
-    client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
-    response = client.models.generate_content(
-    model=MODEL_NAME,
-    contents=[
-        types.Part.from_bytes(
-            data=filepath.read_bytes(),
-            mime_type='application/pdf',
-        ),
-        prompt],
-        config={
-            "response_mime_type": "application/json",
-            "response_schema": Protokoll,
-        })
+        log.info(f"Processing PDF: {filepath.name}")
+        try:
+            client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+        except Exception as e:
+            log.error(f"Fehler beim Initialisieren des genai-Clients: {e}")
+            continue
+        try:
+            response = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=[
+                    types.Part.from_bytes(
+                        data=filepath.read_bytes(),
+                        mime_type='application/pdf',
+                    ),
+                    prompt],
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": Protokoll,
+                })
+        except Exception as e:
+            log.error(f"Fehler beim Generieren des Contents für {filepath.name}: {e}")
+            continue
 
-    if response.text is not None:
-        response_json = json.loads(response.text)
-        log.info(f"Successfully received response for {filepath.name}")
-    else:
-        response_json = None
-        log.error(f"No response text received for {filepath.name}.")
+        if response.text is not None:
+            try:
+                response_json = json.loads(response.text)
+                log.info(f"Successfully received response for {filepath.name}")
+            except Exception as e:
+                response_json = None
+                log.error(f"Fehler beim Parsen der JSON-Antwort für {filepath.name}: {e}")
+        else:
+            response_json = None
+            log.error(f"No response text received for {filepath.name}.")
 
-    # Speichern der Antwort im JSON-Format im Unterordner "json-files"
-    json_dir = current_dir / JSON_DIRNAME
-    json_dir.mkdir(exist_ok=True)
-    json_filepath = json_dir / (filepath.stem + ".json")
-    if response_json is not None:
-        with open(json_filepath, "w", encoding="utf-8") as f:
-            json.dump(response_json, f, ensure_ascii=False, indent=2)
-        log.info(f"Saved JSON to {json_filepath}")
-    else:
-        log.error(f"No JSON to save for {filepath.name}")
+        # Speichern der Antwort im JSON-Format im Unterordner "json-files"
+        try:
+            json_dir.mkdir(exist_ok=True)
+            json_filepath = json_dir / (filepath.stem + ".json")
+            if response_json is not None:
+                with open(json_filepath, "w", encoding="utf-8") as f:
+                    json.dump(response_json, f, ensure_ascii=False, indent=2)
+                log.info(f"Saved JSON to {json_filepath}")
+            else:
+                log.error(f"No JSON to save for {filepath.name}")
+        except Exception as e:
+            log.error(f"Fehler beim Speichern der JSON-Datei für {filepath.name}: {e}")
+    except Exception as e:
+        log.error(f"Unerwarteter Fehler bei der Verarbeitung von {filepath.name}: {e}")

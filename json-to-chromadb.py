@@ -8,7 +8,7 @@ from langchain.embeddings import OllamaEmbeddings
 from langchain.vectorstores import Chroma
 
 # -------- Konfiguration --------
-JSON_INPUT_DIR = "json_output"
+JSON_INPUT_DIR = "json-files"
 CHROMA_PERSIST_DIR = "chroma_db"
 LOG_FILE = "chroma_store.log"
 EMBEDDING_MODEL = "nomic-embed-text"
@@ -24,15 +24,9 @@ def configure_logging(log_file_path=LOG_FILE):
 
 # -------- Embedding- und Vektordatenbank-Initialisierung --------
 def initialize_embedding():
-    """
-    Erstellt ein OllamaEmbeddings-Objekt für das lokale embedding Modell.
-    """
     return OllamaEmbeddings(model=EMBEDDING_MODEL)
 
 def initialize_chroma(embedding_func):
-    """
-    Verbindet oder erstellt eine Chroma Vektordatenbank mit persistentem Speicherort.
-    """
     return Chroma(
         embedding_function=embedding_func,
         persist_directory=CHROMA_PERSIST_DIR
@@ -40,17 +34,10 @@ def initialize_chroma(embedding_func):
 
 # -------- JSON-Verarbeitung --------
 def get_json_files(folder_path=JSON_INPUT_DIR):
-    """
-    Liefert alle JSON-Dateien im Eingabeordner.
-    """
     os.makedirs(folder_path, exist_ok=True)
     return glob.glob(os.path.join(folder_path, "*.json"))
 
 def load_records(json_file_path):
-    """
-    Lädt eine JSON-Datei und gibt eine Liste von Einträgen zurück.
-    Jeder Eintrag enthält die Felder 'top' und 'inhalt'.
-    """
     with open(json_file_path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
@@ -70,18 +57,23 @@ def store_json_in_chroma():
     for json_path in json_files:
         logging.info(f"Verarbeite JSON-Datei: {json_path}")
         try:
-            records = load_records(json_path)
+            data = load_records(json_path)
             texts = []
             metadatas = []
 
-            for rec in records:
-                top = rec.get('top', '')
-                inhalt = rec.get('inhalt', '')
-                combined = f"{top}\n\n{inhalt}".strip()
+            # Anpassung an das neue JSON-Format
+            title = data.get('title', '')
+            datum = data.get('datum', '')
+            tops = data.get('tops', [])
+            for top in tops:
+                top_id = top.get('top_id', '')
+                content = top.get('content', '')
+                combined = f"{title} | {datum} | TOP {top_id}: {content}".strip()
                 texts.append(combined)
                 metadatas.append({
-                    'top': top,
-                    'inhalt': inhalt,
+                    'title': title,
+                    'datum': datum,
+                    'top_id': top_id,
                     'source_file': os.path.basename(json_path)
                 })
 
