@@ -4,7 +4,8 @@ import json
 import logging
 from pathlib import Path
 
-from langchain.embeddings import OllamaEmbeddings
+#from langchain.embeddings import OllamaEmbeddings # deprecated
+from langchain_community.embeddings import OllamaEmbeddings
 from langchain.vectorstores import Chroma
 
 # -------- Konfiguration --------
