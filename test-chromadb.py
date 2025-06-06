@@ -15,14 +15,9 @@ def read_from_persistent_chromadb(persist_path: str, collection_name: str):
         )
     
     results = chroma_db.similarity_search_with_score(
-        query="Straße überqueren",
+        query="Die Inbetriebnahme der Kindertagesstätte wäre gut zu wissen. Wann kann dies passieren? Was ist mit den Fertigstellungsarbeiten, sind diese gehindert?",
         k=3
     )
-
-    # results = chroma_db.similarity_search_with_score(
-    #     query="wie teuer ist freibad rosdorf?",
-    #     k=3
-    # )
 
     for i, (doc, score) in enumerate(results):
         print(f"\nErgebnis {i + 1}:")

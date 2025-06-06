@@ -4,10 +4,8 @@ import json
 import logging
 from pathlib import Path
 
-#from langchain.embeddings import OllamaEmbeddings # deprecated
-from langchain_community.embeddings import OllamaEmbeddings
-#from langchain.vectorstores import Chroma # deperecated
-from langchain_community.vectorstores import Chroma
+from langchain_ollama import OllamaEmbeddings
+from langchain_chroma import Chroma
 
 # -------- Konfiguration --------
 JSON_INPUT_DIR = "json-files"
@@ -91,8 +89,6 @@ def store_json_in_chroma():
         except Exception as e:
             logging.error(f"Fehler beim Verarbeiten von {json_path}: {e}", exc_info=True)
 
-    # Änderungen persistieren
-    vectordb.persist()
     logging.info(f"Speicherung abgeschlossen. Insgesamt hinzugefügt: {total_added} Einträge.")
 
 if __name__ == "__main__":
