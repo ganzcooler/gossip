@@ -6,13 +6,15 @@ from pathlib import Path
 
 #from langchain.embeddings import OllamaEmbeddings # deprecated
 from langchain_community.embeddings import OllamaEmbeddings
-from langchain.vectorstores import Chroma
+#from langchain.vectorstores import Chroma # deperecated
+from langchain_community.vectorstores import Chroma
 
 # -------- Konfiguration --------
 JSON_INPUT_DIR = "json-files"
 CHROMA_PERSIST_DIR = "chroma_db"
 LOG_FILE = "chroma_store.log"
 EMBEDDING_MODEL = "nomic-embed-text"
+COLLECTION_NAME = "tops_content"
 
 # -------- Logging --------
 def configure_logging(log_file_path=LOG_FILE):
@@ -30,7 +32,8 @@ def initialize_embedding():
 def initialize_chroma(embedding_func):
     return Chroma(
         embedding_function=embedding_func,
-        persist_directory=CHROMA_PERSIST_DIR
+        persist_directory=CHROMA_PERSIST_DIR,
+        collection_name=COLLECTION_NAME
     )
 
 # -------- JSON-Verarbeitung --------
@@ -69,8 +72,7 @@ def store_json_in_chroma():
             for top in tops:
                 top_id = top.get('top_id', '')
                 content = top.get('content', '')
-                combined = f"{title} | {datum} | TOP {top_id}: {content}".strip()
-                texts.append(combined)
+                texts.append(f"{content}".strip())
                 metadatas.append({
                     'title': title,
                     'datum': datum,
@@ -92,7 +94,6 @@ def store_json_in_chroma():
     # Änderungen persistieren
     vectordb.persist()
     logging.info(f"Speicherung abgeschlossen. Insgesamt hinzugefügt: {total_added} Einträge.")
-    print(f"Speicherung abgeschlossen. Insgesamt hinzugefügt: {total_added} Einträge.")
 
 if __name__ == "__main__":
     store_json_in_chroma()
