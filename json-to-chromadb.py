@@ -2,10 +2,8 @@ import os
 import glob
 import json
 import logging
-from pathlib import Path
-
-from langchain_ollama import OllamaEmbeddings
-from langchain_chroma import Chroma
+import chromadb
+import ollama
 
 # -------- Konfiguration --------
 JSON_INPUT_DIR = "json-files"
@@ -25,14 +23,16 @@ def configure_logging(log_file_path=LOG_FILE):
 
 # -------- Embedding- und Vektordatenbank-Initialisierung --------
 def initialize_embedding():
-    return OllamaEmbeddings(model=EMBEDDING_MODEL)
+    # Ollama Embeddings werden direkt in der add_texts Methode genutzt
+    return None
 
-def initialize_chroma(embedding_func):
-    return Chroma(
-        embedding_function=embedding_func,
-        persist_directory=CHROMA_PERSIST_DIR,
-        collection_name=COLLECTION_NAME
-    )
+def initialize_chroma():
+    client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
+    collection = client.get_or_create_collection(
+        name=COLLECTION_NAME,
+        metadata={"hnsw:space": "cosine"}
+        )
+    return collection
 
 # -------- JSON-Verarbeitung --------
 def get_json_files(folder_path=JSON_INPUT_DIR):
@@ -48,9 +48,8 @@ def store_json_in_chroma():
     configure_logging()
     logging.info("Starte Speicherung in ChromaDB...")
 
-    # Embeddings-Client und Vektordatenbank initialisieren
-    embedding_func = initialize_embedding()
-    vectordb = initialize_chroma(embedding_func)
+    # ChromaDB initialisieren
+    vectordb = initialize_chroma()
 
     # JSON-Dateien einlesen
     json_files = get_json_files(JSON_INPUT_DIR)
@@ -62,12 +61,13 @@ def store_json_in_chroma():
             data = load_records(json_path)
             texts = []
             metadatas = []
+            ids = []
 
             # Anpassung an das neue JSON-Format
             title = data.get('title', '')
             datum = data.get('datum', '')
             tops = data.get('tops', [])
-            for top in tops:
+            for idx, top in enumerate(tops):
                 top_id = top.get('top_id', '')
                 content = top.get('content', '')
                 texts.append(f"{content}".strip())
@@ -77,9 +77,17 @@ def store_json_in_chroma():
                     'top_id': top_id,
                     'source_file': os.path.basename(json_path)
                 })
+                ids.append(f"{os.path.basename(json_path)}_{top_id}_{idx}")
 
             if texts:
-                vectordb.add_texts(texts=texts, metadatas=metadatas)
+                # Embeddings mit Ollama erzeugen (einzeln pro Text, da nur str akzeptiert wird)
+                embeddings = [ollama.embeddings(model=EMBEDDING_MODEL, prompt=text)["embedding"] for text in texts]
+                vectordb.add(
+                    ids=ids,
+                    embeddings=embeddings,
+                    documents=texts,
+                    metadatas=metadatas
+                )
                 added = len(texts)
                 total_added += added
                 logging.info(f"Hinzugefügt {added} Einträge aus {json_path}")
