@@ -1,12 +1,9 @@
-import os
-import glob
-import json
-import logging
+import os, glob, json, logging
 from pathlib import Path
 from collections import defaultdict
 
 from google import genai
-from langchain.embeddings import OllamaEmbeddings
+from langchain_community.embeddings import OllamaEmbeddings
 from langchain.vectorstores import Chroma
 
 # -------- Konfiguration --------
