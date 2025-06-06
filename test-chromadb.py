@@ -1,22 +1,34 @@
-import chromadb
+from langchain_ollama import OllamaEmbeddings
+from langchain_chroma import Chroma
 
-PERSIST_DIRECTORY = "./chroma_db"
-COLLECTION_NAME = "langchain"
+PERSIST_DIRECTORY = "chroma_db"
+COLLECTION_NAME = "tops_content"
+EMBEDDING_MODEL = "nomic-embed-text"
 
 def read_from_persistent_chromadb(persist_path: str, collection_name: str):
-    client = chromadb.PersistentClient(path=persist_path)
-    collection = client.get_collection(name=collection_name)
+    embedding_func = OllamaEmbeddings(model=EMBEDDING_MODEL)
 
-    # results_get = collection.get(include=["documents", "metadatas", "embeddings"])
-
-    results = collection.get()
-
-    example_query_texts = ["ein relevantes Thema", "eine andere Suchanfrage"]
-    results_query = collection.query(
-        query_texts=example_query_texts,
-        n_results=2,
-        include=["documents", "metadatas", "distances"]
+    chroma_db = Chroma(
+        embedding_function=embedding_func,
+        persist_directory=persist_path,
+        collection_name=collection_name
+        )
+    
+    results = chroma_db.similarity_search_with_score(
+        query="Straße überqueren",
+        k=3
     )
+
+    # results = chroma_db.similarity_search_with_score(
+    #     query="wie teuer ist freibad rosdorf?",
+    #     k=3
+    # )
+
+    for i, (doc, score) in enumerate(results):
+        print(f"\nErgebnis {i + 1}:")
+        print("Inhalt:", doc.page_content)
+        print("Metadaten:", doc.metadata)
+        print(f"Ähnlichkeitsscore (kleiner = besser): {score:.4f}")
 
 if __name__ == "__main__":
     read_from_persistent_chromadb(PERSIST_DIRECTORY, COLLECTION_NAME)
