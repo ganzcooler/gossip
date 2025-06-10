@@ -10,7 +10,7 @@ import ollama
 import chromadb
 
 # -------- Konfiguration --------
-JSON_INPUT_DIR = "json_output"
+JSON_INPUT_DIR = "json-files"
 CHROMA_PERSIST_DIR = "chroma_db"
 ARTICLE_OUTPUT_DIR = "articles"
 LOG_FILE = "chroma_article.log"
