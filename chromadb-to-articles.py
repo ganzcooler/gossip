@@ -2,6 +2,7 @@ import os
 import glob
 import json
 import logging
+import configparser
 from pathlib import Path
 
 from google import genai
@@ -30,11 +31,23 @@ def configure_logging(log_file_path=LOG_FILE):
 
 # -------- Google GenAI Client --------
 def initialize_genai_client():
-    """Initialisiert und gibt den Google GenAI Client zurück."""
+    """Initialisiert und gibt den Google GenAI Client zurück, basierend auf einer lokalen Konfigurationsdatei."""
+    # Inhalt config.ini
+    # [genai]
+    # GOOGLE_API_KEY=dein_api_schlüssel_hier
+    
     try:
-        api_key = os.environ.get("GOOGLE_API_KEY")
+        config_path = Path(__file__).parent / "config.ini"
+        if not config_path.exists():
+            raise FileNotFoundError(f"Konfigurationsdatei nicht gefunden: {config_path}")
+
+        config = configparser.ConfigParser()
+        config.read(config_path)
+
+        api_key = config.get("genai", "GOOGLE_API_KEY", fallback=None)
         if not api_key:
-            raise RuntimeError("Umgebungsvariable GOOGLE_API_KEY fehlt!")
+            raise ValueError("GOOGLE_API_KEY fehlt in der Konfigurationsdatei!")
+
         return genai.Client(api_key=api_key)
     except Exception as e:
         logging.error(f"Fehler beim Initialisieren des GenAI-Clients: {e}", exc_info=True)

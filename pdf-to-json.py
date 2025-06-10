@@ -1,8 +1,10 @@
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
-import os, pathlib, json
+import pathlib, json
 import logging
+import configparser
+from pathlib import Path
 
 # -------- CONFIG --------
 PDF_DIRNAME = "pdf_files"
@@ -21,6 +23,25 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# Konfigurationsdatei laden
+def load_api_key_from_config():
+    # Inhalt config.ini
+    # [genai]
+    # GOOGLE_API_KEY=dein_api_schlüssel_hier
+    
+    config_path = Path(__file__).parent / "config.ini"
+    if not config_path.exists():
+        raise FileNotFoundError(f"Konfigurationsdatei nicht gefunden: {config_path}")
+
+    config = configparser.ConfigParser()
+    config.read(config_path)
+
+    api_key = config.get("genai", "GOOGLE_API_KEY", fallback=None)
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY fehlt in der Konfigurationsdatei!")
+
+    return api_key
+
 class TOP(BaseModel):
     top_id: str
     content: str
@@ -30,12 +51,12 @@ class Protokoll(BaseModel):
     datum: str
     tops: list[TOP]
 
-# Suche nach der PDF-Datei im aktuellen Verzeichnis im Unterordner "pdfs"
+# Suche nach der PDF-Datei im aktuellen Verzeichnis im Unterordner "pdf_files"
 current_dir = pathlib.Path(__file__).parent
 pdf_dir = current_dir / PDF_DIRNAME
 
-# Suche nach allen PDF-Dateien im Unterordner "pdfs" und speichere sie in einer Liste
-pdf_files = list((current_dir / PDF_DIRNAME).glob("*.pdf"))
+# Suche nach allen PDF-Dateien im Unterordner
+pdf_files = list(pdf_dir.glob("*.pdf"))
 
 prompt = '''
 Du bist ein KI-Assistent.
@@ -72,10 +93,11 @@ for filepath in pdf_files:
 
         log.info(f"Processing PDF: {filepath.name}")
         try:
-            client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+            client = genai.Client(api_key=load_api_key_from_config())
         except Exception as e:
             log.error(f"Fehler beim Initialisieren des genai-Clients: {e}")
             continue
+
         try:
             response = client.models.generate_content(
                 model=MODEL_NAME,
@@ -107,7 +129,6 @@ for filepath in pdf_files:
         # Speichern der Antwort im JSON-Format im Unterordner "json-files"
         try:
             json_dir.mkdir(exist_ok=True)
-            json_filepath = json_dir / (filepath.stem + ".json")
             if response_json is not None:
                 with open(json_filepath, "w", encoding="utf-8") as f:
                     json.dump(response_json, f, ensure_ascii=False, indent=2)
