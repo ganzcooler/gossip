@@ -1,7 +1,7 @@
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
-import pathlib, json
+import pathlib, json, time
 import logging
 import configparser
 from pathlib import Path
@@ -137,5 +137,9 @@ for filepath in pdf_files:
                 log.error(f"No JSON to save for {filepath.name}")
         except Exception as e:
             log.error(f"Fehler beim Speichern der JSON-Datei für {filepath.name}: {e}")
+        
+        # 6 Sekunden warten (API-Limits)
+        time.sleep(6)
+        
     except Exception as e:
         log.error(f"Unerwarteter Fehler bei der Verarbeitung von {filepath.name}: {e}")
