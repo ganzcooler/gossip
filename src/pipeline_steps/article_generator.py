@@ -1,11 +1,9 @@
 import os
-import glob
 import json
 import logging
 import pathlib
 import sys
-from google import genai
-import ollama
+import google.generativeai as genai
 import chromadb
 
 # Ensure src directory is in sys.path for config import
@@ -30,34 +28,54 @@ def initialize_chroma_collection(db_path_name: str, collection_name: str, projec
     log.info(f'ChromaDB client initialized with path: {project_root / db_path_name}')
     collection = persistent_client.get_or_create_collection(
         name=collection_name,
-        metadata={"hnsw:space": "cosine"}
+        metadata={"hnsw:space": "cosine"} # Note: This metadata is for creation, may not be needed for get_or_create_collection if already exists
     )
     log.info(f"Using ChromaDB collection: {collection_name}")
     return collection
 
-def build_prompt_for_article(source_file_name: str, new_entries_data: list[dict], similar_older_texts: list[str]) -> str:
-    """Builds the prompt for the GenAI model to generate articles."""
-    prompt_parts = [f"Basierend auf dem folgenden Protokoll aus '{source_file_name}' sollen mehrere journalistische Artikel erstellt werden.\n"]
+def get_relevant_tops_with_llm(protocol_title: str, protocol_date: str, current_tops: list[dict], genai_client, model_name: str, selection_prompt_template: str) -> dict | None:
+    """
+    Uses a GenAI model to select relevant TOPs from a list based on a given prompt.
+    Returns a dictionary with the selected TOPs in the same structure as the input protocol, or None on failure.
+    """
+    llm_input_data = {
+        "title": protocol_title,
+        "datum": protocol_date,
+        "tops": current_tops
+    }
 
-    for idx, entry in enumerate(new_entries_data, 1):
-        prompt_parts.append(f"### Neuer Eintrag {idx} (TOP ID: {entry.get('top_id', 'N/A')}):
-{entry.get('content', '')}\n")
+    # The prompt template already contains instructions. We just need to append the data.
+    # The prompt is structured so the LLM knows how to use the provided JSON data.
+    full_prompt_parts = [
+        selection_prompt_template,
+        json.dumps(llm_input_data, ensure_ascii=False)
+    ]
 
-    if similar_older_texts:
-        prompt_parts.append("Es wurden ältere, thematisch ähnliche Artikel aus anderen Quellen gefunden, die zur Inspiration verwendet werden können, aber nicht müssen:\n")
-        for idx, text in enumerate(similar_older_texts, 1):
-            prompt_parts.append(f"--- Älterer Artikel {idx} ---\n{text}\n")
+    log.debug(f"Sending data to LLM for TOP selection. Title: {protocol_title}, Date: {protocol_date}, TOPs count: {len(current_tops)}")
 
-    prompt_parts.append(
-        "\nBitte analysiere die neuen Einträge und wähle die relevantesten oder interessantesten Themen (TOPs) für die Leserschaft aus. "
-        "Verfasse anschließend mehrere journalistische Artikel, jeweils zu einem Thema. "
-        "Die Artikel sollen informativ, klar und gut strukturiert sein."
-    )
-    return "\n".join(prompt_parts)
+    try:
+        response = genai_client.generate_content(
+            model=model_name,
+            contents=full_prompt_parts, # Pass as a list of parts
+            generation_config=genai.types.GenerationConfig(response_mime_type="application/json")
+        )
+        # Assuming response.text contains the JSON string
+        selected_data = json.loads(response.text)
+        log.debug(f"Received {len(selected_data.get('tops', []))} TOPs from LLM selection for protocol {protocol_title}")
+        return selected_data
+    except json.JSONDecodeError as e:
+        log.error(f"Error decoding JSON response from LLM for protocol {protocol_title}: {e}. Response text: {response.text if 'response' in locals() else 'No response object'}", exc_info=True)
+        return None
+    except Exception as e:
+        log.error(f"Error calling GenAI model for TOP selection for protocol {protocol_title}: {e}", exc_info=True)
+        return None
 
-def run_article_generation():
-    """Main function to generate articles based on new entries and similar texts from ChromaDB."""
-    log.info("Starting article generation process...")
+def run_article_generation(start_date: str = None, end_date: str = None):
+    """
+    Fetches TOPs from ChromaDB within the given date range, groups them by protocol,
+    uses an LLM to select relevant TOPs, and saves them as filtered JSON files.
+    """
+    log.info("Starting TOP filtering and JSON generation process...")
 
     try:
         genai_api_key = config.load_google_api_key()
@@ -73,99 +91,124 @@ def run_article_generation():
         log.critical(f"CRITICAL: Initialization error (GenAI client or ChromaDB): {e}", exc_info=True)
         return
 
-    json_input_dir = config.PROJECT_ROOT / config.JSON_DIR_NAME
-    article_output_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
-    article_output_dir.mkdir(parents=True, exist_ok=True)
+    filtered_json_output_dir = config.PROJECT_ROOT / config.FILTERED_JSON_DIR_NAME
+    filtered_json_output_dir.mkdir(parents=True, exist_ok=True)
+    log.info(f"Filtered JSON output directory: {filtered_json_output_dir}")
 
-    log.info(f"JSON input directory: {json_input_dir}")
-    log.info(f"Article output directory: {article_output_dir}")
+    # Construct ChromaDB where_filter
+    where_filter = {}
+    if start_date and end_date:
+        where_filter = {"$and": [{"datum": {"$gte": start_date}}, {"datum": {"$lte": end_date}}]}
+        log.info(f"Filtering TOPs between {start_date} and {end_date}")
+    elif start_date:
+        where_filter = {"datum": {"$gte": start_date}}
+        log.info(f"Filtering TOPs from {start_date} onwards")
+    elif end_date:
+        where_filter = {"datum": {"$lte": end_date}}
+        log.info(f"Filtering TOPs up to {end_date}")
+    else:
+        log.info("No date filters provided, fetching all TOPs.")
+        # For ChromaDB, an empty dict or None usually means no filter.
+        # If it requires a non-null value, an empty dict `{}` is standard.
 
-    if not json_input_dir.is_dir():
-        log.error(f"JSON input directory not found: {json_input_dir}")
+    try:
+        # If where_filter is empty, pass it as is. ChromaDB client should handle it.
+        results = chroma_collection.get(where=where_filter if where_filter else None, include=['documents', 'metadatas', 'ids']) # ids might not be strictly needed here but good for reference
+        log.info(f"Retrieved {len(results.get('ids', []))} TOP entries from ChromaDB.")
+    except Exception as e:
+        log.error(f"Error querying ChromaDB: {e}", exc_info=True)
         return
 
-    json_files = list(json_input_dir.glob('*.json'))
-    if not json_files:
-        log.warning(f"No JSON files found in {json_input_dir} to process for article generation.")
+    # Group TOPs by original protocol
+    grouped_protocols = {}
+    if results and results['ids']:
+        for i in range(len(results['ids'])):
+            metadata = results['metadatas'][i]
+            document = results['documents'][i]
+
+            source_file = metadata.get('source_file')
+            if not source_file:
+                log.warning(f"Skipping entry with ID {results['ids'][i]} due to missing 'source_file' in metadata: {metadata}")
+                continue
+
+            top_id = metadata.get('top_id', f"unknown_top_id_{i}") # Fallback if top_id is missing
+            protocol_title = metadata.get('title', "Unknown Title")
+            protocol_date = metadata.get('datum', "Unknown Date")
+
+            if source_file not in grouped_protocols:
+                grouped_protocols[source_file] = {
+                    'title': protocol_title,
+                    'datum': protocol_date,
+                    'tops': []
+                }
+
+            grouped_protocols[source_file]['tops'].append({
+                'top_id': top_id,
+                'content': document
+            })
+        log.info(f"Grouped TOPs into {len(grouped_protocols)} protocols.")
+    else:
+        log.info("No TOPs found in ChromaDB matching the criteria.")
         return
 
-    log.info(f"Found {len(json_files)} JSON files to process.")
 
-    for json_filepath in json_files:
-        source_filename = json_filepath.name
-        md_output_path = article_output_dir / f"{json_filepath.stem}.md"
+    # Main loop for processing grouped TOPs
+    for source_file, data in grouped_protocols.items():
+        # Use original source_file name (e.g., 'protocol_xyz.json') for the filtered output stem
+        # Sanitize source_file if it's an absolute path or contains problematic characters for a filename stem
+        base_name = os.path.basename(source_file)
+        output_filename = pathlib.Path(base_name).stem + "_filtered.json"
+        output_json_path = filtered_json_output_dir / output_filename
 
-        if md_output_path.exists():
-            log.info(f"Article {md_output_path.name} already exists. Skipping generation for {source_filename}.")
+        if output_json_path.exists():
+            log.info(f"Filtered JSON {output_json_path.name} already exists. Skipping processing for {source_file}.")
             continue
 
-        log.info(f"Processing source file for new entries: {source_filename}")
+        log.info(f"Processing protocol: {source_file} for LLM-based TOP selection.")
 
-        try:
-            with open(json_filepath, 'r', encoding='utf-8') as f:
-                source_data = json.load(f)
-        except Exception as e:
-            log.error(f"Error loading JSON file {source_filename}: {e}", exc_info=True)
+        protocol_title = data['title']
+        protocol_date = data['datum']
+        tops_for_llm = data['tops']
+
+        if not tops_for_llm:
+            log.info(f"No TOPs to process for LLM selection in {source_file}. Skipping.")
+            # Optionally, write an empty protocol structure if needed
+            # empty_protocol_structure = {"title": protocol_title, "datum": protocol_date, "tops": []}
+            # with open(output_json_path, "w", encoding="utf-8") as f:
+            #    json.dump(empty_protocol_structure, f, ensure_ascii=False, indent=2)
+            # log.info(f"Saved empty filtered JSON to {output_json_path}")
             continue
 
-        new_entries_for_prompt = []
-        texts_for_similarity_search = []
-        for top_item in source_data.get('tops', []):
-            content = top_item.get('content', '').strip()
-            if content:
-                new_entries_for_prompt.append({'top_id': top_item.get('top_id'), 'content': content})
-                texts_for_similarity_search.append(content)
+        selected_tops_data = get_relevant_tops_with_llm(
+            protocol_title=protocol_title,
+            protocol_date=protocol_date,
+            current_tops=tops_for_llm,
+            genai_client=genai_client,
+            model_name=config.GENAI_PDF_EXTRACTION_MODEL, # Using this model as per instruction, ensure it's suitable for this task
+            selection_prompt_template=config.GENAI_TOPIC_SELECTION_PROMPT
+        )
 
-        if not new_entries_for_prompt:
-            log.info(f"No processable TOPs with content found in {source_filename}. Skipping article generation.")
-            continue
+        if selected_tops_data:
+            # Basic validation of the LLM output
+            if isinstance(selected_tops_data, dict) and \
+               'title' in selected_tops_data and \
+               'datum' in selected_tops_data and \
+               'tops' in selected_tops_data and isinstance(selected_tops_data['tops'], list):
+                try:
+                    with open(output_json_path, "w", encoding="utf-8") as f:
+                        json.dump(selected_tops_data, f, ensure_ascii=False, indent=2)
+                    log.info(f"Successfully saved filtered JSON with {len(selected_tops_data['tops'])} TOPs to {output_json_path}")
+                except Exception as e:
+                    log.error(f"Error writing selected TOPs to JSON file {output_json_path} for protocol {source_file}: {e}", exc_info=True)
+            else:
+                log.warning(f"LLM output for {source_file} did not match expected structure. LLM Output: {selected_tops_data}")
+        else:
+            log.warning(f"LLM-based TOP selection failed or returned no data for protocol {source_file}. No filtered JSON will be saved for this protocol.")
 
-        similar_older_texts = []
-        if texts_for_similarity_search:
-            log.info(f"Querying ChromaDB for texts similar to entries in {source_filename}...")
-            try:
-                query_embeddings = [ollama.embeddings(model=config.OLLAMA_EMBEDDING_MODEL, prompt=text)["embedding"] for text in texts_for_similarity_search]
-
-                results = chroma_collection.query(
-                    query_embeddings=query_embeddings,
-                    n_results=config.SIMILAR_DOCS_COUNT,
-                    include=["documents", "metadatas"]
-                )
-
-                if results and results.get("documents"):
-                    for per_query_docs, per_query_metas in zip(results.get("documents"), results.get("metadatas")):
-                        for doc_content, doc_meta in zip(per_query_docs, per_query_metas):
-                            if doc_meta.get("source_file") != source_filename:
-                                if doc_content not in similar_older_texts:
-                                    similar_older_texts.append(doc_content)
-                log.info(f"Found {len(similar_older_texts)} similar older texts from other sources.")
-            except Exception as e:
-                log.error(f"Error during similarity search for {source_filename}: {e}", exc_info=True)
-
-        prompt_text = build_prompt_for_article(source_filename, new_entries_for_prompt, similar_older_texts)
-        log.info(f"Generating article for {source_filename} with {len(new_entries_for_prompt)} new entries and {len(similar_older_texts)} reference texts.")
-
-        try:
-            response = genai_client.generate_content(
-                model=config.GENAI_ARTICLE_GENERATION_MODEL,
-                contents=prompt_text,
-                request_options={"timeout": 300}
-            )
-            article_text = response.text if response.text else ""
-        except Exception as e:
-            log.error(f"Error calling GenAI model for {source_filename}: {e}", exc_info=True)
-            continue
-
-        try:
-            with open(md_output_path, "w", encoding="utf-8") as f:
-                f.write(f"# Artikel basierend auf {source_filename}\n\n")
-                f.write(article_text)
-            log.info(f"Article successfully saved to: {md_output_path}")
-        except Exception as e:
-            log.error(f"Error writing article to file {md_output_path}: {e}", exc_info=True)
-
-    log.info("Article generation process finished.")
+    log.info("TOP filtering and JSON generation process finished.")
 
 if __name__ == "__main__":
     print(f"Executing article_generator.py directly. Project root: {config.PROJECT_ROOT}")
+    # Example of running with date filters:
+    # run_article_generation(start_date="2023-01-01", end_date="2023-12-31")
     run_article_generation()
