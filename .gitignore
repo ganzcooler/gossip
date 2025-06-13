@@ -114,3 +114,17 @@ chroma_db/
 
 # config.ini
 config.ini
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+*.env
+config.ini
+
+# Data directories
+pdf_files/
+articles/
+chroma_db/
