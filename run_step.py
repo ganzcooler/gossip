@@ -24,6 +24,18 @@ def main():
         choices=['pdf_to_json', 'json_to_db', 'generate_articles', 'all'],
         help='The pipeline step to execute. "all" runs all steps in sequence.'
     )
+    parser.add_argument(
+        '--start_date',
+        type=str,
+        default=None,
+        help='Start date for filtering protocols (YYYY-MM-DD)'
+    )
+    parser.add_argument(
+        '--end_date',
+        type=str,
+        default=None,
+        help='End date for filtering protocols (YYYY-MM-DD)'
+    )
 
     args = parser.parse_args()
 
@@ -37,14 +49,20 @@ def main():
     elif args.step == 'json_to_db':
         db_loader.run_json_to_chroma_loading()
     elif args.step == 'generate_articles':
-        article_generator.run_article_generation()
+        article_generator.run_article_generation(
+            start_date=args.start_date,
+            end_date=args.end_date
+        )
     elif args.step == 'all':
         print("Running step: pdf_to_json")
         pdf_processor.run_pdf_to_json_conversion()
         print("Running step: json_to_db")
         db_loader.run_json_to_chroma_loading()
         print("Running step: generate_articles")
-        article_generator.run_article_generation()
+        article_generator.run_article_generation(
+            start_date=args.start_date,
+            end_date=args.end_date
+        )
     else:
         # This case should not be reached due to argparse choices
         print(f"Error: Unknown step '{args.step}'. Please choose from the available steps.")

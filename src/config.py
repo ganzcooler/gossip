@@ -14,6 +14,7 @@ DEFAULT_LOG_LEVEL = logging.INFO
 # These are relative to PROJECT_ROOT
 PDF_DIR_NAME = "pdf_files"
 JSON_DIR_NAME = "json-files"
+FILTERED_JSON_DIR_NAME = "filtered_json_files"
 CHROMA_DB_DIR_NAME = "chroma_db"
 ARTICLES_DIR_NAME = "articles"
 
@@ -28,6 +29,34 @@ CHROMA_TO_ARTICLES_LOG_FILENAME = LOG_DIR_NAME + "/chroma-to-articles.log"
 GENAI_PDF_EXTRACTION_MODEL = "gemini-2.5-flash-preview-05-20"
 OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
 GENAI_ARTICLE_GENERATION_MODEL = "gemini-2.5-flash-preview-05-20"
+
+# --- Prompts ---
+GENAI_TOPIC_SELECTION_PROMPT = """
+You are an AI assistant tasked with selecting agenda items (TOPs) suitable for creating journalistic articles.
+From the provided list of TOPs, select only those that:
+1. Provide enough substantial material for a compelling news story.
+2. Offer opportunities to be presented in an emotional or sensational way, likely to engage a broader audience.
+
+Respond with a JSON object that mirrors the structure of the input protocol, but only includes the TOPs you have selected.
+The JSON output should look like this:
+{
+  "title": "Original Title from Input",
+  "datum": "Original Date from Input",
+  "tops": [
+    {
+      "top_id": "Selected TOP ID 1",
+      "content": "Content of Selected TOP ID 1"
+    },
+    {
+      "top_id": "Selected TOP ID 2",
+      "content": "Content of Selected TOP ID 2"
+    }
+    // ... more selected TOPs
+  ]
+}
+If no TOPs meet the criteria, return an empty "tops" list.
+Do not include TOPs that are purely administrative, very brief, or lack broader public interest according to the criteria.
+"""
 
 # --- API Key Loading ---
 def load_google_api_key():
