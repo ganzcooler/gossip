@@ -128,3 +128,6 @@ config.ini
 pdf_files/
 articles/
 chroma_db/
+
+# Log files
+logs/
