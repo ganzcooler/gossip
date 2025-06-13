@@ -1,5 +1,5 @@
-from google import genai
-from google.genai import types
+import google.generativeai as genai
+# types is no longer needed for Part.from_bytes
 from pydantic import BaseModel
 import pathlib
 import json
@@ -27,6 +27,7 @@ log = config.get_logger(__name__, config.PDF_TO_JSON_LOG_FILENAME)
 class TOP(BaseModel):
     top_id: str
     content: str
+    relevant: bool
 
 class Protokoll(BaseModel):
     title: str
@@ -38,6 +39,7 @@ Du bist ein KI-Assistent.
 Extrahiere die Tagesordnungspunkte mitsamt deren Inhalt aus dem PDF-Dokument und gib sie im JSON-Format zurück.
 Schreibe in "top_id" die ID des Tagesordnungspunktes.
 In "content" soll die Überschrift des Tagesordnungspunktes und dessen Inhalt stehen.
+Für jeden Tagesordnungspunkt, bewerte ob dieser für einen journalistischen Artikel geeignet ist und füge ein Feld "relevant" (boolean true/false) hinzu. Ein Tagesordnungspunkt ist relevant, wenn er genügend Inhalt bietet und auf emotionale und aufsehenerregende Weise dargestellt werden kann.
 In "datum" soll das Datum des Protokolls im Format "YYYY-MM-DD" stehen.
 In "title" soll der Titel des Ausschusses oder der Sitzung stehen, z.B. "Jugendausschuss".
 
@@ -48,21 +50,25 @@ Hier ein Beispiel für das JSON-Format:
   "tops": [
     {
       "top_id": "1",
-      "content": "Erster Tagesordnungspunkt Inhalt"
+      "content": "Erster Tagesordnungspunkt Inhalt, der sehr spannend ist und viele Details bietet.",
+      "relevant": true
     },
     {
       "top_id": "2",
-      "content": "Zweiter Tagesordnungspunkt Inhalt"
+      "content": "Zweiter Tagesordnungspunkt Inhalt, eher administrativ.",
+      "relevant": false
     }
   ]
 }
 """
 
+# The get_top_relevance function was removed as its functionality is now integrated
+# into the main PROMPT_TEXT used by process_single_pdf.
+
 def process_single_pdf(pdf_filepath: pathlib.Path,
                        json_output_dir: pathlib.Path,
-                       genai_client: genai.Client,
-                       model_name: str,
-                       prompt: str):
+                       genai_model_instance: genai.GenerativeModel, # Renamed and type changed
+                       prompt: str): # Removed model_name as it's part of genai_model_instance
     log.info(f"Attempting to process PDF: {pdf_filepath.name}")
     json_filepath = json_output_dir / (pdf_filepath.stem + '.json')
     if json_filepath.exists():
@@ -70,13 +76,11 @@ def process_single_pdf(pdf_filepath: pathlib.Path,
         return
 
     try:
-        response = genai_client.models.generate_content(
-            model=model_name,
+        pdf_bytes = pdf_filepath.read_bytes()
+        # model_name is implicit in the genai_model_instance
+        response = genai_model_instance.generate_content(
             contents=[
-                types.Part.from_bytes(
-                    data=pdf_filepath.read_bytes(),
-                    mime_type='application/pdf',
-                ),
+                {"inline_data": {"mime_type": "application/pdf", "data": pdf_bytes}},
                 prompt
             ],
             generation_config={
@@ -99,6 +103,20 @@ def process_single_pdf(pdf_filepath: pathlib.Path,
             log.error(f"No parts found in response for {pdf_filepath.name}. Full response: {response}")
 
         if response_json is not None:
+            # The PROMPT_TEXT now instructs the LLM to include the 'relevant' field.
+            # Therefore, the separate loop to determine relevance is removed.
+            # We now expect response_json to already contain the 'relevant' field for each TOP.
+
+            # Basic validation can still be useful here if desired, e.g.,
+            # if not (isinstance(response_json, dict) and 'tops' in response_json and isinstance(response_json['tops'], list)):
+            #    log.warning(f"Response JSON for {pdf_filepath.name} does not match expected structure (dict with a 'tops' list). JSON: {str(response_json)[:200]}")
+            # else:
+            #    for top_item in response_json.get('tops', []):
+            #        if 'relevant' not in top_item:
+            #            log.warning(f"TOP item {top_item.get('top_id', 'N/A')} in {pdf_filepath.name} is missing the 'relevant' field.")
+            #            # Optionally, set a default: top_item['relevant'] = False
+
+            # Save the response_json (now expected to contain the 'relevant' field directly from LLM)
             json_output_dir.mkdir(parents=True, exist_ok=True)
             with open(json_filepath, "w", encoding="utf-8") as f:
                 json.dump(response_json, f, ensure_ascii=False, indent=2)
@@ -117,9 +135,12 @@ def run_pdf_to_json_conversion():
     log.info("Starting PDF to JSON conversion process...")
     try:
         api_key = config.load_google_api_key()
-        genai_client = genai.Client(api_key=api_key)
+        genai.configure(api_key=api_key)
+        # Instantiate the model to be used for PDF extraction
+        pdf_extraction_model = genai.GenerativeModel(config.GENAI_PDF_EXTRACTION_MODEL)
+        log.info(f"GenAI model {config.GENAI_PDF_EXTRACTION_MODEL} initialized for PDF extraction.")
     except Exception as e:
-        log.critical(f"CRITICAL: Error initializing GenAI client or loading API key: {e}", exc_info=True)
+        log.critical(f"CRITICAL: Error initializing GenAI (configuring or creating model): {e}", exc_info=True)
         return
 
     pdf_dir = config.PROJECT_ROOT / config.PDF_DIR_NAME
@@ -144,9 +165,8 @@ def run_pdf_to_json_conversion():
         process_single_pdf(
             pdf_filepath=filepath,
             json_output_dir=json_dir,
-            genai_client=genai_client,
-            model_name=config.GENAI_PDF_EXTRACTION_MODEL,
-            prompt=PROMPT_TEXT
+            genai_model_instance=pdf_extraction_model, # Pass the initialized model
+            prompt=PROMPT_TEXT # model_name is no longer passed here
         )
 
     log.info("PDF to JSON conversion process finished.")
