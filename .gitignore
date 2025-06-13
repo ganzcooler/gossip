@@ -111,7 +111,6 @@ venv.bak/
 # Eigener Ordner für PDF-Dateien
 pdf_files/
 chroma_db/
-json-files/
 
 # config.ini
 config.ini
