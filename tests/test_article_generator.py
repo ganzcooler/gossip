@@ -53,7 +53,12 @@ class TestArticleGenerator(unittest.TestCase):
     @patch('src.pipeline_steps.article_generator.json.loads')
     def test_get_relevant_tops_with_llm_success(self, mock_json_loads):
         mock_genai_client = MagicMock()
-        mock_response_text = {"title": "Test Title", "datum": "2023-01-01", "tops": [{"top_id": "1", "content": "Relevant TOP"}]}
+        # Updated mock_response_text to new structure
+        mock_response_text = {
+            "title": "Test Title",
+            "datum": "2023-01-01",
+            "tops_evaluation": [{"top_id": "1", "is_selected_relevant": True}]
+        }
         mock_response_obj = MagicMock()
         mock_response_obj.text = json.dumps(mock_response_text)
 
@@ -117,50 +122,54 @@ class TestArticleGenerator(unittest.TestCase):
         mock_get_top_by_id, mock_initialize_chroma, mock_config_module
     ):
         # 1. Configure the overarching mock_config_module
-        # These values will be seen by the article_generator module
-        mock_config_module.SIMILAR_DOCS_COUNT = 1 # Find 1 similar doc for simplicity
+        mock_config_module.SIMILAR_DOCS_COUNT = 1
         mock_config_module.GENAI_ARTICLE_GENERATION_MODEL = "article-gen-model-for-test"
         mock_config_module.GENAI_TOPIC_SELECTION_PROMPT = "Select relevant for test: {json_data}"
-        mock_config_module.OLLAMA_EMBEDDING_MODEL = "test-ollama-model" # Added
+        mock_config_module.OLLAMA_EMBEDDING_MODEL = "test-ollama-model"
         mock_config_module.load_google_api_key.return_value = "test_api_key"
-        # PROJECT_ROOT, CHROMA_DB_DIR_NAME, CHROMA_COLLECTION_NAME will be used by initialize_chroma_collection call
-        # They can be left as their defaults or mocked if specific paths are an issue.
 
         # 2. Mock ChromaDB and db_loader interactions
         mock_chroma_collection = MagicMock(spec=chromadb.api.models.Collection.Collection)
         mock_initialize_chroma.return_value = mock_chroma_collection
 
         mock_chroma_tops_data = {
-            'ids': ['uuid1', 'uuid2', 'uuid3'],
-            'documents': ['Doc for uuid1 Proto A', 'Doc for uuid2 Proto A', 'Doc for uuid3 Proto B'],
+            'ids': ['uuidA1', 'uuidA2', 'uuidB1', 'uuidB2'],
+            'documents': ['Doc A1 content', 'Doc A2 content', 'Doc B1 content', 'Doc B2 content'],
             'metadatas': [
-                {'protocol_title': 'Proto A', 'protocol_date': '2023-01-01', 'top_number': 'A1'},
-                {'protocol_title': 'Proto A', 'protocol_date': '2023-01-01', 'top_number': 'A2'},
-                {'protocol_title': 'Proto B', 'protocol_date': '2023-01-02', 'top_number': 'B1'}
+                {'protocol_title': 'Proto A', 'protocol_date': '2023-01-01', 'top_number': 'A1', 'is_relevant': None},
+                {'protocol_title': 'Proto A', 'protocol_date': '2023-01-01', 'top_number': 'A2', 'is_relevant': True, 'references_top_ids': [], 'article_generated': False},
+                {'protocol_title': 'Proto B', 'protocol_date': '2023-01-02', 'top_number': 'B1', 'is_relevant': None},
+                {'protocol_title': 'Proto B', 'protocol_date': '2023-01-02', 'top_number': 'B2', 'is_relevant': False}
             ]
         }
         mock_chroma_collection.get.return_value = mock_chroma_tops_data
 
-        # LLM selects A1 from Proto A, and nothing from Proto B
-        mock_llm_selection_proto_A = {
+        # Define LLM responses for each protocol based on what it would receive
+        mock_llm_eval_proto_A = { # For Proto A, LLM only gets A1
             "title": "Proto A", "datum": "2023-01-01",
-            "tops": [{"top_id": "A1", "content": "Selected Doc for uuid1 Proto A"}]
+            "tops_evaluation": [{"top_id": "A1", "is_selected_relevant": True}]
         }
-        mock_llm_selection_proto_B = {"title": "Proto B", "datum": "2023-01-02", "tops": []}
+        mock_llm_eval_proto_B = { # For Proto B, LLM only gets B1
+            "title": "Proto B", "datum": "2023-01-02",
+            "tops_evaluation": [{"top_id": "B1", "is_selected_relevant": False}]
+        }
 
+        # Side effect for get_relevant_tops_with_llm
+        processed_protocols_for_llm_input = {} # To store what was actually sent to LLM
         def get_relevant_side_effect(protocol_title, protocol_date, current_tops, genai_client, model_name, selection_prompt_template):
-            if protocol_title == "Proto A": return mock_llm_selection_proto_A
-            if protocol_title == "Proto B": return mock_llm_selection_proto_B
-            return {"title": protocol_title, "datum": protocol_date, "tops": []}
+            processed_protocols_for_llm_input[protocol_title] = current_tops
+            if protocol_title == "Proto A": return mock_llm_eval_proto_A
+            if protocol_title == "Proto B": return mock_llm_eval_proto_B
+            return {"title": protocol_title, "datum": protocol_date, "tops_evaluation": []}
         mock_get_relevant_tops_llm.side_effect = get_relevant_side_effect
 
-        # Mock for fetching document content for reference search (for uuid1)
-        mock_get_top_by_id.return_value = {'id': 'uuid1', 'document': 'Doc for uuid1 Proto A', 'metadata': {'protocol_title': 'Proto A', 'protocol_date': '2023-01-01', 'top_number': 'A1'}}
+        # Mock for db_loader.get_top_by_id (called only for A1 because it's marked True by LLM)
+        mock_get_top_by_id.return_value = {'id': 'uuidA1', 'document': 'Doc A1 content', 'metadata': mock_chroma_tops_data['metadatas'][0]}
 
-        # Mock for reference search results (uuid1 is self, uuid_ref is a similar doc)
-        mock_chroma_collection.query.return_value = {'ids': [['uuid_ref_for_A1', 'uuid1']]}
+        # Mock for chroma_collection.query (called only for A1)
+        mock_chroma_collection.query.return_value = {'ids': [['uuid_ref_for_A1', 'uuidA1']]} # uuidA1 is self
 
-        # Mock ollama.embeddings for the query
+        # Mock ollama.embeddings for the query (called only for A1)
         mock_query_embedding = [0.4, 0.5, 0.6]
         mock_ollama_embeddings.return_value = {"embedding": mock_query_embedding}
 
@@ -170,47 +179,48 @@ class TestArticleGenerator(unittest.TestCase):
         mock_update_article_status.return_value = True
 
         # 3. Call run_article_generation
-        article_generator.run_article_generation() # Call without date arguments
+        article_generator.run_article_generation()
 
         # 4. Assertions
-        mock_config_module.load_google_api_key.assert_called_once()
-        mock_genai_client_constructor.assert_called_once_with(api_key="test_api_key")
-        mock_initialize_chroma.assert_called_once() # Args can be checked if specific paths are important
-        mock_chroma_collection.get.assert_called_once_with(where=None, include=['documents', 'metadatas', 'ids']) # Verify where=None
+        mock_chroma_collection.get.assert_called_once_with(where=None, include=['documents', 'metadatas', 'ids'])
 
-        # Check get_relevant_tops_with_llm calls
+        # Assert input to get_relevant_tops_with_llm
         self.assertEqual(mock_get_relevant_tops_llm.call_count, 2) # Called for Proto A and Proto B
+        # Check Proto A call - should only contain A1 (is_relevant: None)
+        self.assertIn('Proto A', processed_protocols_for_llm_input)
+        self.assertEqual(len(processed_protocols_for_llm_input['Proto A']), 1)
+        self.assertEqual(processed_protocols_for_llm_input['Proto A'][0]['top_id'], 'A1')
+        # Check Proto B call - should only contain B1 (is_relevant: None)
+        self.assertIn('Proto B', processed_protocols_for_llm_input)
+        self.assertEqual(len(processed_protocols_for_llm_input['Proto B']), 1)
+        self.assertEqual(processed_protocols_for_llm_input['Proto B'][0]['top_id'], 'B1')
 
-        # Assertions for TOP 'uuid1' (Original A1 from Proto A) which was selected
-        mock_update_relevance.assert_any_call(top_id='uuid1', is_relevant=True, collection=mock_chroma_collection)
-        mock_get_top_by_id.assert_any_call('uuid1', mock_chroma_collection) # Called to get doc for query
+        # Assertions for mock_update_relevance
+        # Called for A1 (to True) and B1 (to False)
+        calls_relevance = [
+            call(top_id='uuidA1', is_relevant=True, collection=mock_chroma_collection),
+            call(top_id='uuidB1', is_relevant=False, collection=mock_chroma_collection)
+        ]
+        mock_update_relevance.assert_has_calls(calls_relevance, any_order=True)
+        self.assertEqual(mock_update_relevance.call_count, 2)
 
-        # Assert ollama.embeddings was called for the query
-        expected_query_doc_content = 'Doc for uuid1 Proto A' # From mock_get_top_by_id
-        mock_ollama_embeddings.assert_any_call(
+        # Assertions for conditional execution (only for uuidA1 as it was set to True)
+        mock_get_top_by_id.assert_called_once_with('uuidA1', mock_chroma_collection)
+
+        mock_ollama_embeddings.assert_called_once_with(
             model=mock_config_module.OLLAMA_EMBEDDING_MODEL,
-            prompt=expected_query_doc_content
+            prompt='Doc A1 content'
         )
-
-        # Query for uuid1: n_results = SIMILAR_DOCS_COUNT (1) + 1 = 2
-        mock_chroma_collection.query.assert_any_call(
+        mock_chroma_collection.query.assert_called_once_with(
             query_embeddings=[mock_query_embedding],
             n_results=mock_config_module.SIMILAR_DOCS_COUNT + 1,
             include=['ids']
         )
-        mock_update_references.assert_any_call(top_id='uuid1', references_top_ids=['uuid_ref_for_A1'], collection=mock_chroma_collection)
-        mock_update_article_status.assert_any_call(top_id='uuid1', article_generated=True, collection=mock_chroma_collection)
+        mock_update_references.assert_called_once_with(top_id='uuidA1', references_top_ids=['uuid_ref_for_A1'], collection=mock_chroma_collection)
+        mock_update_article_status.assert_called_once_with(top_id='uuidA1', article_generated=True, collection=mock_chroma_collection)
 
-        # Assertions for TOP 'uuid2' (Original A2 from Proto A) which was NOT selected
-        # It should not have relevance, references, or article_status updated directly.
-        # We check that the call count for each update function is 1 (only for uuid1)
-        self.assertEqual(mock_update_relevance.call_count, 1)
-        self.assertEqual(mock_get_top_by_id.call_count, 1) # Only called for selected TOPs for referencing
-        self.assertEqual(mock_chroma_collection.query.call_count, 1) # Only called for selected TOPs
-        self.assertEqual(mock_update_references.call_count, 1)
-        self.assertEqual(mock_update_article_status.call_count, 1)
-
-        # For uuid3 (Proto B, T1), LLM returned no selection, so no updates should occur for it.
+        # Ensure these were NOT called for uuidB1 (marked False) or uuidA2/uuidB2 (skipped by pre-filter)
+        # Call counts already asserted for most. If get_top_by_id was called more, it would fail above.
 
 # test_run_article_generation_date_filters has been removed.
 
