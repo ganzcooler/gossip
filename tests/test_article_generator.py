@@ -7,7 +7,7 @@ import chromadb # For spec
 
 # Ensure src directory is in sys.path for module imports from src
 import sys
-project_root_for_test = pathlib.Path(__file__).resolve().parent.parent.parent
+project_root_for_test = pathlib.Path(__file__).resolve().parent.parent
 if str(project_root_for_test) not in sys.path:
     sys.path.insert(0, str(project_root_for_test))
 

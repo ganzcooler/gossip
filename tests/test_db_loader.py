@@ -6,7 +6,7 @@ import pathlib # For config.PROJECT_ROOT
 import sys
 
 # Add project root to sys.path to allow src imports
-project_root_for_test = pathlib.Path(__file__).resolve().parent.parent.parent
+project_root_for_test = pathlib.Path(__file__).resolve().parent.parent
 if str(project_root_for_test) not in sys.path:
     sys.path.insert(0, str(project_root_for_test))
 
