@@ -164,13 +164,13 @@ class TestArticleGenerator(unittest.TestCase):
         mock_update_article_status.return_value = True
 
         # 3. Call run_article_generation
-        article_generator.run_article_generation()
+        article_generator.run_article_generation() # Call without date arguments
 
         # 4. Assertions
         mock_config_module.load_google_api_key.assert_called_once()
         mock_genai_client_constructor.assert_called_once_with(api_key="test_api_key")
         mock_initialize_chroma.assert_called_once() # Args can be checked if specific paths are important
-        mock_chroma_collection.get.assert_called_once_with(where=None, include=['documents', 'metadatas', 'ids'])
+        mock_chroma_collection.get.assert_called_once_with(where=None, include=['documents', 'metadatas', 'ids']) # Verify where=None
 
         # Check get_relevant_tops_with_llm calls
         self.assertEqual(mock_get_relevant_tops_llm.call_count, 2) # Called for Proto A and Proto B
@@ -195,42 +195,7 @@ class TestArticleGenerator(unittest.TestCase):
 
         # For uuid3 (Proto B, T1), LLM returned no selection, so no updates should occur for it.
 
-    @patch('src.pipeline_steps.article_generator.config', new_callable=MagicMock)
-    @patch('src.pipeline_steps.article_generator.db_loader.initialize_chroma_collection')
-    @patch('src.pipeline_steps.article_generator.get_relevant_tops_with_llm') # Mock the LLM helper
-    @patch('src.pipeline_steps.article_generator.genai.Client')
-    def test_run_article_generation_date_filters(
-        self, mock_genai_client_constructor, mock_get_relevant_tops_llm,
-        mock_initialize_chroma, mock_config_module
-    ):
-        mock_config_module.load_google_api_key.return_value = "test_api_key"
-        # SIMILAR_DOCS_COUNT is used, ensure it's set.
-        mock_config_module.SIMILAR_DOCS_COUNT = 1
-
-
-        mock_chroma_collection = MagicMock(spec=chromadb.api.models.Collection.Collection)
-        mock_initialize_chroma.return_value = mock_chroma_collection
-        mock_chroma_collection.get.return_value = {'ids': [], 'documents': [], 'metadatas': []} # No data needed for this test focus
-
-        # Mock LLM to return empty, as we are not testing that part here
-        mock_get_relevant_tops_llm.return_value = {"title": "", "datum": "", "tops": []}
-
-        # Test with start_date only
-        article_generator.run_article_generation(start_date='2023-10-04')
-        mock_chroma_collection.get.assert_called_with(where={'datum': {'$gte': '2023-10-04'}}, include=['documents', 'metadatas', 'ids'])
-
-        # Test with end_date only
-        article_generator.run_article_generation(end_date='2023-10-02')
-        mock_chroma_collection.get.assert_called_with(where={'datum': {'$lte': '2023-10-02'}}, include=['documents', 'metadatas', 'ids'])
-
-        # Test with both dates
-        article_generator.run_article_generation(start_date='2023-01-01', end_date='2023-01-31')
-        mock_chroma_collection.get.assert_called_with(where={"$and": [{"datum": {"$gte": '2023-01-01'}}, {"datum": {"$lte": '2023-01-31'}}]}, include=['documents', 'metadatas', 'ids'])
-
-        # Test with no dates
-        article_generator.run_article_generation()
-        mock_chroma_collection.get.assert_called_with(where=None, include=['documents', 'metadatas', 'ids'])
-
+# test_run_article_generation_date_filters has been removed.
 
 if __name__ == '__main__':
     unittest.main(argv=['first-arg-is-ignored'], exit=False)

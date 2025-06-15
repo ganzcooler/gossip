@@ -23,18 +23,6 @@ def main():
         choices=['process_pdfs', 'generate_articles', 'all'],
         help='The pipeline step to execute: "process_pdfs" (extracts from PDFs and stores in DB), "generate_articles", or "all" to run all steps in sequence.'
     )
-    parser.add_argument(
-        '--start_date',
-        type=str,
-        default=None,
-        help='Start date for filtering protocols (YYYY-MM-DD)'
-    )
-    parser.add_argument(
-        '--end_date',
-        type=str,
-        default=None,
-        help='End date for filtering protocols (YYYY-MM-DD)'
-    )
 
     args = parser.parse_args()
 
@@ -46,18 +34,12 @@ def main():
     if args.step == 'process_pdfs':
         pdf_processor.run_pdf_extraction_and_storage()
     elif args.step == 'generate_articles':
-        article_generator.run_article_generation(
-            start_date=args.start_date,
-            end_date=args.end_date
-        )
+        article_generator.run_article_generation()
     elif args.step == 'all':
         print("Running step: process_pdfs")
         pdf_processor.run_pdf_extraction_and_storage()
         print("Running step: generate_articles")
-        article_generator.run_article_generation(
-            start_date=args.start_date,
-            end_date=args.end_date
-        )
+        article_generator.run_article_generation()
     else:
         # This case should not be reached due to argparse choices
         print(f"Error: Unknown step '{args.step}'. Please choose from the available steps.")

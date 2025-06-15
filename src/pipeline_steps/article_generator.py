@@ -60,10 +60,11 @@ def get_relevant_tops_with_llm(protocol_title: str, protocol_date: str, current_
         log.error(f"Error calling GenAI model for TOP selection for protocol {protocol_title}: {e}", exc_info=True)
         return None
 
-def run_article_generation(start_date: str = None, end_date: str = None):
+def run_article_generation():
     """
-    Fetches TOPs from ChromaDB within the given date range, groups them by protocol,
-    uses an LLM to select relevant TOPs, and saves them as filtered JSON files.
+    Fetches all TOPs from ChromaDB, groups them by protocol, uses an LLM to select
+    relevant TOPs, updates their relevance, finds references, and marks them as
+    article_generated in ChromaDB.
     """
     log.info("Starting TOP relevance update process in ChromaDB...")
 
@@ -81,25 +82,12 @@ def run_article_generation(start_date: str = None, end_date: str = None):
         log.critical(f"CRITICAL: Initialization error (GenAI client or ChromaDB): {e}", exc_info=True)
         return
 
-    # Construct ChromaDB where_filter
-    where_filter = {}
-    if start_date and end_date:
-        where_filter = {"$and": [{"datum": {"$gte": start_date}}, {"datum": {"$lte": end_date}}]}
-        log.info(f"Filtering TOPs between {start_date} and {end_date}")
-    elif start_date:
-        where_filter = {"datum": {"$gte": start_date}}
-        log.info(f"Filtering TOPs from {start_date} onwards")
-    elif end_date:
-        where_filter = {"datum": {"$lte": end_date}}
-        log.info(f"Filtering TOPs up to {end_date}")
-    else:
-        log.info("No date filters provided, fetching all TOPs.")
-        # For ChromaDB, an empty dict or None usually means no filter.
-        # If it requires a non-null value, an empty dict `{}` is standard.
+    # Construct ChromaDB where_filter # Removed
+    # Date filtering logic removed.
 
     try:
-        # If where_filter is empty, pass it as is. ChromaDB client should handle it.
-        results = chroma_collection.get(where=where_filter if where_filter else None, include=['documents', 'metadatas', 'ids'])
+        log.info("Fetching all TOPs from ChromaDB.")
+        results = chroma_collection.get(where=None, include=['documents', 'metadatas', 'ids'])
         log.info(f"Retrieved {len(results.get('ids', []))} TOP entries from ChromaDB.")
     except Exception as e:
         log.error(f"Error querying ChromaDB: {e}", exc_info=True)
@@ -260,6 +248,4 @@ def run_article_generation(start_date: str = None, end_date: str = None):
 
 if __name__ == "__main__":
     print(f"Executing article_generator.py directly. Project root: {config.PROJECT_ROOT}")
-    # Example of running with date filters:
-    # run_article_generation(start_date="2023-01-01", end_date="2023-12-31")
     run_article_generation()
