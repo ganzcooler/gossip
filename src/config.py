@@ -13,16 +13,14 @@ DEFAULT_LOG_LEVEL = logging.INFO
 # --- Directory Names ---
 # These are relative to PROJECT_ROOT
 PDF_DIR_NAME = "pdf_files"
-JSON_DIR_NAME = "json-files"
-FILTERED_JSON_DIR_NAME = "filtered_json_files"
 CHROMA_DB_DIR_NAME = "chroma_db"
 ARTICLES_DIR_NAME = "articles"
 
 # --- Log File Names ---
 # These are relative to PROJECT_ROOT in a "logs" subdirectory
 LOG_DIR_NAME = "logs" # All logs will go into a "logs" subdirectory at project root
-PDF_TO_JSON_LOG_FILENAME = LOG_DIR_NAME + "/pdf-to-json.log"
-JSON_TO_CHROMA_LOG_FILENAME = LOG_DIR_NAME + "/json-to-chroma.log"
+PDF_PROCESSING_LOG_FILENAME = LOG_DIR_NAME + "/pdf-processing.log"
+CHROMA_DB_UTILS_LOG_FILENAME = LOG_DIR_NAME + "/chromadb-utils.log"
 CHROMA_TO_ARTICLES_LOG_FILENAME = LOG_DIR_NAME + "/chroma-to-articles.log"
 
 # --- Model Names ---
@@ -32,30 +30,101 @@ GENAI_ARTICLE_GENERATION_MODEL = "gemini-2.5-flash-preview-05-20"
 
 # --- Prompts ---
 GENAI_TOPIC_SELECTION_PROMPT = """
-You are an AI assistant tasked with selecting agenda items (TOPs) suitable for creating journalistic articles.
-From the provided list of TOPs, select only those that:
-1. Provide enough substantial material for a compelling news story.
-2. Offer opportunities to be presented in an emotional or sensational way, likely to engage a broader audience.
+You are an AI assistant. Your task is to evaluate a list of TOPs (Tagesordnungspunkte / agenda items) from a given protocol (meeting minutes) and decide for each TOP whether it is suitable for a journalistic article.
+Base your decision on two main criteria:
+1.  **Content Depth**: The TOP should provide enough substantial material for a compelling news story. Purely administrative points, very brief announcements, or items lacking detail are generally not suitable.
+2.  **Public Interest/Engagement**: The TOP should offer opportunities to be presented in a way that is likely to engage a broader audience. This might include topics that are emotional, controversial, impactful on the community, or generally sensational.
 
-Respond with a JSON object that mirrors the structure of the input protocol, but only includes the TOPs you have selected.
-The JSON output should look like this:
+You will be provided with input in JSON format, containing the protocol's 'title', 'datum' (date), and a list of 'tops'. Each item in the 'tops' list will have a 'top_id' (its original identifier in the protocol) and 'content' (the textual description of the TOP).
+
+You must return a JSON object with the original 'title' and 'datum' fields from the input. Additionally, your output must include a field named 'tops_evaluation', which should be a list. This list must contain an entry for *every* TOP present in the input's 'tops' list. Each entry in 'tops_evaluation' must include the original 'top_id' and a new boolean field 'is_selected_relevant', which should be true if you deem the TOP suitable for an article according to the criteria, and false otherwise.
+
+Here are a couple of examples:
+
+**Example 1:**
+
+Input:
+```json
 {
-  "title": "Original Title from Input",
-  "datum": "Original Date from Input",
+  "title": "Finance Committee Meeting",
+  "datum": "2024-03-15",
   "tops": [
     {
-      "top_id": "Selected TOP ID 1",
-      "content": "Content of Selected TOP ID 1"
+      "top_id": "1.1",
+      "content": "Approval of the minutes from the last meeting. The minutes were reviewed and approved without changes."
     },
     {
-      "top_id": "Selected TOP ID 2",
-      "content": "Content of Selected TOP ID 2"
+      "top_id": "1.2",
+      "content": "Budget reallocation proposal for Q3. This involves shifting funds from the deferred park renovation project to the emergency road repair fund due to recent storm damage. Extensive discussion on the urgency and impact on other planned projects. Several local businesses voiced concerns over the park project delay."
+    },
+    {
+      "top_id": "2.0",
+      "content": "Update on software licensing renewals. Standard renewal process, no issues reported."
     }
-    // ... more selected TOPs
   ]
 }
-If no TOPs meet the criteria, return an empty "tops" list.
-Do not include TOPs that are purely administrative, very brief, or lack broader public interest according to the criteria.
+```
+
+Output:
+```json
+{
+  "title": "Finance Committee Meeting",
+  "datum": "2024-03-15",
+  "tops_evaluation": [
+    {
+      "top_id": "1.1",
+      "is_selected_relevant": false
+    },
+    {
+      "top_id": "1.2",
+      "is_selected_relevant": true
+    },
+    {
+      "top_id": "2.0",
+      "is_selected_relevant": false
+    }
+  ]
+}
+```
+
+**Example 2:**
+
+Input:
+```json
+{
+  "title": "School Board Session",
+  "datum": "2024-03-18",
+  "tops": [
+    {
+      "top_id": "A",
+      "content": "Presentation of the new anti-bullying campaign 'Safe Spaces Now'. Includes detailed plans for student workshops, parent information evenings, and teacher training modules. Statistics on bullying incidents from the past year were presented, showing a concerning rise. Discussion included a heartfelt testimony from a parent whose child was affected."
+    },
+    {
+      "top_id": "B",
+      "content": "Decision on the vendor for cafeteria supplies for the next school year. Three bids were reviewed, and Vendor X was selected based on cost and compliance with nutritional guidelines. Standard procurement procedure."
+    }
+  ]
+}
+```
+
+Output:
+```json
+{
+  "title": "School Board Session",
+  "datum": "2024-03-18",
+  "tops_evaluation": [
+    {
+      "top_id": "A",
+      "is_selected_relevant": true
+    },
+    {
+      "top_id": "B",
+      "is_selected_relevant": false
+    }
+  ]
+}
+```
+Now, evaluate the following input:
 """
 
 # --- API Key Loading ---

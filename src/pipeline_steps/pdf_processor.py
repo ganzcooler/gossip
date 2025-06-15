@@ -1,11 +1,12 @@
 import google.generativeai as genai
-# types is no longer needed for Part.from_bytes
-from pydantic import BaseModel
 import pathlib
 import json
 import time
 import logging
 import sys
+import uuid
+from src.pipeline_steps import db_loader
+import chromadb # For type annotation
 
 # Ensure src directory is in sys.path for config import
 project_root_for_import = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -21,59 +22,38 @@ except ImportError as e:
     raise
 
 # Initialize logger using the helper from config
-log = config.get_logger(__name__, config.PDF_TO_JSON_LOG_FILENAME)
-
-# Pydantic Models
-class TOP(BaseModel):
-    top_id: str
-    content: str
-    relevant: bool
-
-class Protokoll(BaseModel):
-    title: str
-    datum: str
-    tops: list[TOP]
+log = config.get_logger(__name__, config.PDF_PROCESSING_LOG_FILENAME)
 
 PROMPT_TEXT = """
-Du bist ein KI-Assistent.
-Extrahiere die Tagesordnungspunkte mitsamt deren Inhalt aus dem PDF-Dokument und gib sie im JSON-Format zurück.
-Schreibe in "top_id" die ID des Tagesordnungspunktes.
-In "content" soll die Überschrift des Tagesordnungspunktes und dessen Inhalt stehen.
-Für jeden Tagesordnungspunkt, bewerte ob dieser für einen journalistischen Artikel geeignet ist und füge ein Feld "relevant" (boolean true/false) hinzu. Ein Tagesordnungspunkt ist relevant, wenn er genügend Inhalt bietet und auf emotionale und aufsehenerregende Weise dargestellt werden kann.
-In "datum" soll das Datum des Protokolls im Format "YYYY-MM-DD" stehen.
-In "title" soll der Titel des Ausschusses oder der Sitzung stehen, z.B. "Jugendausschuss".
+        Du bist ein KI-Assistent.
+        Extrahiere die Tagesordnungspunkte mitsamt deren Inhalt aus dem PDF-Dokument und gib sie im JSON-Format zurück.
+        Schreibe in "top_id" die ID des Tagesordnungspunktes.
+        In "content" soll die Überschrift des Tagesordnungspunktes und dessen Inhalt stehen.
+        In "datum" soll das Datum des Protokolls im Format "YYYY-MM-DD" stehen.
+        In "title" soll der Titel des Ausschusses oder der Sitzung stehen, z.B. "Jugendausschuss".
 
-Hier ein Beispiel für das JSON-Format:
-{
-  "title": "Jugendausschuss",
-  "datum": "2023-10-01",
-  "tops": [
-    {
-      "top_id": "1",
-      "content": "Erster Tagesordnungspunkt Inhalt, der sehr spannend ist und viele Details bietet.",
-      "relevant": true
-    },
-    {
-      "top_id": "2",
-      "content": "Zweiter Tagesordnungspunkt Inhalt, eher administrativ.",
-      "relevant": false
-    }
-  ]
-}
-"""
+        Hier ein Beispiel für das JSON-Format:
+        {
+          "title": "Jugendausschuss",
+          "datum": "2023-10-01",
+          "tops": [
+            {
+              "top_id": "1",
+              "content": "Erster Tagesordnungspunkt Inhalt, der sehr spannend ist und viele Details bietet."
+            },
+            {
+              "top_id": "2",
+              "content": "Zweiter Tagesordnungspunkt Inhalt, eher administrativ."
+            }
+          ]
+        }
+        """
 
 # The get_top_relevance function was removed as its functionality is now integrated
 # into the main PROMPT_TEXT used by process_single_pdf.
 
-def process_single_pdf(pdf_filepath: pathlib.Path,
-                       json_output_dir: pathlib.Path,
-                       genai_model_instance: genai.GenerativeModel, # Renamed and type changed
-                       prompt: str): # Removed model_name as it's part of genai_model_instance
+def process_single_pdf(pdf_filepath: pathlib.Path, genai_model_instance: genai.GenerativeModel, prompt: str, chroma_collection: chromadb.api.models.Collection.Collection):
     log.info(f"Attempting to process PDF: {pdf_filepath.name}")
-    json_filepath = json_output_dir / (pdf_filepath.stem + '.json')
-    if json_filepath.exists():
-        log.info(f"JSON file already exists for {pdf_filepath.name}, skipping.")
-        return
 
     try:
         pdf_bytes = pdf_filepath.read_bytes()
@@ -103,36 +83,50 @@ def process_single_pdf(pdf_filepath: pathlib.Path,
             log.error(f"No parts found in response for {pdf_filepath.name}. Full response: {response}")
 
         if response_json is not None:
-            # The PROMPT_TEXT now instructs the LLM to include the 'relevant' field.
-            # Therefore, the separate loop to determine relevance is removed.
-            # We now expect response_json to already contain the 'relevant' field for each TOP.
+            protocol_title = response_json.get('title', 'N/A')
+            protocol_date = response_json.get('datum', 'N/A')
+            tops_processed_count = 0
+            if not isinstance(response_json.get('tops'), list):
+                log.warning(f"No 'tops' list found or is not a list in response for {pdf_filepath.name}. Response: {str(response_json)[:300]}")
+                return # Or handle as an error
 
-            # Basic validation can still be useful here if desired, e.g.,
-            # if not (isinstance(response_json, dict) and 'tops' in response_json and isinstance(response_json['tops'], list)):
-            #    log.warning(f"Response JSON for {pdf_filepath.name} does not match expected structure (dict with a 'tops' list). JSON: {str(response_json)[:200]}")
-            # else:
-            #    for top_item in response_json.get('tops', []):
-            #        if 'relevant' not in top_item:
-            #            log.warning(f"TOP item {top_item.get('top_id', 'N/A')} in {pdf_filepath.name} is missing the 'relevant' field.")
-            #            # Optionally, set a default: top_item['relevant'] = False
+            for top_item in response_json.get('tops', []):
+                top_content = top_item.get('content')
+                # 'top_id' from LLM is the original number/identifier within the protocol
+                original_top_id = top_item.get('top_id')
 
-            # Save the response_json (now expected to contain the 'relevant' field directly from LLM)
-            json_output_dir.mkdir(parents=True, exist_ok=True)
-            with open(json_filepath, "w", encoding="utf-8") as f:
-                json.dump(response_json, f, ensure_ascii=False, indent=2)
-            log.info(f"Saved JSON to {json_filepath}")
+                if not top_content or not original_top_id:
+                    log.warning(f"Missing content or original_top_id for a TOP in {pdf_filepath.name}. Content: '{str(top_content)[:50]}...', Original TOP ID: {original_top_id}. Skipping this TOP.")
+                    continue
+
+                chroma_id = str(uuid.uuid4())
+                metadata = {
+                    "protocol_title": protocol_title,
+                    "protocol_date": protocol_date,
+                    "top_number": original_top_id # Store the original TOP number here
+                }
+
+                success = db_loader.add_top_to_chromadb(
+                    top_id=chroma_id, # Use generated UUID for ChromaDB's unique ID
+                    document=top_content,
+                    metadata=metadata,
+                    collection=chroma_collection
+                )
+                if success:
+                    tops_processed_count += 1
+            log.info(f"Processed and attempted to add {tops_processed_count} TOPs from {pdf_filepath.name} to ChromaDB.")
         else:
-            log.error(f"No JSON to save for {pdf_filepath.name} (either not received, parsing failed, or no parts in response).")
+            log.error(f"No JSON response to process for {pdf_filepath.name} (either not received or parsing failed).")
 
     except Exception as e:
-        log.error(f"Error during GenAI call or file operations for {pdf_filepath.name}: {e}", exc_info=True)
+        log.error(f"Error during GenAI call or ChromaDB operations for {pdf_filepath.name}: {e}", exc_info=True)
     finally:
         log.info("Waiting for 6 seconds due to potential API rate limits...")
         time.sleep(6)
 
 
-def run_pdf_to_json_conversion():
-    log.info("Starting PDF to JSON conversion process...")
+def run_pdf_extraction_and_storage():
+    log.info("Starting PDF extraction and storage to ChromaDB process...")
     try:
         api_key = config.load_google_api_key()
         genai.configure(api_key=api_key)
@@ -143,12 +137,20 @@ def run_pdf_to_json_conversion():
         log.critical(f"CRITICAL: Error initializing GenAI (configuring or creating model): {e}", exc_info=True)
         return
 
-    pdf_dir = config.PROJECT_ROOT / config.PDF_DIR_NAME
-    json_dir = config.PROJECT_ROOT / config.JSON_DIR_NAME
+    try:
+        chroma_collection = db_loader.initialize_chroma_collection(
+            db_path_name=config.CHROMA_DB_DIR_NAME,
+            collection_name=config.CHROMA_COLLECTION_NAME,
+            project_root=config.PROJECT_ROOT
+        )
+        log.info(f"ChromaDB collection '{config.CHROMA_COLLECTION_NAME}' initialized for PDF processing.")
+    except Exception as e:
+        log.critical(f"CRITICAL: Could not initialize ChromaDB for PDF processing: {e}", exc_info=True)
+        return
 
+    pdf_dir = config.PROJECT_ROOT / config.PDF_DIR_NAME
     log.info(f"Project root resolved to: {config.PROJECT_ROOT}")
     log.info(f"PDF directory set to: {pdf_dir}")
-    log.info(f"JSON output directory set to: {json_dir}")
 
     if not pdf_dir.is_dir():
         log.error(f"PDF directory not found: {pdf_dir}. Please ensure it exists and contains PDF files.")
@@ -164,13 +166,13 @@ def run_pdf_to_json_conversion():
     for filepath in pdf_files:
         process_single_pdf(
             pdf_filepath=filepath,
-            json_output_dir=json_dir,
-            genai_model_instance=pdf_extraction_model, # Pass the initialized model
-            prompt=PROMPT_TEXT # model_name is no longer passed here
+            genai_model_instance=pdf_extraction_model,
+            prompt=PROMPT_TEXT,
+            chroma_collection=chroma_collection
         )
 
-    log.info("PDF to JSON conversion process finished.")
+    log.info("PDF extraction and storage to ChromaDB process finished.")
 
 if __name__ == "__main__":
     print(f"Executing pdf_processor.py directly. Project root: {config.PROJECT_ROOT}")
-    run_pdf_to_json_conversion()
+    run_pdf_extraction_and_storage()

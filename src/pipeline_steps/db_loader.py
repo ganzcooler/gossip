@@ -1,6 +1,3 @@
-import os
-import glob
-import json
 import logging
 import pathlib
 import sys
@@ -21,7 +18,7 @@ except ImportError as e:
     raise
 
 # Initialize logger
-log = config.get_logger(__name__, config.JSON_TO_CHROMA_LOG_FILENAME)
+log = config.get_logger(__name__, config.CHROMA_DB_UTILS_LOG_FILENAME)
 
 def initialize_chroma_collection(db_path_name: str, collection_name: str, project_root: pathlib.Path):
     """Initializes and returns a ChromaDB collection."""
@@ -34,102 +31,82 @@ def initialize_chroma_collection(db_path_name: str, collection_name: str, projec
     log.info(f"Using ChromaDB collection: {collection_name}")
     return collection
 
-def process_json_file(json_filepath: pathlib.Path,
-                        chroma_collection: chromadb.api.models.Collection.Collection,
-                        embedding_model_name: str):
-    """Loads records from a single JSON file, generates embeddings, and adds them to ChromaDB."""
-    log.info(f"Processing JSON file: {json_filepath.name}")
+def add_top_to_chromadb(top_id: str, document: str, metadata: dict, collection: chromadb.api.models.Collection.Collection):
+    """Adds a single TOP document to the ChromaDB collection."""
     try:
-        with open(json_filepath, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        log.debug(f"Generating Ollama embedding for TOP ID {top_id} using model {config.OLLAMA_EMBEDDING_MODEL}...")
+        embedding = ollama.embeddings(
+            model=config.OLLAMA_EMBEDDING_MODEL,
+            prompt=document
+        )["embedding"]
+        log.debug(f"Embedding generated successfully for TOP ID {top_id}.")
+
+        collection.add(
+            ids=[top_id],
+            embeddings=[embedding], # Add this line
+            documents=[document],
+            metadatas=[metadata]
+        )
+        log.info(f"Added TOP with ID {top_id} to ChromaDB.")
+        return True
     except Exception as e:
-        log.error(f"Error loading JSON file {json_filepath.name}: {e}", exc_info=True)
-        return 0
+        log.error(f"Error adding TOP ID {top_id} to ChromaDB (embedding or add failed): {e}", exc_info=True)
+        return False
 
-    texts = []
-    metadatas = []
-    ids = []
-
-    source_file_name = json_filepath.name
-    title = data.get('title', '')
-    datum = data.get('datum', '')
-    tops = data.get('tops', [])
-
-    for idx, top_item in enumerate(tops):
-        top_id = top_item.get('top_id', '')
-        content = top_item.get('content', '')
-        if not content.strip():
-            log.warning(f"Empty content for TOP ID {top_id} in {source_file_name}, skipping.")
-            continue
-
-        texts.append(content.strip())
-        metadatas.append({
-            'title': title,
-            'datum': datum,
-            'top_id': top_id,
-            'source_file': source_file_name
-        })
-        ids.append(f"{source_file_name}_{top_id}_{idx}")
-
-    if texts:
-        try:
-            log.info(f'Generating {len(texts)} embeddings using {embedding_model_name} for {source_file_name}...')
-            embeddings = [ollama.embeddings(model=embedding_model_name, prompt=text)["embedding"] for text in texts]
-            log.info(f'Embeddings generated. Adding to ChromaDB for {source_file_name}.')
-            chroma_collection.add(
-                ids=ids,
-                embeddings=embeddings,
-                documents=texts,
-                metadatas=metadatas
-            )
-            added_count = len(texts)
-            log.info(f"Added {added_count} entries to ChromaDB from {source_file_name}")
-            return added_count
-        except Exception as e:
-            log.error(f"Error generating embeddings or adding to ChromaDB for {source_file_name}: {e}", exc_info=True)
-            return 0
-    else:
-        log.info(f"No text entries found to process in {json_filepath.name}")
-        return 0
-
-def run_json_to_chroma_loading():
-    """Main function to orchestrate loading JSON data into ChromaDB."""
-    log.info("Starting JSON to ChromaDB loading process...")
-
+def get_top_by_id(top_id: str, collection: chromadb.api.models.Collection.Collection) -> dict | None:
+    """Retrieves a TOP document and its metadata from ChromaDB by its ID."""
     try:
-        chroma_collection = initialize_chroma_collection(
-            db_path_name=config.CHROMA_DB_DIR_NAME,
-            collection_name=config.CHROMA_COLLECTION_NAME,
-            project_root=config.PROJECT_ROOT
-        )
+        # Ensure all necessary data parts are requested
+        result = collection.get(ids=[top_id], include=['metadatas', 'documents'])
+        if result and result['ids'] and result['ids'][0] is not None:
+            # Check if document and metadata are present and not None
+            doc = result['documents'][0] if result['documents'] and result['documents'][0] is not None else None
+            meta = result['metadatas'][0] if result['metadatas'] and result['metadatas'][0] is not None else {} # Default to empty dict if no metadata
+
+            if doc is None:
+                log.warning(f"Document for TOP ID {top_id} is missing, though ID was found.")
+
+            return {
+                "id": result['ids'][0],
+                "document": doc,
+                "metadata": meta
+            }
+        log.warning(f"TOP with ID {top_id} not found or data incomplete in ChromaDB.")
+        return None
     except Exception as e:
-        log.critical(f"CRITICAL: Could not initialize ChromaDB: {e}", exc_info=True)
-        return
+        log.error(f"Error retrieving TOP ID {top_id} from ChromaDB: {e}", exc_info=True)
+        return None
 
-    json_input_dir = config.PROJECT_ROOT / config.JSON_DIR_NAME
-    log.info(f"JSON input directory set to: {json_input_dir}")
+def update_top_metadata_field(top_id: str, field_name: str, field_value: any, collection: chromadb.api.models.Collection.Collection) -> bool:
+    """Updates a specific metadata field for a TOP in ChromaDB."""
+    try:
+        current_doc = get_top_by_id(top_id, collection)
+        if not current_doc or current_doc.get('metadata') is None: # Check if metadata exists
+            log.error(f"Cannot update metadata for TOP {top_id}: Not found or metadata missing.")
+            return False
 
-    if not json_input_dir.is_dir():
-        log.error(f"JSON input directory not found: {json_input_dir}")
-        return
+        new_metadata = current_doc['metadata'].copy()
+        new_metadata[field_name] = field_value
 
-    json_files = list(json_input_dir.glob('*.json'))
-    if not json_files:
-        log.warning(f"No JSON files found in {json_input_dir}")
-        return
-
-    log.info(f"Found {len(json_files)} JSON files to process.")
-    total_added_overall = 0
-
-    for json_filepath in json_files:
-        total_added_overall += process_json_file(
-            json_filepath=json_filepath,
-            chroma_collection=chroma_collection,
-            embedding_model_name=config.OLLAMA_EMBEDDING_MODEL
+        # Ensure we only update metadatas, not trying to update documents or embeddings here unless intended
+        collection.update(
+            ids=[top_id],
+            metadatas=[new_metadata]
         )
+        log.info(f"Updated metadata field '{field_name}' for TOP ID {top_id} to '{field_value}'.")
+        return True
+    except Exception as e:
+        log.error(f"Error updating metadata field '{field_name}' for TOP ID {top_id}: {e}", exc_info=True)
+        return False
 
-    log.info(f"JSON to ChromaDB loading process finished. Total entries added overall: {total_added_overall}")
+def update_top_relevance(top_id: str, is_relevant: bool, collection: chromadb.api.models.Collection.Collection) -> bool:
+    """Sets or updates the 'is_relevant' flag for a TOP."""
+    return update_top_metadata_field(top_id, 'is_relevant', is_relevant, collection)
 
-if __name__ == "__main__":
-    print(f"Executing db_loader.py directly. Project root: {config.PROJECT_ROOT}")
-    run_json_to_chroma_loading()
+def update_top_references(top_id: str, references_top_ids: list[str], collection: chromadb.api.models.Collection.Collection) -> bool:
+    """Sets or updates the 'references_top_ids' list for a TOP."""
+    return update_top_metadata_field(top_id, 'references_top_ids', references_top_ids, collection)
+
+def update_article_generated_status(top_id: str, article_generated: bool, collection: chromadb.api.models.Collection.Collection) -> bool:
+    """Sets or updates the 'article_generated' flag for a TOP."""
+    return update_top_metadata_field(top_id, 'article_generated', article_generated, collection)
