@@ -128,8 +128,11 @@ Now, evaluate the following input:
 """
 
 # --- API Key Loading ---
-def load_google_api_key():
-    """Loads Google API Key from config.ini located in the project root."""
+# Initialize with a default value, will be overwritten by config.ini
+GOOGLE_API_CALL_DELAY_SECONDS = 5  # Default to 5 seconds
+
+def load_google_api_key_and_delay():
+    """Loads Google API Key and API call delay from config.ini located in the project root."""
     config_file_path = PROJECT_ROOT / "config.ini"
     if not config_file_path.exists():
         raise FileNotFoundError(f"Konfigurationsdatei nicht gefunden: {config_file_path}")
@@ -140,6 +143,16 @@ def load_google_api_key():
     api_key = config.get("genai", "GOOGLE_API_KEY", fallback=None)
     if not api_key:
         raise ValueError(f"GOOGLE_API_KEY fehlt in der Konfigurationsdatei! (Pfad: {config_file_path})")
+
+    # Load the API call delay, defaulting to the globally set value if not found or invalid
+    global GOOGLE_API_CALL_DELAY_SECONDS
+    try:
+        GOOGLE_API_CALL_DELAY_SECONDS = config.getint("genai", "GOOGLE_API_CALL_DELAY_SECONDS", fallback=GOOGLE_API_CALL_DELAY_SECONDS)
+    except ValueError:
+        # If the value in config.ini is not a valid integer, it will use the default.
+        # Optionally, log a warning here.
+        pass # Keep the default if conversion fails
+
     return api_key
 
 # --- ChromaDB Configuration ---

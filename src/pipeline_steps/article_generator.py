@@ -2,8 +2,10 @@ import os
 import json
 import logging
 import pathlib
+import time
 import sys
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import chromadb
 import ollama
 from src.pipeline_steps import db_loader
@@ -44,22 +46,26 @@ def get_relevant_tops_with_llm(protocol_title: str, protocol_date: str, current_
 
     log.debug(f"Sending data to LLM for TOP selection. Title: {protocol_title}, Date: {protocol_date}, TOPs count: {len(current_tops)}")
 
+    response = None
+    selected_data = None
     try:
-        response = genai_client.generate_content(
+        response = genai_client.models.generate_content( # Changed here
             model=model_name,
             contents=full_prompt_parts, # Pass as a list of parts
-            generation_config=genai.types.GenerationConfig(response_mime_type="application/json")
+            config=types.GenerateContentConfig(response_mime_type="application/json") # Changed here
         )
         # Assuming response.text contains the JSON string
         selected_data = json.loads(response.text)
         log.debug(f"Received {len(selected_data.get('tops', []))} TOPs from LLM selection for protocol {protocol_title}")
-        return selected_data
     except json.JSONDecodeError as e:
-        log.error(f"Error decoding JSON response from LLM for protocol {protocol_title}: {e}. Response text: {response.text if 'response' in locals() else 'No response object'}", exc_info=True)
-        return None
+        log.error(f"Error decoding JSON response from LLM for protocol {protocol_title}: {e}. Response text: {response.text if response else 'No response object'}", exc_info=True)
     except Exception as e:
         log.error(f"Error calling GenAI model for TOP selection for protocol {protocol_title}: {e}", exc_info=True)
-        return None
+    finally:
+        # Ensure the delay happens after the API call, regardless of success or failure
+        time.sleep(config.GOOGLE_API_CALL_DELAY_SECONDS)
+
+    return selected_data # Will be None if an exception occurred before it was set
 
 def run_article_generation():
     """
@@ -70,7 +76,7 @@ def run_article_generation():
     log.info("Starting TOP relevance update process in ChromaDB...")
 
     try:
-        genai_api_key = config.load_google_api_key()
+        genai_api_key = config.load_google_api_key_and_delay()
         genai_client = genai.Client(api_key=genai_api_key)
         log.info("Google GenAI client initialized.")
 
@@ -88,7 +94,8 @@ def run_article_generation():
 
     try:
         log.info("Fetching all TOPs from ChromaDB.")
-        results = chroma_collection.get(where=None, include=['documents', 'metadatas', 'ids'])
+        # 'ids' are typically returned by default and may not need to be (or cannot be) specified in 'include'
+        results = chroma_collection.get(where=None, include=['documents', 'metadatas'])
         log.info(f"Retrieved {len(results.get('ids', []))} TOP entries from ChromaDB.")
     except Exception as e:
         log.error(f"Error querying ChromaDB: {e}", exc_info=True)

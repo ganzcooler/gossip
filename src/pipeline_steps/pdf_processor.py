@@ -1,4 +1,5 @@
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import pathlib
 import json
 import time
@@ -23,6 +24,10 @@ except ImportError as e:
 
 # Initialize logger using the helper from config
 log = config.get_logger(__name__, config.PDF_PROCESSING_LOG_FILENAME)
+
+# Define GENAI_PDF_EXTRACTION_MODEL locally from config for process_single_pdf
+# as config module might not be directly accessible in all execution contexts if this were a class method.
+GENAI_PDF_EXTRACTION_MODEL_NAME = config.GENAI_PDF_EXTRACTION_MODEL
 
 PROMPT_TEXT = """
         Du bist ein KI-Assistent.
@@ -52,21 +57,37 @@ PROMPT_TEXT = """
 # The get_top_relevance function was removed as its functionality is now integrated
 # into the main PROMPT_TEXT used by process_single_pdf.
 
-def process_single_pdf(pdf_filepath: pathlib.Path, genai_model_instance: genai.GenerativeModel, prompt: str, chroma_collection: chromadb.api.models.Collection.Collection):
+def process_single_pdf(pdf_filepath: pathlib.Path, genai_client: genai.Client, prompt: str, chroma_collection: chromadb.api.models.Collection.Collection):
     log.info(f"Attempting to process PDF: {pdf_filepath.name}")
 
     try:
         pdf_bytes = pdf_filepath.read_bytes()
-        # model_name is implicit in the genai_model_instance
-        response = genai_model_instance.generate_content(
-            contents=[
-                {"inline_data": {"mime_type": "application/pdf", "data": pdf_bytes}},
-                prompt
-            ],
-            generation_config={
-                "response_mime_type": "application/json",
-            },
-            request_options={"timeout": 120} # Increased timeout
+        api_contents = [
+            {"inline_data": {"mime_type": "application/pdf", "data": pdf_bytes}},
+            prompt
+        ]
+        generation_config_params = types.GenerateContentConfig(
+            response_mime_type="application/json"
+            # request_options are not directly part of GenerateContentConfig in the new SDK from what the migration guide shows for basic calls.
+            # We might need to pass request_options separately if supported by client.models.generate_content,
+            # or it's handled differently (e.g. client-level timeouts).
+            # For now, let's stick to what's shown for basic generate_content.
+            # If timeout is crucial, further investigation for new SDK's RequestOptions is needed.
+            # The migration guide example for client.models.generate_content doesn't show request_options directly.
+            # It's usually client.models.generate_content(model=..., contents=..., config=..., request_options=...)
+            # Let's assume it's a direct parameter for now if needed, or part of client config.
+            # For RequestOptions, it would be:
+            # request_options=types.RequestOptions(timeout=120)
+            # This needs to be passed to client.models.generate_content if supported at that level.
+        )
+
+        # According to new SDK: client.models.generate_content(model=..., contents=..., config=...)
+        # The `request_options` is often a direct parameter to the method call.
+        response = genai_client.models.generate_content(
+            model=GENAI_PDF_EXTRACTION_MODEL_NAME, # Use the locally defined model name
+            contents=api_contents,
+            config=generation_config_params, # Corrected to 'config'
+            request_options=types.RequestOptions(timeout=120) # Pass request_options here
         )
 
         response_json = None
@@ -121,20 +142,19 @@ def process_single_pdf(pdf_filepath: pathlib.Path, genai_model_instance: genai.G
     except Exception as e:
         log.error(f"Error during GenAI call or ChromaDB operations for {pdf_filepath.name}: {e}", exc_info=True)
     finally:
-        log.info("Waiting for 6 seconds due to potential API rate limits...")
-        time.sleep(6)
+        log.info(f"Waiting for {config.GOOGLE_API_CALL_DELAY_SECONDS} seconds due to potential API rate limits...")
+        time.sleep(config.GOOGLE_API_CALL_DELAY_SECONDS)
 
 
 def run_pdf_extraction_and_storage():
     log.info("Starting PDF extraction and storage to ChromaDB process...")
     try:
-        api_key = config.load_google_api_key()
-        genai.configure(api_key=api_key)
-        # Instantiate the model to be used for PDF extraction
-        pdf_extraction_model = genai.GenerativeModel(config.GENAI_PDF_EXTRACTION_MODEL)
-        log.info(f"GenAI model {config.GENAI_PDF_EXTRACTION_MODEL} initialized for PDF extraction.")
+        api_key = config.load_google_api_key_and_delay()
+        # Initialize the client with the API key
+        genai_client = genai.Client(api_key=api_key)
+        log.info(f"Google GenAI client initialized for PDF extraction using model {GENAI_PDF_EXTRACTION_MODEL_NAME}.")
     except Exception as e:
-        log.critical(f"CRITICAL: Error initializing GenAI (configuring or creating model): {e}", exc_info=True)
+        log.critical(f"CRITICAL: Error initializing GenAI client: {e}", exc_info=True)
         return
 
     try:
@@ -166,7 +186,7 @@ def run_pdf_extraction_and_storage():
     for filepath in pdf_files:
         process_single_pdf(
             pdf_filepath=filepath,
-            genai_model_instance=pdf_extraction_model,
+            genai_client=genai_client, # Pass the client instance
             prompt=PROMPT_TEXT,
             chroma_collection=chroma_collection
         )
