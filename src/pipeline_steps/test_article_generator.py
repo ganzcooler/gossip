@@ -110,8 +110,9 @@ class TestArticleGenerator(unittest.TestCase):
     @patch('src.pipeline_steps.article_generator.db_loader.update_article_generated_status')
     @patch('src.pipeline_steps.article_generator.get_relevant_tops_with_llm')
     @patch('src.pipeline_steps.article_generator.genai.Client') # For the client instance used by run_article_generation
+    @patch('src.pipeline_steps.article_generator.ollama.embeddings') # Added
     def test_run_article_generation_updates_chromadb(
-        self, mock_genai_client_constructor, mock_get_relevant_tops_llm,
+        self, mock_ollama_embeddings, mock_genai_client_constructor, mock_get_relevant_tops_llm, # Added mock_ollama_embeddings
         mock_update_article_status, mock_update_references, mock_update_relevance,
         mock_get_top_by_id, mock_initialize_chroma, mock_config_module
     ):
@@ -120,6 +121,7 @@ class TestArticleGenerator(unittest.TestCase):
         mock_config_module.SIMILAR_DOCS_COUNT = 1 # Find 1 similar doc for simplicity
         mock_config_module.GENAI_ARTICLE_GENERATION_MODEL = "article-gen-model-for-test"
         mock_config_module.GENAI_TOPIC_SELECTION_PROMPT = "Select relevant for test: {json_data}"
+        mock_config_module.OLLAMA_EMBEDDING_MODEL = "test-ollama-model" # Added
         mock_config_module.load_google_api_key.return_value = "test_api_key"
         # PROJECT_ROOT, CHROMA_DB_DIR_NAME, CHROMA_COLLECTION_NAME will be used by initialize_chroma_collection call
         # They can be left as their defaults or mocked if specific paths are an issue.
@@ -158,6 +160,10 @@ class TestArticleGenerator(unittest.TestCase):
         # Mock for reference search results (uuid1 is self, uuid_ref is a similar doc)
         mock_chroma_collection.query.return_value = {'ids': [['uuid_ref_for_A1', 'uuid1']]}
 
+        # Mock ollama.embeddings for the query
+        mock_query_embedding = [0.4, 0.5, 0.6]
+        mock_ollama_embeddings.return_value = {"embedding": mock_query_embedding}
+
         # Mock return values for successful DB updates
         mock_update_relevance.return_value = True
         mock_update_references.return_value = True
@@ -179,8 +185,19 @@ class TestArticleGenerator(unittest.TestCase):
         mock_update_relevance.assert_any_call(top_id='uuid1', is_relevant=True, collection=mock_chroma_collection)
         mock_get_top_by_id.assert_any_call('uuid1', mock_chroma_collection) # Called to get doc for query
 
+        # Assert ollama.embeddings was called for the query
+        expected_query_doc_content = 'Doc for uuid1 Proto A' # From mock_get_top_by_id
+        mock_ollama_embeddings.assert_any_call(
+            model=mock_config_module.OLLAMA_EMBEDDING_MODEL,
+            prompt=expected_query_doc_content
+        )
+
         # Query for uuid1: n_results = SIMILAR_DOCS_COUNT (1) + 1 = 2
-        mock_chroma_collection.query.assert_any_call(query_texts=['Doc for uuid1 Proto A'], n_results=mock_config_module.SIMILAR_DOCS_COUNT + 1, include=['ids'])
+        mock_chroma_collection.query.assert_any_call(
+            query_embeddings=[mock_query_embedding],
+            n_results=mock_config_module.SIMILAR_DOCS_COUNT + 1,
+            include=['ids']
+        )
         mock_update_references.assert_any_call(top_id='uuid1', references_top_ids=['uuid_ref_for_A1'], collection=mock_chroma_collection)
         mock_update_article_status.assert_any_call(top_id='uuid1', article_generated=True, collection=mock_chroma_collection)
 

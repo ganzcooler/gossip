@@ -37,17 +37,36 @@ class TestDbLoader(unittest.TestCase):
         # No need to explicitly delete in-memory client or collection,
         # but if using PersistentClient with a temp dir, cleanup would go here.
 
-    def test_add_top_to_chromadb_and_get_top_by_id(self):
+    @patch('src.pipeline_steps.db_loader.ollama.embeddings')
+    def test_add_top_to_chromadb_and_get_top_by_id(self, mock_ollama_embeddings):
         """Test adding a TOP and retrieving it."""
         test_id = str(uuid.uuid4())
         test_doc = "This is a test document about something interesting."
         test_meta = {"protocol_title": "Test Protocol Alpha", "protocol_date": "2024-01-01", "top_number": "T1"}
 
-        # Add TOP
-        add_success = db_loader.add_top_to_chromadb(test_id, test_doc, test_meta, self.test_collection)
-        self.assertTrue(add_success)
+        mock_generated_embedding = [0.1, 0.2, 0.3] # Example
+        mock_ollama_embeddings.return_value = {"embedding": mock_generated_embedding}
 
-        # Retrieve TOP using get_top_by_id from db_loader
+        # Spy on self.test_collection.add to check arguments but still execute the real add
+        original_add = self.test_collection.add
+        with patch.object(self.test_collection, 'add', side_effect=original_add, autospec=True) as spied_collection_add:
+            add_success = db_loader.add_top_to_chromadb(test_id, test_doc, test_meta, self.test_collection)
+            self.assertTrue(add_success)
+
+            # Assert ollama.embeddings was called
+            mock_ollama_embeddings.assert_called_once_with(
+                model=config.OLLAMA_EMBEDDING_MODEL,
+                prompt=test_doc
+            )
+            # Assert self.test_collection.add was called with embeddings
+            spied_collection_add.assert_called_once_with(
+                ids=[test_id],
+                embeddings=[mock_generated_embedding],
+                documents=[test_doc],
+                metadatas=[test_meta]
+            )
+
+        # Retrieve TOP using get_top_by_id from db_loader - this should still work
         retrieved_top = db_loader.get_top_by_id(test_id, self.test_collection)
 
         self.assertIsNotNone(retrieved_top)
@@ -59,8 +78,10 @@ class TestDbLoader(unittest.TestCase):
         non_existent_id = str(uuid.uuid4())
         self.assertIsNone(db_loader.get_top_by_id(non_existent_id, self.test_collection))
 
-    def test_update_top_relevance(self):
+    @patch('src.pipeline_steps.db_loader.ollama.embeddings')
+    def test_update_top_relevance(self, mock_ollama_embeddings):
         """Test updating the 'is_relevant' metadata field."""
+        mock_ollama_embeddings.return_value = {"embedding": [0.1, 0.2, 0.3]} # Basic mock for add
         top_id = str(uuid.uuid4())
         initial_meta = {"protocol_title": "Relevance Test", "protocol_date": "2024-01-02", "top_number": "R1"}
         db_loader.add_top_to_chromadb(top_id, "Relevance document", initial_meta, self.test_collection)
@@ -80,8 +101,10 @@ class TestDbLoader(unittest.TestCase):
         # Check other metadata is preserved
         self.assertEqual(retrieved_top_false['metadata']['protocol_title'], "Relevance Test")
 
-    def test_update_top_references(self):
+    @patch('src.pipeline_steps.db_loader.ollama.embeddings')
+    def test_update_top_references(self, mock_ollama_embeddings):
         """Test updating the 'references_top_ids' metadata field."""
+        mock_ollama_embeddings.return_value = {"embedding": [0.1, 0.2, 0.3]} # Basic mock for add
         top_id = str(uuid.uuid4())
         initial_meta = {"protocol_title": "Reference Test", "protocol_date": "2024-01-03", "top_number": "REF1"}
         db_loader.add_top_to_chromadb(top_id, "Reference document", initial_meta, self.test_collection)
@@ -94,8 +117,10 @@ class TestDbLoader(unittest.TestCase):
         self.assertEqual(retrieved_top['metadata'].get('references_top_ids'), ref_ids)
         self.assertEqual(retrieved_top['metadata']['protocol_title'], "Reference Test")
 
-    def test_update_article_generated_status(self):
+    @patch('src.pipeline_steps.db_loader.ollama.embeddings')
+    def test_update_article_generated_status(self, mock_ollama_embeddings):
         """Test updating the 'article_generated' metadata field."""
+        mock_ollama_embeddings.return_value = {"embedding": [0.1, 0.2, 0.3]} # Basic mock for add
         top_id = str(uuid.uuid4())
         initial_meta = {"protocol_title": "Article Gen Test", "protocol_date": "2024-01-04", "top_number": "AG1"}
         db_loader.add_top_to_chromadb(top_id, "Article gen document", initial_meta, self.test_collection)

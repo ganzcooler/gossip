@@ -5,6 +5,7 @@ import pathlib
 import sys
 import google.generativeai as genai
 import chromadb
+import ollama
 from src.pipeline_steps import db_loader
 
 # Ensure src directory is in sys.path for config import
@@ -181,41 +182,54 @@ def run_article_generation():
                             log.warning(f"Could not fetch document for TOP {chroma_id_for_update} (Original ID: {original_top_id_from_llm}) to find references. Skipping reference finding.")
                             continue # Skip to next selected_top_from_llm
                         document_content = current_top_details['document']
-
                         num_similar_to_find = config.SIMILAR_DOCS_COUNT
-                        log.debug(f"Querying for {num_similar_to_find} similar TOPs for TOP ID {chroma_id_for_update} (Original ID: {original_top_id_from_llm})")
 
+                        query_embedding = None
                         try:
-                            query_results = chroma_collection.query(
-                                query_texts=[document_content],
-                                n_results=num_similar_to_find + 1,
-                                include=['ids']
-                            )
-                            retrieved_ids = query_results['ids'][0] if query_results and query_results.get('ids') and query_results['ids'] else []
-                        except Exception as e:
-                            log.error(f"Error querying similar TOPs for {chroma_id_for_update} (Original ID: {original_top_id_from_llm}): {e}", exc_info=True)
-                            continue # Skip to next selected_top_from_llm
+                            log.debug(f"Generating Ollama embedding for query text (TOP ID {chroma_id_for_update}, Original ID: {original_top_id_from_llm}) using model {config.OLLAMA_EMBEDDING_MODEL}...")
+                            query_embedding = ollama.embeddings(
+                                model=config.OLLAMA_EMBEDDING_MODEL,
+                                prompt=document_content
+                            )["embedding"]
+                            log.debug(f"Query embedding generated for TOP ID {chroma_id_for_update} (Original ID: {original_top_id_from_llm}).")
+                        except Exception as e_embed:
+                            log.error(f"Error generating Ollama embedding for query for TOP ID {chroma_id_for_update} (Original ID: {original_top_id_from_llm}): {e_embed}", exc_info=True)
+                            # article_generated flag will still be updated below, as reference finding is optional
 
-                        similar_top_chroma_ids = []
-                        if retrieved_ids: # Ensure there are IDs to process
-                            for found_id in retrieved_ids:
-                                if found_id == chroma_id_for_update: # Compare with the ID of the current TOP being processed
-                                    continue
-                                similar_top_chroma_ids.append(found_id)
-                                if len(similar_top_chroma_ids) >= num_similar_to_find:
-                                    break
+                        if query_embedding:
+                            try:
+                                log.debug(f"Querying ChromaDB with embedding for TOP ID {chroma_id_for_update} (Original ID: {original_top_id_from_llm})...")
+                                query_results = chroma_collection.query(
+                                    query_embeddings=[query_embedding],
+                                    n_results=num_similar_to_find + 1,
+                                    include=['ids']
+                                )
+                                retrieved_ids = query_results['ids'][0] if query_results and query_results.get('ids') and query_results['ids'] else []
 
-                        if similar_top_chroma_ids:
-                            log.info(f"Found {len(similar_top_chroma_ids)} similar TOP(s) for {chroma_id_for_update} (Original ID: {original_top_id_from_llm}): {similar_top_chroma_ids}")
-                            references_updated = db_loader.update_top_references(
-                                top_id=chroma_id_for_update, # Use the ID of the current TOP
-                                references_top_ids=similar_top_chroma_ids,
-                                collection=chroma_collection
-                            )
-                            if not references_updated:
-                                log.error(f"Failed to update references for TOP {chroma_id_for_update} (Original ID: {original_top_id_from_llm}).")
+                                similar_top_chroma_ids = []
+                                if retrieved_ids:
+                                    for found_id in retrieved_ids:
+                                        if found_id == chroma_id_for_update:
+                                            continue
+                                        similar_top_chroma_ids.append(found_id)
+                                        if len(similar_top_chroma_ids) >= num_similar_to_find:
+                                            break
+
+                                if similar_top_chroma_ids:
+                                    log.info(f"Found {len(similar_top_chroma_ids)} similar TOP(s) for {chroma_id_for_update} (Original ID: {original_top_id_from_llm}): {similar_top_chroma_ids}")
+                                    references_updated = db_loader.update_top_references(
+                                        top_id=chroma_id_for_update,
+                                        references_top_ids=similar_top_chroma_ids,
+                                        collection=chroma_collection
+                                    )
+                                    if not references_updated:
+                                        log.error(f"Failed to update references for TOP {chroma_id_for_update} (Original ID: {original_top_id_from_llm}).")
+                                else:
+                                    log.info(f"No distinct similar TOPs found for {chroma_id_for_update} (Original ID: {original_top_id_from_llm}) after processing query results.")
+                            except Exception as e_query:
+                                log.error(f"Error querying similar TOPs with embedding for {chroma_id_for_update} (Original ID: {original_top_id_from_llm}): {e_query}", exc_info=True)
                         else:
-                            log.info(f"No distinct similar TOPs found for {chroma_id_for_update} (Original ID: {original_top_id_from_llm})")
+                            log.warning(f"Skipping ChromaDB query for references for TOP ID {chroma_id_for_update} (Original ID: {original_top_id_from_llm}) because query embedding generation failed.")
                         # --- End of new logic for references ---
 
                         # --- New logic for article_generated flag starts here ---

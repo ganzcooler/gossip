@@ -2,6 +2,7 @@ import logging
 import pathlib
 import sys
 import chromadb
+import ollama
 
 # Ensure src directory is in sys.path for config import
 project_root_for_import = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -33,16 +34,23 @@ def initialize_chroma_collection(db_path_name: str, collection_name: str, projec
 def add_top_to_chromadb(top_id: str, document: str, metadata: dict, collection: chromadb.api.models.Collection.Collection):
     """Adds a single TOP document to the ChromaDB collection."""
     try:
-        # ChromaDB automatically generates embeddings if they are not provided
+        log.debug(f"Generating Ollama embedding for TOP ID {top_id} using model {config.OLLAMA_EMBEDDING_MODEL}...")
+        embedding = ollama.embeddings(
+            model=config.OLLAMA_EMBEDDING_MODEL,
+            prompt=document
+        )["embedding"]
+        log.debug(f"Embedding generated successfully for TOP ID {top_id}.")
+
         collection.add(
             ids=[top_id],
+            embeddings=[embedding], # Add this line
             documents=[document],
             metadatas=[metadata]
         )
         log.info(f"Added TOP with ID {top_id} to ChromaDB.")
         return True
     except Exception as e:
-        log.error(f"Error adding TOP ID {top_id} to ChromaDB: {e}", exc_info=True)
+        log.error(f"Error adding TOP ID {top_id} to ChromaDB (embedding or add failed): {e}", exc_info=True)
         return False
 
 def get_top_by_id(top_id: str, collection: chromadb.api.models.Collection.Collection) -> dict | None:
