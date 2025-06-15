@@ -1,94 +1,149 @@
 import unittest
-from unittest.mock import patch, MagicMock, call # Ensure 'call' is imported
+from unittest.mock import patch, MagicMock, call
 import pathlib
-import json
-import tempfile
 import sys
-import time # Keep time for the sleep mock if process_single_pdf still has it
+import uuid # Added
+import json # Added for json.dumps in test
+import chromadb # Added for type hinting
 
 # Add project root to sys.path to allow src imports
 project_root_for_test = pathlib.Path(__file__).resolve().parent.parent.parent
 if str(project_root_for_test) not in sys.path:
     sys.path.insert(0, str(project_root_for_test))
 
-from src.pipeline_steps.pdf_processor import process_single_pdf, PROMPT_TEXT as PDF_PROCESSOR_PROMPT_TEXT
-from src import config # For accessing config.GENAI_TOP_RELEVANCE_PROMPT
+# Import the functions and variables to be tested
+from src.pipeline_steps.pdf_processor import process_single_pdf, run_pdf_extraction_and_storage, PROMPT_TEXT as PDF_PROCESSOR_PROMPT_TEXT
+from src import config # For accessing config constants in assertions
 
-class TestPDFProcessorRelevance(unittest.TestCase):
+# db_loader is imported by pdf_processor, so we will patch it there.
+
+class TestPDFProcessingAndChromaIngestion(unittest.TestCase):
 
     @patch('src.pipeline_steps.pdf_processor.time.sleep')
     @patch('src.pipeline_steps.pdf_processor.pathlib.Path.read_bytes')
-    # Removed @patch for get_top_relevance as it's no longer called
     @patch('src.pipeline_steps.pdf_processor.genai.GenerativeModel')
-    def test_relevance_added_to_tops(self, MockGenerativeModel, mock_read_bytes, mock_time_sleep): # mock_get_top_relevance removed
-        # 0. Mock time.sleep to avoid delays during testing
+    @patch('src.pipeline_steps.pdf_processor.uuid.uuid4')
+    @patch('src.pipeline_steps.pdf_processor.db_loader') # Mocking the db_loader module used by pdf_processor
+    def test_process_single_pdf_extracts_and_adds_to_chroma(
+        self, mock_db_loader, mock_uuid, MockGenerativeModel, mock_read_bytes, mock_time_sleep
+    ):
+        # 0. Mock time.sleep
         mock_time_sleep.return_value = None
 
-        # 1. Setup mock GenAI Model instance for PDF extraction
+        # 1. Setup mock GenAI Model instance
         mock_model_instance = MockGenerativeModel.return_value
-
-        mock_llm_extraction_response = MagicMock()
-        # The initial LLM call is now expected to return the 'relevant' field directly
-        initial_extraction_data = {
-            "title": "Test Committee",
-            "datum": "2024-01-01",
+        llm_response_data = {
+            "title": "Test Protocol",
+            "datum": "2023-07-15",
             "tops": [
-                {"top_id": "1", "content": "Content for TOP 1 that is relevant", "relevant": True},
-                {"top_id": "2", "content": "Content for TOP 2 that is not relevant", "relevant": False}
+                {"top_id": "1.a", "content": "Content for TOP 1.a"},
+                {"top_id": "2", "content": "Content for TOP 2"}
             ]
         }
-        mock_llm_extraction_response.text = json.dumps(initial_extraction_data)
-        mock_model_instance.generate_content.return_value = mock_llm_extraction_response
+        mock_llm_response = MagicMock()
+        mock_llm_response.text = json.dumps(llm_response_data)
+        mock_model_instance.generate_content.return_value = mock_llm_response
 
-        # 2. get_top_relevance is no longer called, so no mock setup needed for it here.
-
-        # 3. Mock PDF file interactions
+        # 2. Mock PDF file interactions
         mock_read_bytes.return_value = b"dummy pdf content"
+        pdf_filepath = MagicMock(spec=pathlib.Path)
+        pdf_filepath.name = "dummy_protocol.pdf"
+        pdf_filepath.stem = "dummy_protocol" # Though stem is not used in new version
 
-        # 4. Use TemporaryDirectory for json_output_dir
-        with tempfile.TemporaryDirectory() as tmpdir:
-            json_output_dir = pathlib.Path(tmpdir)
-            # Create a dummy pdf_filepath object, ensuring it has a 'stem' attribute
-            pdf_filepath = MagicMock(spec=pathlib.Path)
-            pdf_filepath.name = "dummy_protocol.pdf"
-            pdf_filepath.stem = "dummy_protocol"
+        # 3. Mock UUID generation
+        mock_uuid.side_effect = [
+            uuid.UUID('11111111-1111-1111-1111-111111111111'),
+            uuid.UUID('22222222-2222-2222-2222-222222222222')
+        ]
 
-            # Ensure read_bytes is associated with this specific mock path object if needed by patching Path constructor
-            # For now, the direct patch on 'src.pipeline_steps.pdf_processor.pathlib.Path.read_bytes' should be global enough.
+        # 4. Mock ChromaDB collection
+        mock_chroma_collection = MagicMock(spec=chromadb.api.models.Collection.Collection)
+        # Mock the return of add_top_to_chromadb to simulate success
+        mock_db_loader.add_top_to_chromadb.return_value = True
 
-            # 5. Call process_single_pdf
-            process_single_pdf(
-                pdf_filepath=pdf_filepath,
-                json_output_dir=json_output_dir,
-                genai_model_instance=mock_model_instance, # Pass the mocked model instance
-                prompt=PDF_PROCESSOR_PROMPT_TEXT # Use the imported prompt
+
+        # 5. Call process_single_pdf
+        process_single_pdf(
+            pdf_filepath=pdf_filepath,
+            genai_model_instance=mock_model_instance,
+            prompt=PDF_PROCESSOR_PROMPT_TEXT,
+            chroma_collection=mock_chroma_collection
+        )
+
+        # 6. Assertions
+        mock_model_instance.generate_content.assert_called_once()
+        # Check arguments of generate_content if necessary, e.g. prompt used
+
+        expected_calls_to_db = [
+            call(
+                top_id='11111111-1111-1111-1111-111111111111',
+                document="Content for TOP 1.a",
+                metadata={"protocol_title": "Test Protocol", "protocol_date": "2023-07-15", "top_number": "1.a"},
+                collection=mock_chroma_collection
+            ),
+            call(
+                top_id='22222222-2222-2222-2222-222222222222',
+                document="Content for TOP 2",
+                metadata={"protocol_title": "Test Protocol", "protocol_date": "2023-07-15", "top_number": "2"},
+                collection=mock_chroma_collection
             )
+        ]
+        mock_db_loader.add_top_to_chromadb.assert_has_calls(expected_calls_to_db, any_order=False)
+        self.assertEqual(mock_db_loader.add_top_to_chromadb.call_count, 2)
+        mock_time_sleep.assert_called_once() # Ensure sleep was called
 
-            # 6. Assertions
-            output_json_path = json_output_dir / (pdf_filepath.stem + '.json')
-            self.assertTrue(output_json_path.exists(), f"Output JSON file not found at {output_json_path}")
 
-            with open(output_json_path, 'r', encoding='utf-8') as f:
-                saved_data = json.load(f)
+    @patch('src.pipeline_steps.pdf_processor.config.load_google_api_key')
+    @patch('src.pipeline_steps.pdf_processor.genai.configure')
+    @patch('src.pipeline_steps.pdf_processor.genai.GenerativeModel')
+    @patch('src.pipeline_steps.pdf_processor.db_loader.initialize_chroma_collection')
+    @patch('src.pipeline_steps.pdf_processor.process_single_pdf')
+    @patch('src.pipeline_steps.pdf_processor.pathlib.Path.glob')
+    @patch('src.pipeline_steps.pdf_processor.config.PROJECT_ROOT', new_callable=MagicMock(spec=pathlib.Path)) # Mock project root
+    def test_run_pdf_extraction_and_storage(
+        self, mock_project_root, mock_glob, mock_process_single_pdf,
+        mock_initialize_chroma, MockGenerativeModel, mock_genai_configure, mock_load_google_api_key
+    ):
+        # 1. Mock config values and setup
+        mock_load_google_api_key.return_value = "dummy_key"
+        # Mock PROJECT_ROOT to control pdf_dir path
+        dummy_pdf_dir = MagicMock(spec=pathlib.Path)
+        dummy_pdf_dir.is_dir.return_value = True # Ensure pdf_dir is seen as a directory
+        mock_project_root / config.PDF_DIR_NAME = dummy_pdf_dir # Simulate path concatenation
 
-            self.assertEqual(saved_data.get('title'), "Test Committee")
-            self.assertIn('tops', saved_data)
-            self.assertEqual(len(saved_data['tops']), 2)
+        mock_model_instance = MockGenerativeModel.return_value
+        mock_chroma_collection_instance = MagicMock(spec=chromadb.api.models.Collection.Collection)
+        mock_initialize_chroma.return_value = mock_chroma_collection_instance
 
-            top1_data = saved_data['tops'][0]
-            top2_data = saved_data['tops'][1]
+        mock_pdf_file1 = MagicMock(spec=pathlib.Path, name="file1.pdf")
+        mock_pdf_file2 = MagicMock(spec=pathlib.Path, name="file2.pdf")
+        # Configure the mock for pdf_dir.glob
+        (mock_project_root / config.PDF_DIR_NAME).glob.return_value = [mock_pdf_file1, mock_pdf_file2]
 
-            self.assertEqual(top1_data.get('content'), "Content for TOP 1 that is relevant")
-            self.assertTrue(top1_data.get('relevant'))
 
-            self.assertEqual(top2_data.get('content'), "Content for TOP 2 that is not relevant")
-            self.assertFalse(top2_data.get('relevant'))
+        # 2. Call run_pdf_extraction_and_storage
+        run_pdf_extraction_and_storage()
 
-            # Assertions for get_top_relevance calls are removed as it's no longer called.
+        # 3. Assertions
+        mock_load_google_api_key.assert_called_once()
+        mock_genai_configure.assert_called_once_with(api_key="dummy_key")
+        MockGenerativeModel.assert_called_once_with(config.GENAI_PDF_EXTRACTION_MODEL)
 
-            # Verify that the main LLM call for extraction happened once on the mock_model_instance.
-            self.assertEqual(mock_model_instance.generate_content.call_count, 1)
+        # Use the mocked config.PROJECT_ROOT for assertion if it's passed to initialize_chroma_collection
+        mock_initialize_chroma.assert_called_once_with(
+            db_path_name=config.CHROMA_DB_DIR_NAME,
+            collection_name=config.CHROMA_COLLECTION_NAME,
+            project_root=mock_project_root # Ensure this matches how it's called
+        )
 
+        (mock_project_root / config.PDF_DIR_NAME).glob.assert_called_once_with('*.pdf')
+
+        expected_process_calls = [
+            call(pdf_filepath=mock_pdf_file1, genai_model_instance=mock_model_instance, prompt=PDF_PROCESSOR_PROMPT_TEXT, chroma_collection=mock_chroma_collection_instance),
+            call(pdf_filepath=mock_pdf_file2, genai_model_instance=mock_model_instance, prompt=PDF_PROCESSOR_PROMPT_TEXT, chroma_collection=mock_chroma_collection_instance)
+        ]
+        mock_process_single_pdf.assert_has_calls(expected_process_calls, any_order=True) # Order might not be guaranteed by glob
+        self.assertEqual(mock_process_single_pdf.call_count, 2)
 
 if __name__ == '__main__':
     unittest.main(argv=['first-arg-is-ignored'], exit=False)

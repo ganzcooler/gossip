@@ -8,7 +8,6 @@ sys.path.insert(0, str(project_root))
 
 try:
     from src.pipeline_steps import pdf_processor
-    from src.pipeline_steps import db_loader
     from src.pipeline_steps import article_generator
     from src import config # To initialize logging or access other configs if needed directly
 except ImportError as e:
@@ -21,8 +20,8 @@ def main():
     parser = argparse.ArgumentParser(description='Run individual steps of the data processing pipeline.')
     parser.add_argument(
         'step',
-        choices=['pdf_to_json', 'json_to_db', 'generate_articles', 'all'],
-        help='The pipeline step to execute. "all" runs all steps in sequence.'
+        choices=['process_pdfs', 'generate_articles', 'all'],
+        help='The pipeline step to execute: "process_pdfs" (extracts from PDFs and stores in DB), "generate_articles", or "all" to run all steps in sequence.'
     )
     parser.add_argument(
         '--start_date',
@@ -44,20 +43,16 @@ def main():
 
     print(f"Executing step: {args.step}")
 
-    if args.step == 'pdf_to_json':
-        pdf_processor.run_pdf_to_json_conversion()
-    elif args.step == 'json_to_db':
-        db_loader.run_json_to_chroma_loading()
+    if args.step == 'process_pdfs':
+        pdf_processor.run_pdf_extraction_and_storage()
     elif args.step == 'generate_articles':
         article_generator.run_article_generation(
             start_date=args.start_date,
             end_date=args.end_date
         )
     elif args.step == 'all':
-        print("Running step: pdf_to_json")
-        pdf_processor.run_pdf_to_json_conversion()
-        print("Running step: json_to_db")
-        db_loader.run_json_to_chroma_loading()
+        print("Running step: process_pdfs")
+        pdf_processor.run_pdf_extraction_and_storage()
         print("Running step: generate_articles")
         article_generator.run_article_generation(
             start_date=args.start_date,

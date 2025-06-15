@@ -13,16 +13,14 @@ DEFAULT_LOG_LEVEL = logging.INFO
 # --- Directory Names ---
 # These are relative to PROJECT_ROOT
 PDF_DIR_NAME = "pdf_files"
-JSON_DIR_NAME = "json-files"
-FILTERED_JSON_DIR_NAME = "filtered_json_files"
 CHROMA_DB_DIR_NAME = "chroma_db"
 ARTICLES_DIR_NAME = "articles"
 
 # --- Log File Names ---
 # These are relative to PROJECT_ROOT in a "logs" subdirectory
 LOG_DIR_NAME = "logs" # All logs will go into a "logs" subdirectory at project root
-PDF_TO_JSON_LOG_FILENAME = LOG_DIR_NAME + "/pdf-to-json.log"
-JSON_TO_CHROMA_LOG_FILENAME = LOG_DIR_NAME + "/json-to-chroma.log"
+PDF_PROCESSING_LOG_FILENAME = LOG_DIR_NAME + "/pdf-processing.log"
+CHROMA_DB_UTILS_LOG_FILENAME = LOG_DIR_NAME + "/chromadb-utils.log"
 CHROMA_TO_ARTICLES_LOG_FILENAME = LOG_DIR_NAME + "/chroma-to-articles.log"
 
 # --- Model Names ---

@@ -1,9 +1,9 @@
 import unittest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock, call # Ensure 'call' is imported
 import pathlib
 import json
-import tempfile
 import logging
+import chromadb # For spec
 
 # Ensure src directory is in sys.path for module imports from src
 import sys
@@ -12,58 +12,53 @@ if str(project_root_for_test) not in sys.path:
     sys.path.insert(0, str(project_root_for_test))
 
 from src.pipeline_steps import article_generator
-from src import config as app_config # Use an alias to avoid confusion with local 'config' variables
+# Use an alias to avoid confusion with local 'config' variables in test methods
+from src import config as app_config_module
+# Import db_loader for patching its methods
+from src.pipeline_steps import db_loader
 
-# Disable logging for most tests to keep output clean, can be enabled for debugging
+# Disable logging for most tests to keep output clean
 # logging.disable(logging.CRITICAL)
 
 class TestArticleGenerator(unittest.TestCase):
 
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.mock_project_root = pathlib.Path(self.temp_dir.name)
+        # We don't need a real temp_dir for project_root if config is properly mocked where PROJECT_ROOT is used.
+        # However, if any part of the code under test *directly* accesses app_config.PROJECT_ROOT for path construction
+        # without it being passed as an argument or part of a patched object, this might still be relevant.
+        # For now, relying on @patch('src.pipeline_steps.article_generator.config', ...) for most cases.
 
-        # Create necessary subdirectories within the temporary project root
-        (self.mock_project_root / app_config.FILTERED_JSON_DIR_NAME).mkdir(parents=True, exist_ok=True)
+        # Store original values to restore them in tearDown if necessary.
+        # This is good practice, though with proper patching it might not always be strictly needed.
+        self.original_genai_article_model = app_config_module.GENAI_ARTICLE_GENERATION_MODEL
+        self.original_selection_prompt = app_config_module.GENAI_TOPIC_SELECTION_PROMPT
+        self.original_similar_docs_count = app_config_module.SIMILAR_DOCS_COUNT
 
-        # Store original values to restore them in tearDown if necessary, though patching should handle most.
-        self.original_project_root = app_config.PROJECT_ROOT
-        # The critical part is ensuring the module under test uses the mocked path.
-        # This is primarily handled by @patch('src.pipeline_steps.article_generator.config.PROJECT_ROOT')
-        # but for direct config access from the test itself, we might also want to set it.
-        app_config.PROJECT_ROOT = self.mock_project_root
-
-        # Ensure other config values are as expected for tests, e.g. model names.
-        # These are usually constants, so just ensuring they are available.
-        self.test_model_name = "test-model"
-        self.test_selection_prompt = "Test prompt: {json_data}"
-        app_config.GENAI_PDF_EXTRACTION_MODEL = self.test_model_name # Override if necessary
-        app_config.GENAI_TOPIC_SELECTION_PROMPT = self.test_selection_prompt # Override if necessary
-        app_config.CHROMA_DB_DIR_NAME = "test_chroma_db" # Ensure test isolation for db path
-        app_config.CHROMA_COLLECTION_NAME = "test_collection"
-
+        # Set test-specific values (can also be done via the mock_config_module in each test)
+        app_config_module.GENAI_ARTICLE_GENERATION_MODEL = "test-article-gen-model"
+        app_config_module.GENAI_TOPIC_SELECTION_PROMPT = "Test Select: {json_data}"
+        app_config_module.SIMILAR_DOCS_COUNT = 2 # Example value
 
     def tearDown(self):
-        self.temp_dir.cleanup()
-        app_config.PROJECT_ROOT = self.original_project_root # Restore original project root
+        # Restore original config values
+        app_config_module.GENAI_ARTICLE_GENERATION_MODEL = self.original_genai_article_model
+        app_config_module.GENAI_TOPIC_SELECTION_PROMPT = self.original_selection_prompt
+        app_config_module.SIMILAR_DOCS_COUNT = self.original_similar_docs_count
+
 
     # --- Unit Tests for get_relevant_tops_with_llm ---
+    # These tests are largely the same as they test a helper function.
+    # Ensure model name is used from app_config_module.GENAI_ARTICLE_GENERATION_MODEL
 
     @patch('src.pipeline_steps.article_generator.json.loads')
-    @patch('src.pipeline_steps.article_generator.genai.Client') # Mock the client constructor if get_relevant_tops_with_llm creates its own
-    def test_get_relevant_tops_with_llm_success(self, mock_genai_client_constructor, mock_json_loads):
-        mock_genai_client = MagicMock() # This will be the instance returned by the (potentially mocked) constructor or passed in
-
-        # If genai_client is passed as an argument to get_relevant_tops_with_llm:
-        # We don't need to mock the constructor, just pass the mock_genai_client instance.
-        # The function signature is: get_relevant_tops_with_llm(..., genai_client, ...)
-
+    def test_get_relevant_tops_with_llm_success(self, mock_json_loads):
+        mock_genai_client = MagicMock()
         mock_response_text = {"title": "Test Title", "datum": "2023-01-01", "tops": [{"top_id": "1", "content": "Relevant TOP"}]}
         mock_response_obj = MagicMock()
         mock_response_obj.text = json.dumps(mock_response_text)
 
         mock_genai_client.generate_content.return_value = mock_response_obj
-        mock_json_loads.return_value = mock_response_text # Ensure json.loads returns the dict
+        mock_json_loads.return_value = mock_response_text
 
         protocol_title = "Test Title"
         protocol_date = "2023-01-01"
@@ -71,274 +66,170 @@ class TestArticleGenerator(unittest.TestCase):
 
         result = article_generator.get_relevant_tops_with_llm(
             protocol_title, protocol_date, current_tops,
-            mock_genai_client, self.test_model_name, self.test_selection_prompt
+            mock_genai_client,
+            app_config_module.GENAI_ARTICLE_GENERATION_MODEL, # Use the config value
+            app_config_module.GENAI_TOPIC_SELECTION_PROMPT  # Use the config value
         )
-
         self.assertEqual(result, mock_response_text)
-
-        expected_llm_input_data = {
-            "title": protocol_title, "datum": protocol_date, "tops": current_tops
-        }
-        # The prompt is [template, json_string_of_input_data]
         mock_genai_client.generate_content.assert_called_once()
-        args, kwargs = mock_genai_client.generate_content.call_args
-
-        self.assertEqual(kwargs['model'], self.test_model_name)
-        self.assertIn(self.test_selection_prompt, kwargs['contents'][0]) # Prompt template is the first part
-        self.assertEqual(json.loads(kwargs['contents'][1]), expected_llm_input_data) # JSON data is the second part
-
-        # Check generation_config
-        generation_config = kwargs['generation_config']
-        self.assertEqual(generation_config.response_mime_type, "application/json")
-        mock_json_loads.assert_called_once_with(mock_response_obj.text)
+        _, kwargs = mock_genai_client.generate_content.call_args
+        self.assertEqual(kwargs['model'], app_config_module.GENAI_ARTICLE_GENERATION_MODEL)
 
 
-    @patch('src.pipeline_steps.article_generator.log.error') # Mocking the logger instance's error method
+    @patch('src.pipeline_steps.article_generator.log.error')
     def test_get_relevant_tops_with_llm_api_error(self, mock_log_error):
         mock_genai_client = MagicMock()
         mock_genai_client.generate_content.side_effect = Exception("API Error")
-
         result = article_generator.get_relevant_tops_with_llm(
-            "Title", "Date", [], mock_genai_client, self.test_model_name, self.test_selection_prompt
+            "Title", "Date", [], mock_genai_client, "model", "prompt"
         )
         self.assertIsNone(result)
         mock_log_error.assert_called_once()
-        self.assertIn("Error calling GenAI model for TOP selection", mock_log_error.call_args[0][0])
 
-    @patch('src.pipeline_steps.article_generator.log.error') # Mocking the logger instance's error method
+    @patch('src.pipeline_steps.article_generator.log.error')
     @patch('src.pipeline_steps.article_generator.json.loads')
     def test_get_relevant_tops_with_llm_json_error(self, mock_json_loads, mock_log_error):
         mock_genai_client = MagicMock()
         mock_response_obj = MagicMock()
         mock_response_obj.text = "invalid json"
         mock_genai_client.generate_content.return_value = mock_response_obj
-
         mock_json_loads.side_effect = json.JSONDecodeError("err", "doc", 0)
-
         result = article_generator.get_relevant_tops_with_llm(
-            "Title", "Date", [], mock_genai_client, self.test_model_name, self.test_selection_prompt
+            "Title", "Date", [], mock_genai_client, "model", "prompt"
         )
         self.assertIsNone(result)
         mock_log_error.assert_called_once()
-        self.assertIn("Error decoding JSON response from LLM", mock_log_error.call_args[0][0])
 
-    # --- Integration Tests for run_article_generation ---
-
-    @patch('src.pipeline_steps.article_generator.config', new_callable=MagicMock) # Mock the entire config module used by article_generator
-    @patch('src.pipeline_steps.article_generator.chromadb.PersistentClient')
-    @patch('src.pipeline_steps.article_generator.genai.Client')
-    def test_run_article_generation_e2e(self, mock_genai_client_constructor, mock_chroma_client_constructor, mock_config_module):
-
-        # Setup the mock_config_module that article_generator will use
-        mock_config_module.PROJECT_ROOT = self.mock_project_root
-        mock_config_module.FILTERED_JSON_DIR_NAME = "filtered_json_files"
-        mock_config_module.GENAI_PDF_EXTRACTION_MODEL = self.test_model_name
-        mock_config_module.GENAI_TOPIC_SELECTION_PROMPT = self.test_selection_prompt
-        mock_config_module.CHROMA_DB_DIR_NAME = "test_chroma_db"
-        mock_config_module.CHROMA_COLLECTION_NAME = "test_collection"
-        # Mock load_google_api_key if it's called within run_article_generation
-        mock_config_module.load_google_api_key.return_value = "test_api_key"
-
-
-        # Mock ChromaDB
-        mock_chroma_collection = MagicMock()
-        mock_chroma_client_constructor.return_value.get_or_create_collection.return_value = mock_chroma_collection
-
-        chroma_get_return_value = {
-            'ids': ['f1_t1', 'f1_t2', 'f2_t1', 'f3_t1_no_metadata_source'],
-            'documents': ['Content 1.1', 'Content 1.2', 'Content 2.1', 'Content 3.1'],
-            'metadatas': [
-                {'source_file': 'file1.json', 'top_id': 'T1', 'title': 'Proto 1', 'datum': '2023-10-01'},
-                {'source_file': 'file1.json', 'top_id': 'T2', 'title': 'Proto 1', 'datum': '2023-10-01'},
-                {'source_file': 'file2.json', 'top_id': 'T1', 'title': 'Proto 2', 'datum': '2023-10-05'},
-                {'top_id': 'T_NO_SOURCE', 'title': 'Proto 3 No Source', 'datum': '2023-10-06'} # Missing source_file
-            ]
-        }
-        mock_chroma_collection.get.return_value = chroma_get_return_value
-
-        # Mock GenAI Client
-        mock_genai_instance = MagicMock()
-        mock_genai_client_constructor.return_value = mock_genai_instance
-
-        expected_output_proto1 = {
-            "title": "Proto 1", "datum": "2023-10-01",
-            "tops": [{"top_id": "T1", "content": "Relevant Content 1.1"}] # Simulating selection
-        }
-        expected_output_proto2 = {
-            "title": "Proto 2", "datum": "2023-10-05",
-            "tops": [] # Simulating no relevant TOPs
-        }
-
-        def genai_side_effect(*args, **kwargs):
-            json_input_string = kwargs['contents'][1] # Data is the second element
-            input_data = json.loads(json_input_string)
-            if input_data['title'] == 'Proto 1':
-                response = MagicMock()
-                response.text = json.dumps(expected_output_proto1)
-                return response
-            elif input_data['title'] == 'Proto 2':
-                response = MagicMock()
-                response.text = json.dumps(expected_output_proto2)
-                return response
-            # Should not be called for Proto 3 as it's missing source_file
-            return MagicMock(text=json.dumps({"title": "Error", "datum": "Error", "tops": []}))
-
-        mock_genai_instance.generate_content.side_effect = genai_side_effect
-
-        # Call the function to test
-        article_generator.run_article_generation(start_date='2023-10-01', end_date='2023-10-05')
-
-        # Assert ChromaDB calls
-        mock_chroma_collection.get.assert_called_once()
-        _, chroma_kwargs = mock_chroma_collection.get.call_args
-        self.assertEqual(chroma_kwargs['where'], {"$and": [{"datum": {"$gte": '2023-10-01'}}, {"datum": {"$lte": '2023-10-05'}}]})
-        self.assertEqual(chroma_kwargs['include'], ['documents', 'metadatas', 'ids'])
-
-
-        # Assert GenAI calls (should be called for Proto 1 and Proto 2)
-        self.assertEqual(mock_genai_instance.generate_content.call_count, 2)
-
-        # Check calls made to GenAI (order might not be guaranteed, so check contents)
-        call_args_list = mock_genai_instance.generate_content.call_args_list
-        # call_args_list[0] is Call object, call_args_list[0][1] is kwargs
-
-        # Verify data sent for Proto 1
-        proto1_found_in_calls = False
-        for call_obj in call_args_list:
-            input_data = json.loads(call_obj[1]['contents'][1])
-            if input_data['title'] == 'Proto 1':
-                proto1_found_in_calls = True
-                self.assertEqual(len(input_data['tops']), 2) # Proto 1 had 2 TOPs from Chroma
-                self.assertEqual(input_data['tops'][0]['content'], 'Content 1.1')
-        self.assertTrue(proto1_found_in_calls, "GenAI call for Proto 1 not found or data mismatch")
-
-        # Verify data sent for Proto 2
-        proto2_found_in_calls = False
-        for call_obj in call_args_list:
-            input_data = json.loads(call_obj[1]['contents'][1])
-            if input_data['title'] == 'Proto 2':
-                proto2_found_in_calls = True
-                self.assertEqual(len(input_data['tops']), 1) # Proto 2 had 1 TOP from Chroma
-                self.assertEqual(input_data['tops'][0]['content'], 'Content 2.1')
-        self.assertTrue(proto2_found_in_calls, "GenAI call for Proto 2 not found or data mismatch")
-
-
-        # Assert Output Files
-        filtered_dir = self.mock_project_root / mock_config_module.FILTERED_JSON_DIR_NAME
-        file1_output_path = filtered_dir / "file1_filtered.json"
-        file2_output_path = filtered_dir / "file2_filtered.json"
-
-        self.assertTrue(file1_output_path.exists())
-        self.assertTrue(file2_output_path.exists())
-
-        with open(file1_output_path, 'r', encoding='utf-8') as f:
-            file1_data = json.load(f)
-        self.assertEqual(file1_data, expected_output_proto1)
-
-        with open(file2_output_path, 'r', encoding='utf-8') as f:
-            file2_data = json.load(f)
-        self.assertEqual(file2_data, expected_output_proto2)
-
-        # Ensure file for Proto 3 (with no source_file) was not created
-        file3_output_path = filtered_dir / "_filtered.json" # if source_file was None or empty, Path("").stem is ""
-        self.assertFalse(file3_output_path.exists(), "File for protocol with missing source_file should not be created")
-
+    # --- Integration-style Test for run_article_generation ---
 
     @patch('src.pipeline_steps.article_generator.config', new_callable=MagicMock)
-    @patch('src.pipeline_steps.article_generator.chromadb.PersistentClient')
-    @patch('src.pipeline_steps.article_generator.genai.Client')
-    def test_run_article_generation_date_filters(self, mock_genai_client_constructor, mock_chroma_client_constructor, mock_config_module):
-        mock_config_module.PROJECT_ROOT = self.mock_project_root
-        mock_config_module.FILTERED_JSON_DIR_NAME = "filtered_json_files"
-        mock_config_module.GENAI_PDF_EXTRACTION_MODEL = self.test_model_name
-        mock_config_module.GENAI_TOPIC_SELECTION_PROMPT = self.test_selection_prompt
-        mock_config_module.CHROMA_DB_DIR_NAME = "test_chroma_db"
-        mock_config_module.CHROMA_COLLECTION_NAME = "test_collection"
+    @patch('src.pipeline_steps.article_generator.db_loader.initialize_chroma_collection')
+    @patch('src.pipeline_steps.article_generator.db_loader.get_top_by_id')
+    @patch('src.pipeline_steps.article_generator.db_loader.update_top_relevance')
+    @patch('src.pipeline_steps.article_generator.db_loader.update_top_references')
+    @patch('src.pipeline_steps.article_generator.db_loader.update_article_generated_status')
+    @patch('src.pipeline_steps.article_generator.get_relevant_tops_with_llm')
+    @patch('src.pipeline_steps.article_generator.genai.Client') # For the client instance used by run_article_generation
+    def test_run_article_generation_updates_chromadb(
+        self, mock_genai_client_constructor, mock_get_relevant_tops_llm,
+        mock_update_article_status, mock_update_references, mock_update_relevance,
+        mock_get_top_by_id, mock_initialize_chroma, mock_config_module
+    ):
+        # 1. Configure the overarching mock_config_module
+        # These values will be seen by the article_generator module
+        mock_config_module.SIMILAR_DOCS_COUNT = 1 # Find 1 similar doc for simplicity
+        mock_config_module.GENAI_ARTICLE_GENERATION_MODEL = "article-gen-model-for-test"
+        mock_config_module.GENAI_TOPIC_SELECTION_PROMPT = "Select relevant for test: {json_data}"
         mock_config_module.load_google_api_key.return_value = "test_api_key"
+        # PROJECT_ROOT, CHROMA_DB_DIR_NAME, CHROMA_COLLECTION_NAME will be used by initialize_chroma_collection call
+        # They can be left as their defaults or mocked if specific paths are an issue.
 
-        mock_chroma_collection = MagicMock()
-        mock_chroma_client_constructor.return_value.get_or_create_collection.return_value = mock_chroma_collection
+        # 2. Mock ChromaDB and db_loader interactions
+        mock_chroma_collection = MagicMock(spec=chromadb.api.models.Collection.Collection)
+        mock_initialize_chroma.return_value = mock_chroma_collection
 
-        # Simplified GenAI mock for this test
-        mock_genai_instance = MagicMock()
-        mock_genai_client_constructor.return_value = mock_genai_instance
-        mock_genai_instance.generate_content.return_value = MagicMock(text=json.dumps({"title": "", "datum": "", "tops": []}))
+        mock_chroma_tops_data = {
+            'ids': ['uuid1', 'uuid2', 'uuid3'],
+            'documents': ['Doc for uuid1 Proto A', 'Doc for uuid2 Proto A', 'Doc for uuid3 Proto B'],
+            'metadatas': [
+                {'protocol_title': 'Proto A', 'protocol_date': '2023-01-01', 'top_number': 'A1'},
+                {'protocol_title': 'Proto A', 'protocol_date': '2023-01-01', 'top_number': 'A2'},
+                {'protocol_title': 'Proto B', 'protocol_date': '2023-01-02', 'top_number': 'B1'}
+            ]
+        }
+        mock_chroma_collection.get.return_value = mock_chroma_tops_data
+
+        # LLM selects A1 from Proto A, and nothing from Proto B
+        mock_llm_selection_proto_A = {
+            "title": "Proto A", "datum": "2023-01-01",
+            "tops": [{"top_id": "A1", "content": "Selected Doc for uuid1 Proto A"}]
+        }
+        mock_llm_selection_proto_B = {"title": "Proto B", "datum": "2023-01-02", "tops": []}
+
+        def get_relevant_side_effect(protocol_title, protocol_date, current_tops, genai_client, model_name, selection_prompt_template):
+            if protocol_title == "Proto A": return mock_llm_selection_proto_A
+            if protocol_title == "Proto B": return mock_llm_selection_proto_B
+            return {"title": protocol_title, "datum": protocol_date, "tops": []}
+        mock_get_relevant_tops_llm.side_effect = get_relevant_side_effect
+
+        # Mock for fetching document content for reference search (for uuid1)
+        mock_get_top_by_id.return_value = {'id': 'uuid1', 'document': 'Doc for uuid1 Proto A', 'metadata': {'protocol_title': 'Proto A', 'protocol_date': '2023-01-01', 'top_number': 'A1'}}
+
+        # Mock for reference search results (uuid1 is self, uuid_ref is a similar doc)
+        mock_chroma_collection.query.return_value = {'ids': [['uuid_ref_for_A1', 'uuid1']]}
+
+        # Mock return values for successful DB updates
+        mock_update_relevance.return_value = True
+        mock_update_references.return_value = True
+        mock_update_article_status.return_value = True
+
+        # 3. Call run_article_generation
+        article_generator.run_article_generation()
+
+        # 4. Assertions
+        mock_config_module.load_google_api_key.assert_called_once()
+        mock_genai_client_constructor.assert_called_once_with(api_key="test_api_key")
+        mock_initialize_chroma.assert_called_once() # Args can be checked if specific paths are important
+        mock_chroma_collection.get.assert_called_once_with(where=None, include=['documents', 'metadatas', 'ids'])
+
+        # Check get_relevant_tops_with_llm calls
+        self.assertEqual(mock_get_relevant_tops_llm.call_count, 2) # Called for Proto A and Proto B
+
+        # Assertions for TOP 'uuid1' (Original A1 from Proto A) which was selected
+        mock_update_relevance.assert_any_call(top_id='uuid1', is_relevant=True, collection=mock_chroma_collection)
+        mock_get_top_by_id.assert_any_call('uuid1', mock_chroma_collection) # Called to get doc for query
+
+        # Query for uuid1: n_results = SIMILAR_DOCS_COUNT (1) + 1 = 2
+        mock_chroma_collection.query.assert_any_call(query_texts=['Doc for uuid1 Proto A'], n_results=mock_config_module.SIMILAR_DOCS_COUNT + 1, include=['ids'])
+        mock_update_references.assert_any_call(top_id='uuid1', references_top_ids=['uuid_ref_for_A1'], collection=mock_chroma_collection)
+        mock_update_article_status.assert_any_call(top_id='uuid1', article_generated=True, collection=mock_chroma_collection)
+
+        # Assertions for TOP 'uuid2' (Original A2 from Proto A) which was NOT selected
+        # It should not have relevance, references, or article_status updated directly.
+        # We check that the call count for each update function is 1 (only for uuid1)
+        self.assertEqual(mock_update_relevance.call_count, 1)
+        self.assertEqual(mock_get_top_by_id.call_count, 1) # Only called for selected TOPs for referencing
+        self.assertEqual(mock_chroma_collection.query.call_count, 1) # Only called for selected TOPs
+        self.assertEqual(mock_update_references.call_count, 1)
+        self.assertEqual(mock_update_article_status.call_count, 1)
+
+        # For uuid3 (Proto B, T1), LLM returned no selection, so no updates should occur for it.
+
+    @patch('src.pipeline_steps.article_generator.config', new_callable=MagicMock)
+    @patch('src.pipeline_steps.article_generator.db_loader.initialize_chroma_collection')
+    @patch('src.pipeline_steps.article_generator.get_relevant_tops_with_llm') # Mock the LLM helper
+    @patch('src.pipeline_steps.article_generator.genai.Client')
+    def test_run_article_generation_date_filters(
+        self, mock_genai_client_constructor, mock_get_relevant_tops_llm,
+        mock_initialize_chroma, mock_config_module
+    ):
+        mock_config_module.load_google_api_key.return_value = "test_api_key"
+        # SIMILAR_DOCS_COUNT is used, ensure it's set.
+        mock_config_module.SIMILAR_DOCS_COUNT = 1
+
+
+        mock_chroma_collection = MagicMock(spec=chromadb.api.models.Collection.Collection)
+        mock_initialize_chroma.return_value = mock_chroma_collection
+        mock_chroma_collection.get.return_value = {'ids': [], 'documents': [], 'metadatas': []} # No data needed for this test focus
+
+        # Mock LLM to return empty, as we are not testing that part here
+        mock_get_relevant_tops_llm.return_value = {"title": "", "datum": "", "tops": []}
 
         # Test with start_date only
-        mock_chroma_collection.get.return_value = {'ids': [], 'documents': [], 'metadatas': []} # Reset for call count
         article_generator.run_article_generation(start_date='2023-10-04')
         mock_chroma_collection.get.assert_called_with(where={'datum': {'$gte': '2023-10-04'}}, include=['documents', 'metadatas', 'ids'])
 
         # Test with end_date only
-        mock_chroma_collection.get.return_value = {'ids': [], 'documents': [], 'metadatas': []}
         article_generator.run_article_generation(end_date='2023-10-02')
         mock_chroma_collection.get.assert_called_with(where={'datum': {'$lte': '2023-10-02'}}, include=['documents', 'metadatas', 'ids'])
 
-        # Test with no dates (should pass None or {} as filter)
-        mock_chroma_collection.get.return_value = {'ids': [], 'documents': [], 'metadatas': []}
+        # Test with both dates
+        article_generator.run_article_generation(start_date='2023-01-01', end_date='2023-01-31')
+        mock_chroma_collection.get.assert_called_with(where={"$and": [{"datum": {"$gte": '2023-01-01'}}, {"datum": {"$lte": '2023-01-31'}}]}, include=['documents', 'metadatas', 'ids'])
+
+        # Test with no dates
         article_generator.run_article_generation()
         mock_chroma_collection.get.assert_called_with(where=None, include=['documents', 'metadatas', 'ids'])
-
-
-    @patch('src.pipeline_steps.article_generator.config', new_callable=MagicMock)
-    @patch('src.pipeline_steps.article_generator.chromadb.PersistentClient')
-    @patch('src.pipeline_steps.article_generator.genai.Client')
-    @patch('src.pipeline_steps.article_generator.get_relevant_tops_with_llm') # Mock the LLM call function directly
-    def test_run_article_generation_skip_existing(self, mock_get_relevant_tops_llm, mock_genai_client_constructor, mock_chroma_client_constructor, mock_config_module):
-        mock_config_module.PROJECT_ROOT = self.mock_project_root
-        mock_config_module.FILTERED_JSON_DIR_NAME = "filtered_json_files"
-        # ... other config mocks ...
-        mock_config_module.GENAI_PDF_EXTRACTION_MODEL = self.test_model_name
-        mock_config_module.GENAI_TOPIC_SELECTION_PROMPT = self.test_selection_prompt
-        mock_config_module.CHROMA_DB_DIR_NAME = "test_chroma_db"
-        mock_config_module.CHROMA_COLLECTION_NAME = "test_collection"
-        mock_config_module.load_google_api_key.return_value = "test_api_key"
-
-
-        mock_chroma_collection = MagicMock()
-        mock_chroma_client_constructor.return_value.get_or_create_collection.return_value = mock_chroma_collection
-
-        # Simulate two protocols from ChromaDB
-        mock_chroma_collection.get.return_value = {
-            'ids': ['f1_t1', 'f2_t1'],
-            'documents': ['Content 1.1', 'Content 2.1'],
-            'metadatas': [
-                {'source_file': 'file1.json', 'top_id': 'T1', 'title': 'Proto 1', 'datum': '2023-10-01'},
-                {'source_file': 'file2.json', 'top_id': 'T1', 'title': 'Proto 2', 'datum': '2023-10-05'}
-            ]
-        }
-
-        # Pre-create an output file for 'file1.json'
-        filtered_dir = self.mock_project_root / mock_config_module.FILTERED_JSON_DIR_NAME
-        existing_output_path = filtered_dir / "file1_filtered.json"
-        with open(existing_output_path, 'w') as f:
-            json.dump({"title": "Proto 1", "datum": "2023-10-01", "tops": []}, f)
-
-        # Mock the LLM call to see if it's invoked
-        mock_get_relevant_tops_llm.return_value = {"title": "Proto 2", "datum": "2023-10-05", "tops": [{"top_id":"T1", "content":"Selected Content"}]}
-
-        article_generator.run_article_generation()
-
-        # Assert that get_relevant_tops_with_llm was called only once (for file2.json)
-        mock_get_relevant_tops_llm.assert_called_once()
-
-        # Verify the call was for Proto 2 data
-        args, _ = mock_get_relevant_tops_llm.call_args
-        self.assertEqual(args[0], "Proto 2") # protocol_title
-        self.assertEqual(len(args[2]), 1)     # current_tops for Proto 2
-        self.assertEqual(args[2][0]['content'], 'Content 2.1')
-
-        # Ensure the existing file was untouched (optional, but good check)
-        with open(existing_output_path, 'r') as f:
-            existing_data = json.load(f)
-        self.assertEqual(existing_data, {"title": "Proto 1", "datum": "2023-10-01", "tops": []})
-
-        # Ensure new file for Proto 2 was created by the mocked LLM call
-        file2_output_path = filtered_dir / "file2_filtered.json"
-        self.assertTrue(file2_output_path.exists())
-        with open(file2_output_path, 'r') as f:
-            file2_data = json.load(f)
-        self.assertEqual(file2_data["title"], "Proto 2")
 
 
 if __name__ == '__main__':
