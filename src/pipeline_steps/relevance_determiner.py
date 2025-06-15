@@ -3,6 +3,7 @@ import json
 import logging # Keep for potential direct use, though config.get_logger is primary
 import pathlib
 import sys
+import time # Added time module
 import google.generativeai as genai
 
 # Ensure src directory is in sys.path for config import
@@ -26,7 +27,7 @@ except ImportError as e:
 # Initialize logger using the new constant
 log = config.get_logger(__name__, config.RELEVANCE_DETERMINER_LOG_FILENAME)
 
-def get_relevant_tops_with_llm(protocol_title: str, protocol_date: str, current_tops: list[dict], genai_client, model_name: str, selection_prompt_template: str) -> dict | None:
+def get_relevant_tops_with_llm(protocol_title: str, protocol_date: str, current_tops: list[dict], genai_client, model_name: str, selection_prompt_template: str, delay_duration: int) -> dict | None:
     """
     Uses a GenAI model to select relevant TOPs from a list based on a given prompt.
     Returns a dictionary with the selected TOPs in the same structure as the input protocol, or None on failure.
@@ -49,6 +50,8 @@ def get_relevant_tops_with_llm(protocol_title: str, protocol_date: str, current_
         )
         selected_data = json.loads(response.text)
         log.debug(f"Received {len(selected_data.get('tops_evaluation', []))} evaluated TOPs from LLM for protocol {protocol_title}")
+        log.info(f"Waiting for {delay_duration} seconds before next API call.")
+        time.sleep(delay_duration)
         return selected_data
     except json.JSONDecodeError as e:
         log.error(f"Error decoding JSON response from LLM for protocol {protocol_title}: {e}. Response text: {response.text if 'response' in locals() else 'No response object'}", exc_info=True)
@@ -68,6 +71,9 @@ def run_relevance_determination():
         genai_api_key = config.load_google_api_key()
         genai_client = genai.Client(api_key=genai_api_key)
         log.info("Google GenAI client initialized for relevance determination.")
+
+        delay_duration = config.load_api_call_delay()
+        log.info(f"API call delay set to {delay_duration} seconds.")
 
         chroma_collection = db_loader.initialize_chroma_collection(
             db_path_name=config.CHROMA_DB_DIR_NAME,
@@ -147,7 +153,8 @@ def run_relevance_determination():
             current_tops=tops_to_evaluate_for_llm,
             genai_client=genai_client,
             model_name=config.GENAI_ARTICLE_GENERATION_MODEL, # Using the model specified for article generation, assuming it's suitable for selection
-            selection_prompt_template=config.GENAI_TOPIC_SELECTION_PROMPT
+            selection_prompt_template=config.GENAI_TOPIC_SELECTION_PROMPT,
+            delay_duration=delay_duration
         )
 
         protocol_updated_count = 0
