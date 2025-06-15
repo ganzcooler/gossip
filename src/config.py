@@ -22,6 +22,9 @@ LOG_DIR_NAME = "logs" # All logs will go into a "logs" subdirectory at project r
 PDF_PROCESSING_LOG_FILENAME = LOG_DIR_NAME + "/pdf-processing.log"
 CHROMA_DB_UTILS_LOG_FILENAME = LOG_DIR_NAME + "/chromadb-utils.log"
 CHROMA_TO_ARTICLES_LOG_FILENAME = LOG_DIR_NAME + "/chroma-to-articles.log"
+RELEVANCE_DETERMINER_LOG_FILENAME = LOG_DIR_NAME + "/relevance-determiner.log"
+REFERENCE_FINDER_LOG_FILENAME = LOG_DIR_NAME + "/reference-finder.log"
+ARTICLE_WRITER_LOG_FILENAME = LOG_DIR_NAME + "/article-writer.log"
 
 # --- Model Names ---
 GENAI_PDF_EXTRACTION_MODEL = "gemini-2.5-flash-preview-05-20"
