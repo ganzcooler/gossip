@@ -4,7 +4,9 @@ import logging # Keep for potential direct use, though config.get_logger is prim
 import pathlib
 import sys
 import time # Added time module
-import google.generativeai as genai
+from google import genai
+from pydantic import BaseModel
+from typing import List
 
 # Ensure src directory is in sys.path for config import
 project_root_for_import = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -23,6 +25,13 @@ except ImportError as e:
     # Fallback print if logging is not configured
     print(f"CRITICAL: Error importing modules in relevance_determiner.py: {e}. Check sys.path and module availability.", file=sys.stderr)
     raise
+
+class TopEvaluation(BaseModel):
+    top_id: str
+    is_selected_relevant: bool
+
+class TopsEvaluationResponse(BaseModel):
+    tops_evaluation: List[TopEvaluation]
 
 # Initialize logger using the new constant
 log = config.get_logger(__name__, config.RELEVANCE_DETERMINER_LOG_FILENAME)
@@ -43,10 +52,19 @@ def get_relevant_tops_with_llm(protocol_title: str, protocol_date: str, current_
     ]
     log.debug(f"Sending data to LLM for TOP selection. Title: {protocol_title}, Date: {protocol_date}, TOPs count: {len(current_tops)}")
     try:
+        # Ensure genai.types is accessible if `GenerationConfig` was the only thing used from it
+        # If genai.types.GenerationConfig is no longer used, this specific import might not be needed
+        # The new library structure might place GenerationConfig differently or it might be part of the config dict directly.
+        # Based on the documentation for structured output, we pass a dict to 'generation_config' in generate_content.
+
+        generation_config = {
+            "response_mime_type": "application/json",
+            "response_schema": TopsEvaluationResponse  # Pass the Pydantic model here
+        }
         response = genai_client.generate_content(
             model=model_name,
             contents=full_prompt_parts,
-            generation_config=genai.types.GenerationConfig(response_mime_type="application/json")
+            generation_config=generation_config
         )
         selected_data = json.loads(response.text)
         log.debug(f"Received {len(selected_data.get('tops_evaluation', []))} evaluated TOPs from LLM for protocol {protocol_title}")
