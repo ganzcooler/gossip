@@ -27,14 +27,10 @@ except ImportError as e:
 # Initialize logger using the helper from config
 log = config.get_logger(__name__, config.PDF_PROCESSING_LOG_FILENAME)
 
-class TopItem(BaseModel):
-    top_id: str
-    content: str
-
 class ExtractedPdfData(BaseModel):
     title: str
     datum: str # Assuming YYYY-MM-DD
-    tops: List[TopItem]
+    tops: List[str]
 
 # PROMPT_TEXT was moved to src/prompts.py and is now imported as PDF_EXTRACTION_PROMPT
 
@@ -76,34 +72,32 @@ def process_single_pdf(pdf_filepath: pathlib.Path, genai_model_instance: genai.G
             protocol_title = response_json.get('title', 'N/A')
             protocol_date = response_json.get('datum', 'N/A')
             tops_processed_count = 0
-            if not isinstance(response_json.get('tops'), list):
-                log.warning(f"No 'tops' list found or is not a list in response for {pdf_filepath.name}. Response: {str(response_json)[:300]}")
-                return # Or handle as an error
 
-            for top_item in response_json.get('tops', []):
-                top_content = top_item.get('content')
-                # 'top_id' from LLM is the original number/identifier within the protocol
-                original_top_id = top_item.get('top_id')
+            tops_data = response_json.get('tops', [])
+            if not isinstance(tops_data, list):
+                log.warning(f"'tops' field is not a list or not found in response for {pdf_filepath.name}. Response: {str(response_json)[:300]}")
+                # Consider how to handle this case: return, raise error, or process 0 tops
+            else:
+                for index, top_content in enumerate(tops_data):
+                    if not isinstance(top_content, str) or not top_content.strip():
+                        log.warning(f"Empty or invalid content (not a non-empty string) for a TOP at index {index} in {pdf_filepath.name}. Content: '{str(top_content)[:50]}...'. Skipping this TOP.")
+                        continue
 
-                if not top_content or not original_top_id:
-                    log.warning(f"Missing content or original_top_id for a TOP in {pdf_filepath.name}. Content: '{str(top_content)[:50]}...', Original TOP ID: {original_top_id}. Skipping this TOP.")
-                    continue
+                    chroma_id = str(uuid.uuid4())
+                    metadata = {
+                        "protocol_title": protocol_title,
+                        "protocol_date": protocol_date,
+                        "top_sequence_in_protocol": index + 1
+                    }
 
-                chroma_id = str(uuid.uuid4())
-                metadata = {
-                    "protocol_title": protocol_title,
-                    "protocol_date": protocol_date,
-                    "top_number": original_top_id # Store the original TOP number here
-                }
-
-                success = db_loader.add_top_to_chromadb(
-                    top_id=chroma_id, # Use generated UUID for ChromaDB's unique ID
-                    document=top_content,
-                    metadata=metadata,
-                    collection=chroma_collection
-                )
-                if success:
-                    tops_processed_count += 1
+                    success = db_loader.add_top_to_chromadb(
+                        top_id=chroma_id, # Use generated UUID for ChromaDB's unique ID
+                        document=top_content, # This is the string content of the TOP
+                        metadata=metadata,
+                        collection=chroma_collection
+                    )
+                    if success:
+                        tops_processed_count += 1
             log.info(f"Processed and attempted to add {tops_processed_count} TOPs from {pdf_filepath.name} to ChromaDB.")
         else:
             log.error(f"No JSON response to process for {pdf_filepath.name} (either not received or parsing failed).")

@@ -21,9 +21,9 @@ Base your decision on two main criteria:
 1.  **Content Depth**: The TOP should provide enough substantial material for a compelling news story. Purely administrative points, very brief announcements, or items lacking detail are generally not suitable.
 2.  **Public Interest/Engagement**: The TOP should offer opportunities to be presented in a way that is likely to engage a broader audience. This might include topics that are emotional, controversial, impactful on the community, or generally sensational.
 
-You will be provided with input in JSON format, containing the protocol's 'title', 'datum' (date), and a list of 'tops'. Each item in the 'tops' list will have a 'top_id' (its original identifier in the protocol) and 'content' (the textual description of the TOP).
+You will be provided with input in JSON format, containing the protocol's 'title', 'datum' (date), and a 'tops' field. The 'tops' field will be a list of strings, where each string is the content of a TOP.
 
-You must return a JSON object with the original 'title' and 'datum' fields from the input. Additionally, your output must include a field named 'tops_evaluation', which should be a list. This list must contain an entry for *every* TOP present in the input's 'tops' list. Each entry in 'tops_evaluation' must include the original 'top_id' and a new boolean field 'is_selected_relevant', which should be true if you deem the TOP suitable for an article according to the criteria, and false otherwise.
+You must return a JSON object with the original 'title' and 'datum' fields from the input. Additionally, your output must include a field named 'tops_evaluation', which should be a list. This list must contain an entry for *every* TOP present in the input's 'tops' list. Each entry in 'tops_evaluation' must include an 'original_index' (the 0-based index of the TOP in the input 'tops' list), a boolean field 'is_selected_relevant' (true if suitable for an article, false otherwise), and a 'content_preview' (the first few words of the TOP's content for easy reference).
 
 Here are a couple of examples:
 
@@ -35,18 +35,9 @@ Input:
   "title": "Finance Committee Meeting",
   "datum": "2024-03-15",
   "tops": [
-    {
-      "top_id": "1.1",
-      "content": "Approval of the minutes from the last meeting. The minutes were reviewed and approved without changes."
-    },
-    {
-      "top_id": "1.2",
-      "content": "Budget reallocation proposal for Q3. This involves shifting funds from the deferred park renovation project to the emergency road repair fund due to recent storm damage. Extensive discussion on the urgency and impact on other planned projects. Several local businesses voiced concerns over the park project delay."
-    },
-    {
-      "top_id": "2.0",
-      "content": "Update on software licensing renewals. Standard renewal process, no issues reported."
-    }
+    "Approval of the minutes from the last meeting. The minutes were reviewed and approved without changes.",
+    "Budget reallocation proposal for Q3. This involves shifting funds from the deferred park renovation project to the emergency road repair fund due to recent storm damage. Extensive discussion on the urgency and impact on other planned projects. Several local businesses voiced concerns over the park project delay.",
+    "Update on software licensing renewals. Standard renewal process, no issues reported."
   ]
 }
 ```
@@ -58,15 +49,18 @@ Output:
   "datum": "2024-03-15",
   "tops_evaluation": [
     {
-      "top_id": "1.1",
+      "original_index": 0,
+      "content_preview": "Approval of the minutes from the last meeting...",
       "is_selected_relevant": false
     },
     {
-      "top_id": "1.2",
+      "original_index": 1,
+      "content_preview": "Budget reallocation proposal for Q3. This involves shifting funds...",
       "is_selected_relevant": true
     },
     {
-      "top_id": "2.0",
+      "original_index": 2,
+      "content_preview": "Update on software licensing renewals. Standard renewal process...",
       "is_selected_relevant": false
     }
   ]
@@ -81,14 +75,8 @@ Input:
   "title": "School Board Session",
   "datum": "2024-03-18",
   "tops": [
-    {
-      "top_id": "A",
-      "content": "Presentation of the new anti-bullying campaign 'Safe Spaces Now'. Includes detailed plans for student workshops, parent information evenings, and teacher training modules. Statistics on bullying incidents from the past year were presented, showing a concerning rise. Discussion included a heartfelt testimony from a parent whose child was affected."
-    },
-    {
-      "top_id": "B",
-      "content": "Decision on the vendor for cafeteria supplies for the next school year. Three bids were reviewed, and Vendor X was selected based on cost and compliance with nutritional guidelines. Standard procurement procedure."
-    }
+    "Presentation of the new anti-bullying campaign 'Safe Spaces Now'. Includes detailed plans for student workshops, parent information evenings, and teacher training modules. Statistics on bullying incidents from the past year were presented, showing a concerning rise. Discussion included a heartfelt testimony from a parent whose child was affected.",
+    "Decision on the vendor for cafeteria supplies for the next school year. Three bids were reviewed, and Vendor X was selected based on cost and compliance with nutritional guidelines. Standard procurement procedure."
   ]
 }
 ```
@@ -100,11 +88,13 @@ Output:
   "datum": "2024-03-18",
   "tops_evaluation": [
     {
-      "top_id": "A",
+      "original_index": 0,
+      "content_preview": "Presentation of the new anti-bullying campaign 'Safe Spaces Now'...",
       "is_selected_relevant": true
     },
     {
-      "top_id": "B",
+      "original_index": 1,
+      "content_preview": "Decision on the vendor for cafeteria supplies for the next school year...",
       "is_selected_relevant": false
     }
   ]
@@ -116,8 +106,7 @@ Now, evaluate the following input:
 PDF_EXTRACTION_PROMPT = """
         Du bist ein KI-Assistent.
         Extrahiere die Tagesordnungspunkte mitsamt deren Inhalt aus dem PDF-Dokument und gib sie im JSON-Format zurück.
-        Schreibe in "top_id" die ID des Tagesordnungspunktes.
-        In "content" soll die Überschrift des Tagesordnungspunktes und dessen Inhalt stehen.
+        In "tops" soll eine Liste der Inhalte der einzelnen Tagesordnungspunkte stehen. Jeder Eintrag in der Liste ist ein String, der die Überschrift und den Inhalt des jeweiligen Tagesordnungspunktes enthält.
         In "datum" soll das Datum des Protokolls im Format "YYYY-MM-DD" stehen.
         In "title" soll der Titel des Ausschusses oder der Sitzung stehen, z.B. "Jugendausschuss".
 
@@ -126,14 +115,8 @@ PDF_EXTRACTION_PROMPT = """
           "title": "Jugendausschuss",
           "datum": "2023-10-01",
           "tops": [
-            {
-              "top_id": "1",
-              "content": "Erster Tagesordnungspunkt Inhalt, der sehr spannend ist und viele Details bietet."
-            },
-            {
-              "top_id": "2",
-              "content": "Zweiter Tagesordnungspunkt Inhalt, eher administrativ."
-            }
+            "Erster Tagesordnungspunkt Inhalt, der sehr spannend ist und viele Details bietet.",
+            "Zweiter Tagesordnungspunkt Inhalt, eher administrativ."
           ]
         }
         """
