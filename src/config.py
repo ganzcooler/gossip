@@ -35,6 +35,11 @@ GENAI_ARTICLE_GENERATION_MODEL = "gemini-2.5-flash-preview-05-20"
 DEFAULT_API_CALL_DELAY_SECONDS = 6
 
 # --- Prompts ---
+GENAI_JOURNALISTIC_ARTICLE_PROMPT = """Based on the following content, please write a short, engaging journalistic article suitable for a local news website. Focus on the key information and present it in a clear and accessible narrative style:
+
+{TOP_CONTENT}
+"""
+
 GENAI_TOPIC_SELECTION_PROMPT = """
 You are an AI assistant. Your task is to evaluate a list of TOPs (Tagesordnungspunkte / agenda items) from a given protocol (meeting minutes) and decide for each TOP whether it is suitable for a journalistic article.
 Base your decision on two main criteria:
