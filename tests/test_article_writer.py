@@ -14,10 +14,12 @@ from src.pipeline_steps import article_writer
 from src.pipeline_steps import db_loader # To mock its initialize_chroma_collection
 from src import config as app_config # To potentially mock config values if needed
 
-from google.api_core import exceptions as google_exceptions # For testing LLM error handling
+import json # For crafting mock JSON for LLM response
+from pydantic import ValidationError # For testing Pydantic validation errors
+from google.api_core import exceptions as google_exceptions
 
 # Disable most logging for cleaner test output
-# logging.disable(logging.CRITICAL) # Keep logging for debugging tests if needed, then disable
+# logging.disable(logging.CRITICAL)
 
 
 class TestSanitizeFilename(unittest.TestCase):
@@ -53,14 +55,17 @@ class TestGenerateHTMLArticle(unittest.TestCase):
 
     def test_basic_html_generation(self):
         """Test basic HTML structure and content injection."""
-        article_text = "This is the LLM generated article content." # Parameter name changed
-        top_number = "T123"
-        expected_title = f"<title>Journalistic Article (TOP: {top_number})</title>" # Title changed
-        expected_header = f"<h1>Journalistic Article (Original TOP Number: {top_number})</h1>" # Header changed
-        # Style for <pre> tag might have changed, check current implementation
-        expected_body_content = f'<pre>{article_text}</pre>' # Content is now LLM output
+        article_title_val = "Test Article Title"
+        article_body_val = "This is the LLM generated article body."
+        original_top_number_val = "T123_Not_In_HTML" # Should not appear in rendered HTML
 
-        html_output = article_writer.generate_html_article(article_text, top_number)
+        expected_html_title = f"<title>{article_title_val}</title>"
+        expected_html_header = f"<h1>{article_title_val}</h1>"
+        expected_html_body_content = f"<pre>{article_body_val}</pre>"
+
+        html_output = article_writer.generate_html_article(
+            article_title_val, article_body_val, original_top_number_val
+        )
 
         self.assertIn("<!DOCTYPE html>", html_output)
         self.assertIn("<html lang=\"en\">", html_output)
@@ -68,39 +73,43 @@ class TestGenerateHTMLArticle(unittest.TestCase):
         self.assertIn("</head>", html_output)
         self.assertIn("<body>", html_output)
         self.assertIn("</body>", html_output)
-        self.assertIn(expected_title, html_output)
-        self.assertIn(expected_header, html_output)
-        self.assertIn(expected_body_content, html_output)
-        # Check for style on <pre> or body as per implementation
+        self.assertIn(expected_html_title, html_output)
+        self.assertIn(expected_html_header, html_output)
+        self.assertIn(expected_html_body_content, html_output)
         self.assertIn("white-space: pre-wrap;", html_output)
+        self.assertNotIn(original_top_number_val, html_output, "Original TOP number should not be in rendered HTML")
+
 
     def test_empty_content(self):
-        """Test with empty article text."""
-        article_text = "" # Parameter name changed
-        top_number = "T000"
-        expected_body_content = f'<pre>{article_text}</pre>' # Content is empty
-        html_output = article_writer.generate_html_article(article_text, top_number)
-        self.assertIn(expected_body_content, html_output)
-        self.assertIn(f"<title>Journalistic Article (TOP: {top_number})</title>", html_output) # Title changed
+        """Test with empty article body."""
+        article_title_val = "Empty Body Test"
+        article_body_val = ""
+        original_top_number_val = "T000"
+
+        expected_html_body_content = f'<pre>{article_body_val}</pre>'
+        html_output = article_writer.generate_html_article(
+            article_title_val, article_body_val, original_top_number_val
+        )
+        self.assertIn(expected_html_body_content, html_output)
+        self.assertIn(f"<title>{article_title_val}</title>", html_output)
+        self.assertIn(f"<h1>{article_title_val}</h1>", html_output)
+        self.assertNotIn(original_top_number_val, html_output)
 
     def test_content_with_special_chars(self):
-        """Test with article text having HTML special characters."""
-        article_text = "<p>Hello & Welcome!</p>" # Parameter name changed
-        top_number = "T789"
-        # <pre> tag behavior: content is typically rendered as-is by browsers, including interpreting HTML tags.
-        expected_body_content = f'<pre>{article_text}</pre>'
-        html_output = article_writer.generate_html_article(article_text, top_number)
-        self.assertIn(expected_body_content, html_output)
+        """Test with article body having HTML special characters."""
+        article_title_val = "Special Chars Test"
+        article_body_val = "<p>Hello & Welcome!</p> This should render as text."
+        original_top_number_val = "T789"
 
-    def test_default_top_number(self):
-        """Test that 'N/A' is used if top_number is not provided."""
-        article_text = "Some content." # Parameter name changed
-        expected_title = "<title>Journalistic Article (TOP: N/A)</title>" # Title changed
-        expected_header = "<h1>Journalistic Article (Original TOP Number: N/A)</h1>" # Header changed
-        html_output = article_writer.generate_html_article(article_text) # Call without top_number
-        self.assertIn(expected_title, html_output)
-        self.assertIn(expected_header, html_output)
+        expected_html_body_content = f'<pre>{article_body_val}</pre>'
+        html_output = article_writer.generate_html_article(
+            article_title_val, article_body_val, original_top_number_val
+        )
+        self.assertIn(expected_html_body_content, html_output)
+        self.assertNotIn(original_top_number_val, html_output)
 
+    # test_default_top_number is less relevant here as original_top_number is not for rendering.
+    # The generate_html_article function now requires all three arguments.
 
 class TestGenerateJournalisticArticleLLM(unittest.TestCase):
     """Test suite for generate_journalistic_article_llm."""
@@ -108,8 +117,10 @@ class TestGenerateJournalisticArticleLLM(unittest.TestCase):
     def test_successful_generation(self):
         mock_genai_model_instance = MagicMock()
         mock_response = MagicMock()
-        mock_response.text = " This is a great LLM article. "
-        mock_response.parts = [MagicMock()] # Ensure parts exist
+        # LLM returns a JSON string
+        mock_response.text = '{"article_title": "Test Title From LLM", "article_body": "Test Body From LLM."}'
+        # Ensure response.parts exists for the initial check in the function, even if not used for text
+        mock_response.parts = [MagicMock()]
         mock_genai_model_instance.generate_content.return_value = mock_response
 
         top_content = "Raw TOP data."
@@ -119,10 +130,15 @@ class TestGenerateJournalisticArticleLLM(unittest.TestCase):
             top_content, mock_genai_model_instance, prompt_template
         )
 
-        mock_genai_model_instance.generate_content.assert_called_once_with(
-            contents=[prompt_template.format(TOP_CONTENT=top_content)]
-        )
-        self.assertEqual(result, "This is a great LLM article.")
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result, article_writer.JournalisticArticleResponse)
+        self.assertEqual(result.article_title, "Test Title From LLM")
+        self.assertEqual(result.article_body, "Test Body From LLM.")
+        mock_genai_model_instance.generate_content.assert_called_once()
+        args, kwargs = mock_genai_model_instance.generate_content.call_args
+        self.assertEqual(kwargs['generation_config'].response_mime_type, "application/json")
+        self.assertEqual(kwargs['generation_config'].response_schema, article_writer.JournalisticArticleResponse)
+
 
     @patch('src.pipeline_steps.article_writer.log')
     def test_llm_api_error(self, mock_log):
@@ -133,13 +149,13 @@ class TestGenerateJournalisticArticleLLM(unittest.TestCase):
             "Content", mock_genai_model_instance, "Prompt: {TOP_CONTENT}"
         )
         self.assertIsNone(result)
-        mock_log.error.assert_called()
+        mock_log.error.assert_any_call("Google API Error during LLM article generation: API Error", exc_info=True)
 
     @patch('src.pipeline_steps.article_writer.log')
-    def test_llm_empty_response_text(self, mock_log):
+    def test_llm_invalid_json_response(self, mock_log):
         mock_genai_model_instance = MagicMock()
         mock_response = MagicMock()
-        mock_response.text = "" # Empty text
+        mock_response.text = "{'broken_json': True" # Invalid JSON
         mock_response.parts = [MagicMock()]
         mock_genai_model_instance.generate_content.return_value = mock_response
 
@@ -147,21 +163,53 @@ class TestGenerateJournalisticArticleLLM(unittest.TestCase):
             "Content", mock_genai_model_instance, "Prompt: {TOP_CONTENT}"
         )
         self.assertIsNone(result)
-        mock_log.warning.assert_any_call("LLM returned empty or whitespace-only text.")
+        self.assertTrue(any("JSONDecodeError parsing LLM response" in call_args[0][0] for call_args in mock_log.error.call_args_list))
 
     @patch('src.pipeline_steps.article_writer.log')
-    def test_llm_no_response_parts(self, mock_log):
+    def test_llm_json_schema_mismatch(self, mock_log):
         mock_genai_model_instance = MagicMock()
         mock_response = MagicMock()
-        mock_response.parts = [] # No parts
-        mock_response.text = None # Also no text
+        # Valid JSON, but doesn't match Pydantic model (missing article_body)
+        mock_response.text = '{"article_title": "Only Title"}'
+        mock_response.parts = [MagicMock()]
         mock_genai_model_instance.generate_content.return_value = mock_response
 
         result = article_writer.generate_journalistic_article_llm(
             "Content", mock_genai_model_instance, "Prompt: {TOP_CONTENT}"
         )
         self.assertIsNone(result)
-        mock_log.error.assert_any_call("LLM response is empty or has no parts.")
+        self.assertTrue(any("Pydantic ValidationError for LLM response" in call_args[0][0] for call_args in mock_log.error.call_args_list))
+
+
+    @patch('src.pipeline_steps.article_writer.log')
+    def test_llm_empty_response_text(self, mock_log): # Renamed from test_llm_empty_response
+        mock_genai_model_instance = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "" # Empty text, but not None
+        mock_response.parts = [MagicMock()] # parts might exist
+        mock_genai_model_instance.generate_content.return_value = mock_response
+
+        result = article_writer.generate_journalistic_article_llm(
+            "Content", mock_genai_model_instance, "Prompt: {TOP_CONTENT}"
+        )
+        self.assertIsNone(result)
+        mock_log.error.assert_any_call("LLM response text is empty. Cannot parse JSON.")
+
+
+    @patch('src.pipeline_steps.article_writer.log')
+    def test_llm_no_response_text_attr(self, mock_log): # Covers response.text being None
+        mock_genai_model_instance = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = None # text attribute is None
+        mock_response.parts = [MagicMock()]
+        mock_genai_model_instance.generate_content.return_value = mock_response
+
+        result = article_writer.generate_journalistic_article_llm(
+            "Content", mock_genai_model_instance, "Prompt: {TOP_CONTENT}"
+        )
+        self.assertIsNone(result)
+        mock_log.error.assert_any_call("LLM response text is empty. Cannot parse JSON.")
+
 
     def test_empty_top_content(self):
         mock_genai_model_instance = MagicMock()
@@ -177,22 +225,23 @@ class TestRunArticleWriting(unittest.TestCase):
 
     @patch('src.pipeline_steps.article_writer.time.sleep')
     @patch('src.pipeline_steps.article_writer.config.load_api_call_delay')
-    @patch('src.pipeline_steps.article_writer.config.GENAI_ARTICLE_GENERATION_MODEL', "test-model") # Mock model name directly
+    @patch('src.pipeline_steps.article_writer.config.GENAI_ARTICLE_GENERATION_MODEL', "test-model")
     @patch('src.pipeline_steps.article_writer.config.load_google_api_key')
-    @patch('src.pipeline_steps.article_writer.genai.configure') # Mock genai.configure
-    @patch('src.pipeline_steps.article_writer.genai.GenerativeModel') # Mock the class constructor
+    @patch('src.pipeline_steps.article_writer.genai.configure')
+    @patch('src.pipeline_steps.article_writer.genai.GenerativeModel') # Keep this to mock the constructor if needed for init
+    @patch('src.pipeline_steps.article_writer.sanitize_filename') # Mock sanitize_filename
+    @patch('src.pipeline_steps.article_writer.generate_journalistic_article_llm') # Mock the LLM function
     @patch('src.pipeline_steps.article_writer.pathlib.Path.mkdir')
     @patch('builtins.open', new_callable=unittest.mock.mock_open)
     @patch('src.pipeline_steps.article_writer.db_loader.initialize_chroma_collection')
-    @patch('src.pipeline_steps.article_writer.config') # General config mock for PROJECT_ROOT etc.
+    @patch('src.pipeline_steps.article_writer.config')
     def test_successful_llm_article_generation_and_saving(
         self, mock_general_config, mock_initialize_chroma, mock_open_file, mock_mkdir,
+        mock_generate_llm_article, mock_sanitize_filename,
         mock_generative_model_constructor, mock_genai_configure, mock_load_google_api_key,
         mock_load_api_call_delay, mock_time_sleep
     ):
-        """Test successful LLM generation, file saving, and ChromaDB update."""
-        # --- Setup Mocks ---
-        # Config related mocks
+        """Test successful LLM generation, file saving, and ChromaDB update with filename testing."""
         mock_project_root = MagicMock(spec=pathlib.Path)
         mock_articles_dir = MagicMock(spec=pathlib.Path)
         mock_project_root.__truediv__.return_value = mock_articles_dir

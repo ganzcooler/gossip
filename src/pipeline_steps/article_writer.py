@@ -3,8 +3,11 @@ import logging # Keep for potential direct use
 import pathlib
 import sys
 import time # Added for API delay
+import json # Added for JSON parsing
 import google.generai as genai # Added for LLM
 from google.api_core import exceptions as google_exceptions # Added for specific error handling
+from pydantic import BaseModel, ValidationError # Added for Pydantic model and validation error
+from typing import List # Added for potential future use, good practice
 
 # Ensure src directory is in sys.path for config import
 project_root_for_import = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -35,6 +38,12 @@ import re # Already present
 log = config.get_logger(__name__, config.ARTICLE_WRITER_LOG_FILENAME)
 
 
+# --- Pydantic Model for LLM Response ---
+class JournalisticArticleResponse(BaseModel):
+    article_title: str
+    article_body: str
+
+
 # Local prompt template removed, will be imported from config.
 
 def sanitize_filename(name: str) -> str:
@@ -47,33 +56,53 @@ def generate_journalistic_article_llm(
     top_content: str,
     genai_model_instance, # Expecting an initialized genai.GenerativeModel
     prompt_template: str
-) -> str | None:
+) -> JournalisticArticleResponse | None: # Return type changed
     """
-    Generates a journalistic article using the LLM.
+    Generates a journalistic article using the LLM, expecting a JSON response.
     """
     if not top_content:
         log.warning("LLM generation skipped: TOP content is empty.")
         return None
 
     formatted_prompt = prompt_template.format(TOP_CONTENT=top_content)
+    # Log a snippet of the prompt for debugging, being mindful of not logging too much if content is large
     log.debug(f"Formatted prompt for LLM (first 200 chars): {formatted_prompt[:200]}...")
 
+    # Define generation config for JSON output
+    generation_config = genai.types.GenerationConfig(
+        response_mime_type="application/json",
+        # For Pydantic v2, this would be JournalisticArticleResponse.model_json_schema()
+        # For some SDK versions, passing the class directly might be supported.
+        # Let's assume the SDK handles Pydantic class directly or it's a simplified representation.
+        # If this fails, `JournalisticArticleResponse.model_json_schema()` is the way for Pydantic v2.
+        response_schema=JournalisticArticleResponse
+    )
+
     try:
-        # Make the API call
-        response = genai_model_instance.generate_content(contents=[formatted_prompt])
+        response = genai_model_instance.generate_content(
+            contents=[formatted_prompt],
+            generation_config=generation_config
+        )
 
-        if not response.parts:
-            log.error("LLM response is empty or has no parts.")
+        if not response.text: # Check if response.text is empty
+            log.error("LLM response text is empty. Cannot parse JSON.")
             return None
 
-        generated_text = response.text.strip() if response.text else ""
+        log.debug(f"Raw LLM response text: {response.text}")
 
-        if not generated_text:
-            log.warning("LLM returned empty or whitespace-only text.")
-            return None
+        # Parse and validate the JSON response
+        llm_output = json.loads(response.text)
+        validated_data = JournalisticArticleResponse(**llm_output)
 
-        log.info("Successfully generated article text from LLM.")
-        return generated_text
+        log.info(f"Successfully parsed and validated LLM response: Title='{validated_data.article_title}'")
+        return validated_data
+
+    except json.JSONDecodeError as e:
+        log.error(f"JSONDecodeError parsing LLM response: {e}. Response text: '{response.text if 'response' in locals() and hasattr(response, 'text') else 'Response text not available'}'", exc_info=True)
+        return None
+    except ValidationError as e: # Pydantic validation error
+        log.error(f"Pydantic ValidationError for LLM response: {e}. LLM output: '{llm_output if 'llm_output' in locals() else 'LLM output not available'}'", exc_info=True)
+        return None
     except google_exceptions.GoogleAPIError as e:
         log.error(f"Google API Error during LLM article generation: {e}", exc_info=True)
         return None
@@ -81,17 +110,17 @@ def generate_journalistic_article_llm(
         log.error(f"Unexpected error during LLM article generation: {e}", exc_info=True)
         return None
 
-def generate_html_article(article_text: str, top_number: str = "N/A") -> str: # Parameter changed
+def generate_html_article(article_title: str, article_body: str, original_top_number: str) -> str:
     """
-    Generates a simple HTML article from the LLM-generated article text.
+    Generates a simple HTML article from the LLM-generated title and body.
+    original_top_number is used for non-content purposes like logging or context, not displayed.
     """
-    # Basic HTML structure, updated to reflect LLM generated content
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Journalistic Article (TOP: {top_number})</title>
+    <title>{article_title}</title> {/* Use LLM generated title */}
     <style>
         body {{ font-family: sans-serif; margin: 20px; line-height: 1.6; }}
         h1 {{ color: #333; }}
@@ -99,8 +128,8 @@ def generate_html_article(article_text: str, top_number: str = "N/A") -> str: # 
     </style>
 </head>
 <body>
-    <h1>Journalistic Article (Original TOP Number: {top_number})</h1>
-    <pre>{article_text}</pre>
+    <h1>{article_title}</h1> {/* Use LLM generated title */}
+    <pre>{article_body}</pre> {/* Use LLM generated body */}
 </body>
 </html>
 """
@@ -193,30 +222,32 @@ def run_article_writing():
 
         log.info(f"Processing TOP {chroma_id} (Original: {original_top_number}) for LLM article generation.")
 
-        generated_article_text = None
+        llm_response_data: JournalisticArticleResponse | None = None
         try {
-            generated_article_text = generate_journalistic_article_llm(
+            llm_response_data = generate_journalistic_article_llm(
                 document_content,
                 genai_model_instance,
-                GENAI_JOURNALISTIC_ARTICLE_PROMPT # Use imported prompt
+                GENAI_JOURNALISTIC_ARTICLE_PROMPT
             )
-        } except Exception as e: # Should be caught by inner function, but as a safeguard
+        } except Exception as e:
             log.error(f"Unexpected outer error during LLM call for TOP {chroma_id}: {e}", exc_info=True)
-            # Fall through to time.sleep
         finally:
-            # Apply delay after each LLM attempt (success or failure)
             log.debug(f"LLM processing for TOP {chroma_id} concluded. Sleeping for {api_delay}s.")
             time.sleep(api_delay)
 
-        if generated_article_text:
-            log.info(f"LLM generated article for TOP {chroma_id}. Proceeding to HTML conversion & saving.")
+        if llm_response_data and llm_response_data.article_body: # Ensure body has content
+            log.info(f"LLM generated structured article for TOP {chroma_id} (Title: {llm_response_data.article_title}). Proceeding to HTML conversion & saving.")
             try {
-                html_article_content = generate_html_article(generated_article_text, original_top_number)
+                html_article_content = generate_html_article(
+                    article_title=llm_response_data.article_title,
+                    article_body=llm_response_data.article_body,
+                    original_top_number=original_top_number # For filename, not for rendering
+                )
 
-                sanitized_top_number = sanitize_filename(original_top_number if original_top_number != "N/A" else chroma_id)
-                if not sanitized_top_number:
-                    sanitized_top_number = chroma_id # Fallback if sanitization makes it empty
-                filename = f"TOP_{sanitized_top_number}.html"
+                sanitized_filename_base = sanitize_filename(llm_response_data.article_title if llm_response_data.article_title else original_top_number)
+                if not sanitized_filename_base: # Fallback if title is empty or sanitization results in empty
+                     sanitized_filename_base = chroma_id
+                filename = f"ART_{sanitized_filename_base}.html" # Changed prefix to ART_
                 filepath = articles_dir / filename
 
                 with open(filepath, "w", encoding="utf-8") as f:
