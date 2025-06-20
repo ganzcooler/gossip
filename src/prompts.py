@@ -112,3 +112,28 @@ Output:
 ```
 Now, evaluate the following input:
 """
+
+PDF_EXTRACTION_PROMPT = """
+        Du bist ein KI-Assistent.
+        Extrahiere die Tagesordnungspunkte mitsamt deren Inhalt aus dem PDF-Dokument und gib sie im JSON-Format zurück.
+        Schreibe in "top_id" die ID des Tagesordnungspunktes.
+        In "content" soll die Überschrift des Tagesordnungspunktes und dessen Inhalt stehen.
+        In "datum" soll das Datum des Protokolls im Format "YYYY-MM-DD" stehen.
+        In "title" soll der Titel des Ausschusses oder der Sitzung stehen, z.B. "Jugendausschuss".
+
+        Hier ein Beispiel für das JSON-Format:
+        {
+          "title": "Jugendausschuss",
+          "datum": "2023-10-01",
+          "tops": [
+            {
+              "top_id": "1",
+              "content": "Erster Tagesordnungspunkt Inhalt, der sehr spannend ist und viele Details bietet."
+            },
+            {
+              "top_id": "2",
+              "content": "Zweiter Tagesordnungspunkt Inhalt, eher administrativ."
+            }
+          ]
+        }
+        """

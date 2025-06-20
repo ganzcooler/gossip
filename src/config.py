@@ -10,6 +10,7 @@ PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Re-establish prompt variables from src.prompts
 GENAI_JOURNALISTIC_ARTICLE_PROMPT = prompts.GENAI_JOURNALISTIC_ARTICLE_PROMPT
 GENAI_TOPIC_SELECTION_PROMPT = prompts.GENAI_TOPIC_SELECTION_PROMPT
+PDF_EXTRACTION_PROMPT = prompts.PDF_EXTRACTION_PROMPT
 
 # --- Logging Configuration ---
 LOG_FORMAT = '%(asctime)s %(levelname)s %(name)s: %(message)s'
