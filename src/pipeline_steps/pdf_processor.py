@@ -1,4 +1,4 @@
-import google.generativeai as genai
+from google import genai
 import pathlib
 import json
 import time
@@ -7,6 +7,8 @@ import sys
 import uuid
 from src.pipeline_steps import db_loader
 import chromadb # For type annotation
+from pydantic import BaseModel
+from typing import List
 
 # Ensure src directory is in sys.path for config import
 project_root_for_import = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -23,6 +25,15 @@ except ImportError as e:
 
 # Initialize logger using the helper from config
 log = config.get_logger(__name__, config.PDF_PROCESSING_LOG_FILENAME)
+
+class TopItem(BaseModel):
+    top_id: str
+    content: str
+
+class ExtractedPdfData(BaseModel):
+    title: str
+    datum: str # Assuming YYYY-MM-DD
+    tops: List[TopItem]
 
 PROMPT_TEXT = """
         Du bist ein KI-Assistent.
@@ -65,6 +76,7 @@ def process_single_pdf(pdf_filepath: pathlib.Path, genai_model_instance: genai.G
             ],
             generation_config={
                 "response_mime_type": "application/json",
+                "response_schema": ExtractedPdfData
             },
             request_options={"timeout": 120} # Increased timeout
         )
