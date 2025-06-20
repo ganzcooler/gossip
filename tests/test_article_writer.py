@@ -15,7 +15,35 @@ from src.pipeline_steps import db_loader # To mock its initialize_chroma_collect
 from src import config as app_config # To potentially mock config values if needed
 
 # Disable most logging for cleaner test output
-logging.disable(logging.CRITICAL)
+# logging.disable(logging.CRITICAL) # Keep logging for debugging tests if needed, then disable
+
+
+class TestSanitizeFilename(unittest.TestCase):
+    """Test suite for the sanitize_filename utility."""
+
+    def test_basic_sanitization(self):
+        self.assertEqual(article_writer.sanitize_filename("Valid Name 123"), "Valid-Name-123")
+
+    def test_special_characters(self):
+        self.assertEqual(article_writer.sanitize_filename("File*Name?Special!Chars:"), "FileNameSpecialChars")
+
+    def test_leading_trailing_hyphens_spaces(self):
+        self.assertEqual(article_writer.sanitize_filename("-  File Name  -"), "File-Name")
+
+    def test_multiple_spaces_hyphens(self):
+        self.assertEqual(article_writer.sanitize_filename("File   ---   Name"), "File-Name")
+
+    def test_empty_string(self):
+        self.assertEqual(article_writer.sanitize_filename(""), "")
+
+    def test_only_special_chars(self):
+        self.assertEqual(article_writer.sanitize_filename("!@#$%^&*()"), "")
+
+    def test_numbers_and_hyphens(self):
+        self.assertEqual(article_writer.sanitize_filename("123-456-789"), "123-456-789")
+
+    def test_mixed_case(self):
+        self.assertEqual(article_writer.sanitize_filename("MixedCaseName"), "MixedCaseName")
 
 
 class TestGenerateHTMLArticle(unittest.TestCase):
@@ -76,15 +104,21 @@ class TestGenerateHTMLArticle(unittest.TestCase):
 class TestRunArticleWriting(unittest.TestCase):
     """Test suite for the run_article_writing function."""
 
+    @patch('src.pipeline_steps.article_writer.pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=unittest.mock.mock_open)
     @patch('src.pipeline_steps.article_writer.db_loader.initialize_chroma_collection')
     @patch('src.pipeline_steps.article_writer.config') # Mock the config module used by article_writer
-    def test_html_generation_and_storage(self, mock_config, mock_initialize_chroma):
-        """Test that HTML is generated and stored in ChromaDB for relevant TOPs."""
+    def test_html_generation_and_file_saving(self, mock_config, mock_initialize_chroma, mock_open_file, mock_mkdir):
+        """Test HTML generation, file saving, and ChromaDB update."""
         # Setup mock config
+        mock_project_root = MagicMock(spec=pathlib.Path)
+        mock_articles_dir = MagicMock(spec=pathlib.Path)
+        # Configure the project_root mock to return articles_dir when '/' is used
+        mock_project_root.__truediv__.return_value = mock_articles_dir
+
+        mock_config.PROJECT_ROOT = mock_project_root
         mock_config.CHROMA_DB_DIR_NAME = "test_db"
         mock_config.CHROMA_COLLECTION_NAME = "test_collection"
-        mock_config.PROJECT_ROOT = "/fake/project/root"
-        # Mock logger from config to avoid issues if config.get_logger is called inside the function
         mock_logger = MagicMock()
         mock_config.get_logger.return_value = mock_logger
 
@@ -94,103 +128,149 @@ class TestRunArticleWriting(unittest.TestCase):
 
         top_id_1 = "id1"
         top_content_1 = "Content for TOP 1"
-        top_metadata_1 = {"top_number": "T001", "is_relevant": True}
+        top_metadata_1 = {"top_number": "T001", "is_relevant": True, "existing_field": "preserve_me"}
 
-        top_id_2 = "id2" # This one will be skipped (already processed)
+        top_id_2 = "id2" # Skipped (already processed)
         top_content_2 = "Content for TOP 2"
-        top_metadata_2 = {"top_number": "T002", "is_relevant": True, "article_generated": True, "html_content": "<p>already done</p>"}
+        # For skipping, only 'article_generated': True matters now. 'html_content' could be there from an old run.
+        top_metadata_2 = {"top_number": "T002", "is_relevant": True, "article_generated": True, "html_content": "old_html_data"}
 
-        top_id_3 = "id3" # This one has no content
+        top_id_3 = "id3" # No content
         top_content_3 = None
         top_metadata_3 = {"top_number": "T003", "is_relevant": True}
 
+        top_id_4 = "id4" # TOP number needs sanitization
+        top_content_4 = "Content for TOP 4 Special/Chars"
+        top_metadata_4 = {"top_number": "T004/SC", "is_relevant": True}
+
 
         mock_chroma_collection.get.return_value = {
-            "ids": [top_id_1, top_id_2, top_id_3],
-            "documents": [top_content_1, top_content_2, top_content_3],
-            "metadatas": [top_metadata_1, top_metadata_2, top_metadata_3]
+            "ids": [top_id_1, top_id_2, top_id_3, top_id_4],
+            "documents": [top_content_1, top_content_2, top_content_3, top_content_4],
+            "metadatas": [top_metadata_1, top_metadata_2, top_metadata_3, top_metadata_4]
         }
 
-        # Call the function to be tested
+        # Call the function
         article_writer.run_article_writing()
 
-        # Assertions for TOP 1 (should be processed)
+        # 1. Assert directory creation
+        mock_project_root.__truediv__.assert_called_once_with("generated_articles")
+        mock_articles_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+        # 2. Assertions for TOP 1 (processed)
         generated_html_1 = article_writer.generate_html_article(top_content_1, top_metadata_1["top_number"])
-        expected_metadata_update_1 = { # This is what should be merged with existing metadata
-            'article_generated': True,
-            'html_content': generated_html_1
-        }
+        sanitized_top_num_1 = article_writer.sanitize_filename(top_metadata_1["top_number"])
+        expected_filepath_1 = mock_articles_dir / f"TOP_{sanitized_top_num_1}.html"
 
-        # Check that update was called for top_id_1
-        # The update method is called with ids=[id], metadatas=[merged_metadata]
-        # We need to find the call corresponding to top_id_1
-        update_call_args_list = mock_chroma_collection.update.call_args_list
+        # Assert file open and write for TOP 1
+        mock_open_file.assert_any_call(expected_filepath_1, "w", encoding="utf-8")
+        # Get the handle for this specific call to check write
+        handle_1 = mock_open_file() # mock_open_file.return_value also works if only one open
+        # If multiple files, need to check call_args_list for open, then check write on the specific handle
+        # For simplicity here, assuming calls to write correspond to the last open or check specific calls
 
-        call_for_top1_found = False
-        for c in update_call_args_list:
-            args, _ = c
-            if args[0] == [top_id_1]: # ids=[top_id_1]
-                updated_metadata_for_top1 = args[1][0] # metadatas=[{...}]
-                self.assertEqual(updated_metadata_for_top1.get("top_number"), top_metadata_1["top_number"])
-                self.assertTrue(updated_metadata_for_top1.get("article_generated"))
-                self.assertEqual(updated_metadata_for_top1.get("html_content"), generated_html_1)
-                call_for_top1_found = True
+        # Find the write call that corresponds to generated_html_1
+        # This is a bit tricky with multiple calls to open/write.
+        # A more robust way would be to check mock_open_file.call_args_list and then the .write() on the handle.
+        # For now, we assume the content was written by some call.
+        # A more direct check:
+        call_args_list = mock_open_file.return_value.write.call_args_list
+        self.assertTrue(any(call(generated_html_1) in call_args_list for call_obj in call_args_list for call in call_obj)),
+                        "Expected HTML content for TOP 1 was not written to file.")
+
+
+        # Assert ChromaDB update for TOP 1
+        updated_metadata_for_top1_arg = None
+        for c_args, _ in mock_chroma_collection.update.call_args_list:
+            if c_args[0] == [top_id_1]: # ids=[top_id_1]
+                updated_metadata_for_top1_arg = c_args[1][0] # metadatas=[{...}]
                 break
-        self.assertTrue(call_for_top1_found, "ChromaDB update was not called correctly for TOP 1")
+
+        self.assertIsNotNone(updated_metadata_for_top1_arg, "Update not called for TOP 1")
+        self.assertTrue(updated_metadata_for_top1_arg.get("article_generated"))
+        self.assertNotIn("html_content", updated_metadata_for_top1_arg, "html_content should not be in updated metadata for TOP 1")
+        self.assertEqual(updated_metadata_for_top1_arg.get("existing_field"), "preserve_me", "Existing metadata fields were not preserved for TOP 1")
+        self.assertEqual(updated_metadata_for_top1_arg.get("top_number"), top_metadata_1["top_number"])
 
 
-        # Assertions for TOP 2 (should be skipped, so no update call beyond initial state if any)
-        # And TOP 3 (no content, so no update call)
-        # Overall, update should only be called once for TOP1 in this setup.
-        self.assertEqual(mock_chroma_collection.update.call_count, 1, "ChromaDB update called more or less than expected.")
+        # 3. Assertions for TOP 4 (processed, with sanitized filename)
+        generated_html_4 = article_writer.generate_html_article(top_content_4, top_metadata_4["top_number"])
+        sanitized_top_num_4 = article_writer.sanitize_filename(top_metadata_4["top_number"]) # Should be "T004-SC"
+        self.assertEqual(sanitized_top_num_4, "T004-SC")
+        expected_filepath_4 = mock_articles_dir / f"TOP_{sanitized_top_num_4}.html"
+        mock_open_file.assert_any_call(expected_filepath_4, "w", encoding="utf-8")
+        # Check write for TOP 4 (similar to above, ensure its content was written)
+        self.assertTrue(any(call(generated_html_4) in call_args_list for call_obj in call_args_list for call in call_obj)),
+                        "Expected HTML content for TOP 4 was not written to file.")
+
+        # Assert ChromaDB update for TOP 4
+        updated_metadata_for_top4_arg = None
+        for c_args, _ in mock_chroma_collection.update.call_args_list:
+            if c_args[0] == [top_id_4]:
+                updated_metadata_for_top4_arg = c_args[1][0]
+                break
+        self.assertIsNotNone(updated_metadata_for_top4_arg, "Update not called for TOP 4")
+        self.assertTrue(updated_metadata_for_top4_arg.get("article_generated"))
+        self.assertNotIn("html_content", updated_metadata_for_top4_arg)
 
 
+        # 4. Overall call counts
+        # TOP 1 and TOP 4 should be processed and saved.
+        self.assertEqual(mock_open_file.call_count, 2, "File open count is incorrect.")
+        self.assertEqual(mock_chroma_collection.update.call_count, 2, "ChromaDB update count is incorrect.")
+
+
+    @patch('src.pipeline_steps.article_writer.pathlib.Path.mkdir')
     @patch('src.pipeline_steps.article_writer.db_loader.initialize_chroma_collection')
     @patch('src.pipeline_steps.article_writer.config')
-    def test_no_relevant_tops(self, mock_config, mock_initialize_chroma):
+    def test_no_relevant_tops(self, mock_config, mock_initialize_chroma, mock_mkdir):
         """Test behavior when no relevant TOPs are found."""
-        mock_config.CHROMA_DB_DIR_NAME = "test_db"
-        mock_config.CHROMA_COLLECTION_NAME = "test_collection"
-        mock_config.PROJECT_ROOT = "/fake/project/root"
+        mock_project_root = MagicMock(spec=pathlib.Path)
+        mock_articles_dir = MagicMock(spec=pathlib.Path)
+        mock_project_root.__truediv__.return_value = mock_articles_dir
+        mock_config.PROJECT_ROOT = mock_project_root
+        # ... other config mocks ...
         mock_logger = MagicMock()
         mock_config.get_logger.return_value = mock_logger
 
         mock_chroma_collection = MagicMock()
         mock_initialize_chroma.return_value = mock_chroma_collection
-        mock_chroma_collection.get.return_value = {"ids": [], "documents": [], "metadatas": []} # No TOPs
+        mock_chroma_collection.get.return_value = {"ids": [], "documents": [], "metadatas": []}
 
-        article_writer.run_article_writing()
+        with patch('builtins.open', new_callable=unittest.mock.mock_open) as mock_open_file:
+            article_writer.run_article_writing()
+            mock_open_file.assert_not_called() # No files should be opened
 
         mock_chroma_collection.update.assert_not_called()
-        # Check for log message (example)
-        # mock_logger.info.assert_any_call("No relevant TOPs found for article generation.")
-        # More specific log assertion might be needed depending on exact logging statements.
+        mock_articles_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
 
+    @patch('src.pipeline_steps.article_writer.pathlib.Path.mkdir')
     @patch('src.pipeline_steps.article_writer.db_loader.initialize_chroma_collection')
     @patch('src.pipeline_steps.article_writer.config')
-    def test_chromadb_initialization_failure(self, mock_config, mock_initialize_chroma):
+    def test_chromadb_initialization_failure(self, mock_config, mock_initialize_chroma, mock_mkdir):
         """Test behavior when ChromaDB initialization fails."""
-        mock_config.CHROMA_DB_DIR_NAME = "test_db"
-        mock_config.CHROMA_COLLECTION_NAME = "test_collection"
-        mock_config.PROJECT_ROOT = "/fake/project/root"
+        mock_project_root = MagicMock(spec=pathlib.Path)
+        mock_articles_dir = MagicMock(spec=pathlib.Path)
+        mock_project_root.__truediv__.return_value = mock_articles_dir
+        mock_config.PROJECT_ROOT = mock_project_root
         mock_logger = MagicMock()
         mock_config.get_logger.return_value = mock_logger
 
         mock_initialize_chroma.side_effect = Exception("ChromaDB init error")
 
-        mock_chroma_collection_instance = MagicMock() # To check it's not used
+        # mock_chroma_collection_instance = MagicMock() # Not needed, get will not be called
 
-        article_writer.run_article_writing()
+        with patch('builtins.open', new_callable=unittest.mock.mock_open) as mock_open_file:
+            article_writer.run_article_writing()
+            mock_open_file.assert_not_called()
 
-        mock_chroma_collection_instance.get.assert_not_called()
-        mock_chroma_collection_instance.update.assert_not_called()
-        # Check for critical log message
-        # mock_logger.critical.assert_any_call("CRITICAL: Initialization error (ChromaDB) in article writing: ChromaDB init error", exc_info=True)
+        # Ensure mkdir is still called as it's before Chroma init
+        mock_articles_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+        # Ensure get is not called on any collection object if init fails
+        # This is implicitly tested as mock_chroma_collection.get would fail if mock_initialize_chroma did not return a mock.
 
 
 if __name__ == '__main__':
-    # Re-enable logging for test execution if desired, or configure for tests
-    # logging.disable(logging.NOTSET)
-    # logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+    logging.disable(logging.CRITICAL) # Keep disabled for normal test runs
     unittest.main(argv=['first-arg-is-ignored'], exit=False)
