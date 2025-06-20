@@ -16,6 +16,7 @@ if str(project_root_for_import) not in sys.path:
 try:
     from src import config
     from src.pipeline_steps import db_loader
+    from src import prompts # Import the new prompts module
 except ImportError as e:
     # Attempt to get a logger even if config import failed for some reason, or print.
     temp_log = logging.getLogger(__name__)
@@ -171,7 +172,7 @@ def run_relevance_determination():
             current_tops=tops_to_evaluate_for_llm,
             genai_client=genai_client,
             model_name=config.GENAI_ARTICLE_GENERATION_MODEL, # Using the model specified for article generation, assuming it's suitable for selection
-            selection_prompt_template=config.GENAI_TOPIC_SELECTION_PROMPT,
+            selection_prompt_template=prompts.GENAI_TOPIC_SELECTION_PROMPT, # Use prompts.GENAI_TOPIC_SELECTION_PROMPT
             delay_duration=delay_duration
         )
 

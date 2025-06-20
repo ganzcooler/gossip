@@ -21,9 +21,9 @@ try:
     from src.config import (
         load_google_api_key,
         GENAI_ARTICLE_GENERATION_MODEL,
-        load_api_call_delay,
-        GENAI_JOURNALISTIC_ARTICLE_PROMPT # Added import for the prompt
+        load_api_call_delay
     )
+    from src.prompts import GENAI_JOURNALISTIC_ARTICLE_PROMPT # Moved from config
 except ImportError as e:
     # Fallback print if logging isn't configured due to config import error
     # Use a basic logger setup or print if config fails, as 'log' might not be initialized.

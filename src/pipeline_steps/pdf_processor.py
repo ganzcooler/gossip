@@ -17,6 +17,7 @@ if str(project_root_for_import) not in sys.path:
 
 try:
     from src import config
+    from src.prompts import PDF_EXTRACTION_PROMPT # Added import
 except ImportError as e:
     print(f"Error importing src.config: {e}")
     print(f"Current sys.path: {sys.path}")
@@ -35,30 +36,7 @@ class ExtractedPdfData(BaseModel):
     datum: str # Assuming YYYY-MM-DD
     tops: List[TopItem]
 
-PROMPT_TEXT = """
-        Du bist ein KI-Assistent.
-        Extrahiere die Tagesordnungspunkte mitsamt deren Inhalt aus dem PDF-Dokument und gib sie im JSON-Format zurück.
-        Schreibe in "top_id" die ID des Tagesordnungspunktes.
-        In "content" soll die Überschrift des Tagesordnungspunktes und dessen Inhalt stehen.
-        In "datum" soll das Datum des Protokolls im Format "YYYY-MM-DD" stehen.
-        In "title" soll der Titel des Ausschusses oder der Sitzung stehen, z.B. "Jugendausschuss".
-
-        Hier ein Beispiel für das JSON-Format:
-        {
-          "title": "Jugendausschuss",
-          "datum": "2023-10-01",
-          "tops": [
-            {
-              "top_id": "1",
-              "content": "Erster Tagesordnungspunkt Inhalt, der sehr spannend ist und viele Details bietet."
-            },
-            {
-              "top_id": "2",
-              "content": "Zweiter Tagesordnungspunkt Inhalt, eher administrativ."
-            }
-          ]
-        }
-        """
+# PROMPT_TEXT was moved to src/prompts.py and is now imported as PDF_EXTRACTION_PROMPT
 
 # The get_top_relevance function was removed as its functionality is now integrated
 # into the main PROMPT_TEXT used by process_single_pdf.
@@ -179,7 +157,7 @@ def run_pdf_extraction_and_storage():
         process_single_pdf(
             pdf_filepath=filepath,
             genai_model_instance=pdf_extraction_model,
-            prompt=PROMPT_TEXT,
+            prompt=PDF_EXTRACTION_PROMPT, # Use imported prompt
             chroma_collection=chroma_collection
         )
 
