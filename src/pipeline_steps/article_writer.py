@@ -21,12 +21,37 @@ except ImportError as e:
 # Initialize logger using the new constant
 log = config.get_logger(__name__, config.ARTICLE_WRITER_LOG_FILENAME)
 
+def generate_html_article(top_content: str, top_number: str = "N/A") -> str:
+    """
+    Generates a simple HTML article from TOP content.
+    """
+    # Basic HTML structure
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TOP Article: {top_number}</title>
+    <style>
+        body {{ font-family: sans-serif; margin: 20px; line-height: 1.6; }}
+        h1 {{ color: #333; }}
+        p {{ text-align: justify; }}
+    </style>
+</head>
+<body>
+    <h1>TOP Content (Original TOP Number: {top_number})</h1>
+    <pre style="white-space: pre-wrap; word-wrap: break-word;">{top_content}</pre>
+</body>
+</html>
+"""
+    return html_content
+
 def run_article_writing():
     """
-    Fetches relevant TOPs (and ideally, those with references) and marks them
-    as 'article_generated' in ChromaDB. Actual article content generation is not performed.
+    Fetches relevant TOPs, generates HTML articles for them,
+    and stores the HTML content in ChromaDB, marking them as 'article_generated'.
     """
-    log.info("Starting article writing process (simulated: marking TOPs as generated)...")
+    log.info("Starting article writing process...")
 
     try:
         chroma_collection = db_loader.initialize_chroma_collection(
@@ -41,51 +66,66 @@ def run_article_writing():
 
     try:
         # Fetch TOPs that are marked as relevant.
-        # Optionally, could also filter for 'references_top_ids' is not None,
-        # but current logic from article_generator.py applies this to all relevant TOPs.
         log.info("Fetching relevant TOPs from ChromaDB for article writing (is_relevant = True).")
-        # The metadata value for boolean True in ChromaDB is just True
         relevant_tops_results = chroma_collection.get(
             where={"is_relevant": True},
-            include=['ids', 'metadatas'] # Only need IDs and metadatas to check 'article_generated' status
+            include=['ids', 'metadatas', 'documents'] # Added 'documents' to get TOP content
         )
-        log.info(f"Retrieved {len(relevant_tops_results.get('ids', []))} relevant TOP entries for marking as article generated.")
+        log.info(f"Retrieved {len(relevant_tops_results.get('ids', []))} relevant TOP entries for article generation.")
     except Exception as e:
-        log.error(f"Error querying ChromaDB for relevant TOPs to mark as generated: {e}", exc_info=True)
+        log.error(f"Error querying ChromaDB for relevant TOPs: {e}", exc_info=True)
         return
 
     if not relevant_tops_results or not relevant_tops_results['ids']:
-        log.info("No relevant TOPs found to mark as article generated.")
+        log.info("No relevant TOPs found for article generation.")
         return
 
-    marked_count = 0
+    generated_count = 0
     skipped_count = 0
+    error_count = 0
 
     for i in range(len(relevant_tops_results['ids'])):
         chroma_id = relevant_tops_results['ids'][i]
         metadata = relevant_tops_results['metadatas'][i]
-        original_top_number = metadata.get('top_number', 'N/A') # For logging
+        document_content = relevant_tops_results['documents'][i] if relevant_tops_results['documents'] and len(relevant_tops_results['documents']) > i else None
+        original_top_number = metadata.get('top_number', 'N/A')
 
-        # Check if article_generated is already True
-        if metadata.get('article_generated') is True:
-            log.debug(f"TOP {chroma_id} (Original: {original_top_number}) is already marked as article_generated. Skipping.")
-            skipped_count +=1
+        # Check if article_generated is already True and html_content exists
+        if metadata.get('article_generated') is True and metadata.get('html_content'):
+            log.debug(f"TOP {chroma_id} (Original: {original_top_number}) already has HTML content. Skipping.")
+            skipped_count += 1
             continue
 
-        log.info(f"Marking TOP {chroma_id} (Original: {original_top_number}) as article_generated=True.")
-        # Simulate article generation by just updating the status
-        article_status_updated = db_loader.update_article_generated_status(
-            top_id=chroma_id,
-            article_generated=True,
-            collection=chroma_collection
-        )
-        if article_status_updated:
-            log.info(f"Successfully marked TOP {chroma_id} as article_generated=True.")
-            marked_count += 1
-        else:
-            log.error(f"Failed to mark TOP {chroma_id} as article_generated=True.")
+        if not document_content:
+            log.warning(f"TOP {chroma_id} (Original: {original_top_number}) has no document content. Skipping HTML generation.")
+            error_count += 1
+            continue
 
-    log.info(f"Article writing process (simulation) finished. Marked {marked_count} new TOPs as article_generated. Skipped {skipped_count} already marked TOPs.")
+        log.info(f"Generating HTML article for TOP {chroma_id} (Original: {original_top_number}).")
+        try:
+            html_article = generate_html_article(document_content, original_top_number)
+
+            # Prepare metadata update
+            metadata_update = {
+                'article_generated': True,
+                'html_content': html_article
+            }
+
+            # Update ChromaDB entry
+            # This assumes db_loader has a function like update_metadata or we adapt/add one.
+            # For now, let's assume a generic update mechanism exists or will be added.
+            # We'll use chroma_collection.update for now, which is standard ChromaDB client usage.
+            chroma_collection.update(
+                ids=[chroma_id],
+                metadatas=[{**metadata, **metadata_update}] # Merge existing metadata with new updates
+            )
+            log.info(f"Successfully generated and stored HTML article for TOP {chroma_id}.")
+            generated_count += 1
+        except Exception as e:
+            log.error(f"Error generating or storing HTML for TOP {chroma_id} (Original: {original_top_number}): {e}", exc_info=True)
+            error_count += 1
+
+    log.info(f"Article writing process finished. Generated {generated_count} new HTML articles. Skipped {skipped_count} already processed TOPs. Encountered {error_count} errors.")
 
 if __name__ == "__main__":
     log.info(f"Executing article_writer.py directly. Project root: {config.PROJECT_ROOT}")
