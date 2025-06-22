@@ -36,8 +36,8 @@ class TestPDFProcessingAndChromaIngestion(unittest.TestCase):
             "title": "Test Protocol",
             "datum": "2023-07-15",
             "tops": [
-                {"top_id": "1.a", "content": "Content for TOP 1.a"},
-                {"top_id": "2", "content": "Content for TOP 2"}
+                "Content for TOP 1.a",
+                "Content for TOP 2"
             ]
         }
         mock_llm_response = MagicMock()
@@ -78,13 +78,13 @@ class TestPDFProcessingAndChromaIngestion(unittest.TestCase):
             call(
                 top_id='11111111-1111-1111-1111-111111111111',
                 document="Content for TOP 1.a",
-                metadata={"protocol_title": "Test Protocol", "protocol_date": "2023-07-15", "top_number": "1.a"},
+                metadata={"protocol_title": "Test Protocol", "protocol_date": "2023-07-15", "top_sequence_in_protocol": 1},
                 collection=mock_chroma_collection
             ),
             call(
                 top_id='22222222-2222-2222-2222-222222222222',
                 document="Content for TOP 2",
-                metadata={"protocol_title": "Test Protocol", "protocol_date": "2023-07-15", "top_number": "2"},
+                metadata={"protocol_title": "Test Protocol", "protocol_date": "2023-07-15", "top_sequence_in_protocol": 2},
                 collection=mock_chroma_collection
             )
         ]
