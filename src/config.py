@@ -86,6 +86,19 @@ def load_api_call_delay():
 
 # --- ChromaDB Configuration ---
 CHROMA_COLLECTION_NAME = "tops_content"
+CHROMA_ARTICLES_COLLECTION_NAME = "generated_articles" # New collection for articles
+
+# --- Directory Names ---
+# (Existing PHD_DIR_NAME, CHROMA_DB_DIR_NAME, ARTICLES_DIR_NAME)
+IMAGES_DIR_NAME = "generated_images" # New directory for images
+
+# --- Log File Names ---
+# (Existing log file names)
+IMAGE_GENERATOR_LOG_FILENAME = LOG_DIR_NAME + "/image-generator.log" # New log for image generator
+
+# --- Model Names ---
+# (Existing GENAI_PDF_EXTRACTION_MODEL, OLLAMA_EMBEDDING_MODEL, GENAI_ARTICLE_GENERATION_MODEL)
+GENAI_IMAGE_GENERATION_MODEL = "image-generation-placeholder" # More generic placeholder for an image generation model
 
 # --- Article Generation ---
 SIMILAR_DOCS_COUNT = 2
