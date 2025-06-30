@@ -34,6 +34,8 @@ except ImportError as e:
 
 import os # Already present
 import re # Already present
+import uuid # For generating unique article IDs
+
 # Initialize logger using the new constant (config must be loaded by this point)
 log = config.get_logger(__name__, config.ARTICLE_WRITER_LOG_FILENAME)
 
@@ -175,23 +177,30 @@ def run_article_writing():
 
     # Initialize ChromaDB
     try:
-        chroma_collection = db_loader.initialize_chroma_collection(
+        tops_collection = db_loader.initialize_chroma_collection(
             db_path_name=config.CHROMA_DB_DIR_NAME,
-            collection_name=config.CHROMA_COLLECTION_NAME,
+            collection_name=config.CHROMA_COLLECTION_NAME, # Existing TOPs collection
             project_root=config.PROJECT_ROOT
         )
-        log.info(f"ChromaDB collection '{config.CHROMA_COLLECTION_NAME}' initialized.")
+        articles_collection = db_loader.initialize_chroma_collection(
+            db_path_name=config.CHROMA_DB_DIR_NAME, # Same DB, different collection
+            collection_name=config.CHROMA_ARTICLES_COLLECTION_NAME, # New articles collection
+            project_root=config.PROJECT_ROOT
+        )
+        log.info(f"ChromaDB TOPs collection '{config.CHROMA_COLLECTION_NAME}' initialized.")
+        log.info(f"ChromaDB Articles collection '{config.CHROMA_ARTICLES_COLLECTION_NAME}' initialized.")
     except Exception as e:
         log.critical(f"CRITICAL: Initialization error (ChromaDB): {e}", exc_info=True)
         return
 
     # Fetch relevant TOPs
     try:
-        relevant_tops_results = chroma_collection.get(
-            where={"is_relevant": True},
+        # We still fetch from the main TOPs collection
+        relevant_tops_results = tops_collection.get(
+            where={"is_relevant": True}, # Assuming 'is_relevant' is still key for selection
             include=['ids', 'metadatas', 'documents']
         )
-        log.info(f"Retrieved {len(relevant_tops_results.get('ids', []))} relevant TOP entries.")
+        log.info(f"Retrieved {len(relevant_tops_results.get('ids', []))} relevant TOP entries from '{config.CHROMA_COLLECTION_NAME}'.")
     except Exception as e:
         log.error(f"Error querying ChromaDB for relevant TOPs: {e}", exc_info=True)
         return
@@ -200,77 +209,129 @@ def run_article_writing():
         log.info("No relevant TOPs found for article generation.")
         return
 
+    # Get existing article IDs to avoid re-processing for this run if desired,
+    # or rely on the image generator to check. For now, this step will generate
+    # articles if they are not in the articles_collection.
+    # A more robust check would be to query articles_collection for existing original_top_id.
+    existing_article_original_top_ids = set()
+    try:
+        existing_articles = articles_collection.get(include=['metadatas'])
+        if existing_articles and existing_articles['metadatas']:
+            for meta in existing_articles['metadatas']:
+                if meta and 'original_top_id' in meta:
+                     existing_article_original_top_ids.add(meta['original_top_id'])
+        log.info(f"Found {len(existing_article_original_top_ids)} TOP IDs already present in the articles collection.")
+    except Exception as e:
+        log.warning(f"Could not fetch existing articles to check for duplicates: {e}. May re-generate existing articles.", exc_info=True)
+
+
     generated_count = 0
-    skipped_count = 0
+    skipped_due_to_existing_article = 0
     error_count = 0
 
     for i in range(len(relevant_tops_results['ids'])):
-        chroma_id = relevant_tops_results['ids'][i]
-        metadata = relevant_tops_results['metadatas'][i]
-        document_content = relevant_tops_results['documents'][i] if relevant_tops_results['documents'] and len(relevant_tops_results['documents']) > i else None
-        original_top_number = metadata.get('top_number', 'N/A')
+        top_chroma_id = relevant_tops_results['ids'][i] # This is the ID from the 'tops_content' collection
+        top_metadata = relevant_tops_results['metadatas'][i]
+        top_document_content = relevant_tops_results['documents'][i] if relevant_tops_results['documents'] and len(relevant_tops_results['documents']) > i else None
+        original_top_number_for_logging = top_metadata.get('top_number', 'N/A')
 
-        if metadata.get('article_generated') is True:
-            log.debug(f"TOP {chroma_id} (Original: {original_top_number}) already marked 'article_generated'. Skipping.")
-            skipped_count += 1
+        # Check if an article for this TOP already exists in the articles_collection
+        if top_chroma_id in existing_article_original_top_ids:
+            log.debug(f"TOP {top_chroma_id} (Original: {original_top_number_for_logging}) already has an article in '{config.CHROMA_ARTICLES_COLLECTION_NAME}'. Skipping article generation.")
+            skipped_due_to_existing_article +=1
             continue
 
-        if not document_content:
-            log.warning(f"TOP {chroma_id} (Original: {original_top_number}) has no document content. Skipping LLM generation.")
-            error_count += 1 # Considered an error for this item
+        # The old check for 'article_generated' in top_metadata is removed.
+        # if top_metadata.get('article_generated') is True:
+        #     log.debug(f"TOP {top_chroma_id} (Original: {original_top_number_for_logging}) already marked 'article_generated'. Skipping.")
+        #     skipped_count += 1 # old counter, can be removed or merged
+        #     continue
+
+        if not top_document_content:
+            log.warning(f"TOP {top_chroma_id} (Original: {original_top_number_for_logging}) has no document content. Skipping LLM generation.")
+            error_count += 1
             continue
 
-        log.info(f"Processing TOP {chroma_id} (Original: {original_top_number}) for LLM article generation.")
+        log.info(f"Processing TOP {top_chroma_id} (Original: {original_top_number_for_logging}) for LLM article generation.")
 
         llm_response_data: JournalisticArticleResponse | None = None
         try {
             llm_response_data = generate_journalistic_article_llm(
-                document_content,
+                top_document_content,
                 genai_model_instance,
-                GENAI_JOURNALISTIC_ARTICLE_PROMPT
+                GENAI_JOURNALISTIC_ARTICLE_PROMPT # From src.prompts
             )
         } except Exception as e:
-            log.error(f"Unexpected outer error during LLM call for TOP {chroma_id}: {e}", exc_info=True)
+            log.error(f"Unexpected outer error during LLM call for TOP {top_chroma_id}: {e}", exc_info=True)
         finally:
-            log.debug(f"LLM processing for TOP {chroma_id} concluded. Sleeping for {api_delay}s.")
+            log.debug(f"LLM processing for TOP {top_chroma_id} concluded. Sleeping for {api_delay}s.")
             time.sleep(api_delay)
 
-        if llm_response_data and llm_response_data.article_body: # Ensure body has content
-            log.info(f"LLM generated structured article for TOP {chroma_id} (Title: {llm_response_data.article_title}). Proceeding to HTML conversion & saving.")
+        if llm_response_data and llm_response_data.article_body:
+            log.info(f"LLM generated structured article for TOP {top_chroma_id} (Title: {llm_response_data.article_title}).")
+
+            # Generate a unique ID for the article itself
+            article_uuid = str(uuid.uuid4())
+            article_id_for_db = f"ART_{top_chroma_id}_{article_uuid[:8]}" # Example: ART_top123_abcdef12
+
+            # Save the HTML file (optional, but current behavior)
             try {
                 html_article_content = generate_html_article(
                     article_title=llm_response_data.article_title,
                     article_body=llm_response_data.article_body,
-                    original_top_number=original_top_number # For filename, not for rendering
+                    original_top_number=original_top_number_for_logging
                 )
 
-                sanitized_filename_base = sanitize_filename(llm_response_data.article_title if llm_response_data.article_title else original_top_number)
-                if not sanitized_filename_base: # Fallback if title is empty or sanitization results in empty
-                     sanitized_filename_base = chroma_id
-                filename = f"ART_{sanitized_filename_base}.html" # Changed prefix to ART_
-                filepath = articles_dir / filename
+                sanitized_filename_base = sanitize_filename(llm_response_data.article_title if llm_response_data.article_title else original_top_number_for_logging)
+                if not sanitized_filename_base:
+                     sanitized_filename_base = top_chroma_id
+                html_filename = f"ART_{sanitized_filename_base}.html"
+                html_filepath = articles_dir / html_filename
 
-                with open(filepath, "w", encoding="utf-8") as f:
+                with open(html_filepath, "w", encoding="utf-8") as f:
                     f.write(html_article_content)
-                log.info(f"Saved LLM-generated HTML article to: {filepath}")
+                log.info(f"Saved LLM-generated HTML article to: {html_filepath}")
 
-                updated_metadata = {k: v for k, v in metadata.items() if k != 'html_content'}
-                updated_metadata['article_generated'] = True
-
-                chroma_collection.update(
-                    ids=[chroma_id],
-                    metadatas=[updated_metadata]
-                )
-                log.info(f"Marked TOP {chroma_id} as article_generated=True in ChromaDB.")
-                generated_count += 1
             } except Exception as e:
-                log.error(f"Error converting LLM article to HTML or saving for TOP {chroma_id}: {e}", exc_info=True)
-                error_count += 1
-        else:
-            log.warning(f"LLM failed to generate article for TOP {chroma_id} or returned empty. Skipping HTML file.")
-            error_count += 1 # LLM failure means an error for this item's processing
+                log.error(f"Error saving HTML article file for TOP {top_chroma_id}: {e}", exc_info=True)
+                # Decide if this is critical enough to stop adding to DB or just log
+                # For now, we'll still try to add to DB.
 
-    log.info(f"Article writing process finished. Generated {generated_count} HTML files from LLM content. Skipped {skipped_count} (already processed). Encountered {error_count} errors/skipped TOPs.")
+            # Add to the new articles ChromaDB collection
+            try {
+                success_db_add = db_loader.add_article_to_collection(
+                    article_id=article_id_for_db,
+                    original_top_id=top_chroma_id, # Link back to the original TOP
+                    article_title=llm_response_data.article_title,
+                    article_text=llm_response_data.article_body, # Store the full body
+                    collection=articles_collection
+                )
+                if success_db_add:
+                    log.info(f"Successfully added article {article_id_for_db} (from TOP {top_chroma_id}) to '{config.CHROMA_ARTICLES_COLLECTION_NAME}' collection.")
+                    generated_count += 1
+                else:
+                    log.error(f"Failed to add article {article_id_for_db} (from TOP {top_chroma_id}) to ChromaDB collection.")
+                    error_count +=1 # Count as an error if DB add fails
+
+            } except Exception as e:
+                log.error(f"Error adding article for TOP {top_chroma_id} to articles ChromaDB collection: {e}", exc_info=True)
+                error_count += 1
+
+            # The part that updated 'article_generated' in the original tops_collection is removed:
+            # updated_metadata = {k: v for k, v in top_metadata.items() if k != 'html_content'}
+            # updated_metadata['article_generated'] = True
+            # tops_collection.update(ids=[top_chroma_id], metadatas=[updated_metadata])
+            # log.info(f"Marked TOP {top_chroma_id} as article_generated=True in ChromaDB.") # This log is now obsolete
+
+        else:
+            log.warning(f"LLM failed to generate article for TOP {top_chroma_id} or returned empty. Skipping DB storage.")
+            error_count += 1
+
+    log.info(f"Article writing process finished. "
+             f"Successfully generated and stored {generated_count} new articles in DB. "
+             f"Skipped {skipped_due_to_existing_article} TOPs as articles already existed. "
+             f"Encountered {error_count} errors/skipped TOPs during processing.")
+
 
 if __name__ == "__main__":
     # Ensure GOOGLE_API_KEY is set in environment or config for direct execution

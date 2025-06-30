@@ -11,6 +11,7 @@ try:
     from src.pipeline_steps import relevance_determiner
     from src.pipeline_steps import reference_finder
     from src.pipeline_steps import article_writer
+    from src.pipeline_steps import image_generator # Added new step
     from src import config # To initialize logging or access other configs if needed directly
 except ImportError as e:
     print(f"Error: Could not import pipeline step modules or config: {e}")
@@ -22,8 +23,8 @@ def main():
     parser = argparse.ArgumentParser(description='Run individual steps of the data processing pipeline.')
     parser.add_argument(
         'step',
-        choices=['process_pdfs', 'determine_relevance', 'find_references', 'write_articles', 'all'],
-        help='The pipeline step to execute: "process_pdfs" (extracts from PDFs and stores in DB), "determine_relevance", "find_references", "write_articles", or "all" to run all steps in sequence.'
+        choices=['process_pdfs', 'determine_relevance', 'find_references', 'write_articles', 'generate_images', 'all'],
+        help='The pipeline step to execute: "process_pdfs", "determine_relevance", "find_references", "write_articles", "generate_images", or "all" to run all steps in sequence.'
     )
 
     args = parser.parse_args()
@@ -41,6 +42,8 @@ def main():
         reference_finder.run_reference_finding()
     elif args.step == 'write_articles':
         article_writer.run_article_writing()
+    elif args.step == 'generate_images': # Added new step condition
+        image_generator.run_image_generation()
     elif args.step == 'all':
         print("Running step: process_pdfs")
         pdf_processor.run_pdf_extraction_and_storage()
@@ -50,6 +53,8 @@ def main():
         reference_finder.run_reference_finding()
         print("Running step: write_articles")
         article_writer.run_article_writing()
+        print("Running step: generate_images") # Added new step to 'all'
+        image_generator.run_image_generation()
     else:
         # This case should not be reached due to argparse choices
         print(f"Error: Unknown step '{args.step}'. Please choose from the available steps.")
