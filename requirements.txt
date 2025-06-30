@@ -1,3 +1,4 @@
 google-generativeai
 pydantic
 PyMuPDF
+Pillow

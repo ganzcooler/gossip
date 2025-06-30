@@ -97,11 +97,11 @@ IMAGES_DIR_NAME = "generated_images" # New directory for images
 IMAGE_GENERATOR_LOG_FILENAME = LOG_DIR_NAME + "/image-generator.log" # New log for image generator
 
 # --- Model Names ---
-# (Existing GENAI_PDF_EXTRACTION_MODEL, OLLAMA_EMBEDDING_MODEL, GENAI_ARTICLE_GENERATION_MODEL)
-GENAI_IMAGE_GENERATION_MODEL = "image-generation-placeholder" # More generic placeholder for an image generation model
+# (Existing GENAI_PDF_EXTRACTION_MODEL, GENAI_ARTICLE_GENERATION_MODEL)
+GENAI_IMAGE_GENERATION_MODEL = "gemini-2.0-flash-preview-image-generation" # Using the model from user's example code.
 
 # --- Article Generation ---
-SIMILAR_DOCS_COUNT = 2
+# SIMILAR_DOCS_COUNT = 2 # This seems related to the removed reference_finder
 
 # Helper function to get a configured logger
 def get_logger(name, log_file_name_with_subdir, level=DEFAULT_LOG_LEVEL, project_root_path=PROJECT_ROOT, log_format=LOG_FORMAT):
