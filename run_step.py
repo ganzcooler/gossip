@@ -9,7 +9,8 @@ sys.path.insert(0, str(project_root))
 try:
     from src.pipeline_steps import pdf_processor
     from src.pipeline_steps import article_writer
-    # relevance_determiner, reference_finder, image_generator are removed as they were ChromaDB dependent
+    from src.pipeline_steps import image_generator # Added back image_generator
+    # relevance_determiner, reference_finder are removed as they were ChromaDB dependent
     from src import config # To initialize logging or access other configs if needed directly
 except ImportError as e:
     print(f"Error: Could not import pipeline step modules or config: {e}")
@@ -21,8 +22,8 @@ def main():
     parser = argparse.ArgumentParser(description='Run individual steps of the data processing pipeline.')
     parser.add_argument(
         'step',
-        choices=['process_pdfs', 'write_articles', 'all'],
-        help='The pipeline step to execute: "process_pdfs", "write_articles", or "all" to run all steps in sequence.'
+        choices=['process_pdfs', 'write_articles', 'generate_images', 'all'],
+        help='The pipeline step to execute: "process_pdfs", "write_articles", "generate_images", or "all" to run all steps in sequence.'
     )
 
     args = parser.parse_args()
@@ -59,6 +60,9 @@ def main():
         # However, the primary path is via 'all'.
         # For now, we call it with None, and it should handle it gracefully (e.g. log and exit)
         article_writer.run_article_writing(extracted_texts=None) # Or an empty dict: {}
+    elif args.step == 'generate_images':
+        print("Running step: Image Generation")
+        image_generator.run_image_generation()
     elif args.step == 'all':
         print("Running all steps in sequence...")
 
@@ -81,8 +85,9 @@ def main():
         article_writer.run_article_writing(extracted_texts=extracted_pdf_texts)
         print("Article writing complete.")
 
-        # print("\nStep Z: Generate Images (SKIPPED as per new requirements)")
-        # image_generator.run_image_generation() # This would need input from articles
+        print("\nStep 3: Image Generation")
+        image_generator.run_image_generation()
+        print("Image generation complete.")
 
         print("\n'all' steps execution finished.")
     else:

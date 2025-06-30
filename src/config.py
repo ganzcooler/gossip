@@ -19,22 +19,22 @@ DEFAULT_LOG_LEVEL = logging.INFO
 # --- Directory Names ---
 # These are relative to PROJECT_ROOT
 PDF_DIR_NAME = "pdf_files"
-CHROMA_DB_DIR_NAME = "chroma_db"
+# CHROMA_DB_DIR_NAME = "chroma_db" # Removed
 ARTICLES_DIR_NAME = "articles"
 
 # --- Log File Names ---
 # These are relative to PROJECT_ROOT in a "logs" subdirectory
 LOG_DIR_NAME = "logs" # All logs will go into a "logs" subdirectory at project root
 PDF_PROCESSING_LOG_FILENAME = LOG_DIR_NAME + "/pdf-processing.log"
-CHROMA_DB_UTILS_LOG_FILENAME = LOG_DIR_NAME + "/chromadb-utils.log"
-CHROMA_TO_ARTICLES_LOG_FILENAME = LOG_DIR_NAME + "/chroma-to-articles.log"
-RELEVANCE_DETERMINER_LOG_FILENAME = LOG_DIR_NAME + "/relevance-determiner.log"
-REFERENCE_FINDER_LOG_FILENAME = LOG_DIR_NAME + "/reference-finder.log"
+# CHROMA_DB_UTILS_LOG_FILENAME = LOG_DIR_NAME + "/chromadb-utils.log" # Removed
+# CHROMA_TO_ARTICLES_LOG_FILENAME = LOG_DIR_NAME + "/chroma-to-articles.log" # Removed
+# RELEVANCE_DETERMINER_LOG_FILENAME = LOG_DIR_NAME + "/relevance-determiner.log" # Removed (file deleted)
+# REFERENCE_FINDER_LOG_FILENAME = LOG_DIR_NAME + "/reference-finder.log" # Removed (file deleted)
 ARTICLE_WRITER_LOG_FILENAME = LOG_DIR_NAME + "/article-writer.log"
 
 # --- Model Names ---
-GENAI_PDF_EXTRACTION_MODEL = "gemini-2.5-flash-preview-05-20"
-OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
+GENAI_PDF_EXTRACTION_MODEL = "gemini-2.5-flash-preview-05-20" # Retained for potential direct PDF Q&A in future
+# OLLAMA_EMBEDDING_MODEL = "nomic-embed-text" # Removed
 GENAI_ARTICLE_GENERATION_MODEL = "gemini-2.5-flash-preview-05-20"
 
 # --- API Call Settings ---
@@ -84,12 +84,12 @@ def load_api_call_delay():
                        f"Muss eine Ganzzahl sein. Verwende Standardwert: {DEFAULT_API_CALL_DELAY_SECONDS}s.")
         return DEFAULT_API_CALL_DELAY_SECONDS
 
-# --- ChromaDB Configuration ---
-CHROMA_COLLECTION_NAME = "tops_content"
-CHROMA_ARTICLES_COLLECTION_NAME = "generated_articles" # New collection for articles
+# --- ChromaDB Configuration --- # Removed
+# CHROMA_COLLECTION_NAME = "tops_content" # Removed
+# CHROMA_ARTICLES_COLLECTION_NAME = "generated_articles" # Removed
 
 # --- Directory Names ---
-# (Existing PHD_DIR_NAME, CHROMA_DB_DIR_NAME, ARTICLES_DIR_NAME)
+# (Existing PDF_DIR_NAME, ARTICLES_DIR_NAME)
 IMAGES_DIR_NAME = "generated_images" # New directory for images
 
 # --- Log File Names ---
