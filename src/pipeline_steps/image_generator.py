@@ -6,11 +6,11 @@ import time
 # import random # No longer needed for mock generation
 import os # For path joining
 import re # For parsing HTML
-import google.generativeai as genai
-from google.generativeai import types
+from google import genai # Changed import
+from google.genai import types as genai_types # For GenerationConfig
 from google.api_core import exceptions as google_exceptions
-from PIL import Image # For image processing, though not strictly needed if just saving bytes
-from io import BytesIO
+# from PIL import Image # Not strictly needed if just saving bytes directly
+# from io import BytesIO # Not strictly needed if just saving bytes directly
 
 # Ensure src directory is in sys.path for config import
 project_root_for_import = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -20,7 +20,7 @@ if str(project_root_for_import) not in sys.path:
 try:
     from src import config
     from src.config import (
-        load_google_api_key, # Now needed for actual API call
+        load_google_api_key,
         GENAI_IMAGE_GENERATION_MODEL,
         load_api_call_delay
     )
@@ -32,32 +32,24 @@ except ImportError as e:
 
 log = config.get_logger(__name__, config.IMAGE_GENERATOR_LOG_FILENAME)
 
-# Global GenAI model instance for image generation
-# Initialize it once if possible, or ensure API key is configured before first call.
-# For simplicity here, we'll initialize it in the run_image_generation or ensure it's configured.
-genai_image_model_instance = None
+# To store the initialized client
+genai_client_instance = None
 
-
-def _initialize_genai_for_image_generation():
-    """Initializes the GenAI client and model for image generation if not already done."""
-    global genai_image_model_instance
-    if genai_image_model_instance is None:
+def _initialize_genai_client() -> genai.client.Client | None:
+    """Initializes and returns a GenAI client using the API key from config."""
+    global genai_client_instance
+    if genai_client_instance is None:
         try:
             api_key = load_google_api_key()
-            genai.configure(api_key=api_key)
-            model_name = config.GENAI_IMAGE_GENERATION_MODEL
-            if not model_name:
-                log.critical("GENAI_IMAGE_GENERATION_MODEL not set in config. Cannot generate images.")
-                raise ValueError("Image generation model name not configured.")
-            # For some specific tasks or models, you might use client.get_model or similar
-            # but for generate_content, a GenerativeModel instance is typical.
-            genai_image_model_instance = genai.GenerativeModel(model_name)
-            log.info(f"Google GenAI model '{model_name}' initialized for image generation.")
+            if not api_key:
+                log.critical("API key not found in config. Cannot initialize GenAI client.")
+                return None
+            genai_client_instance = genai.Client(api_key=api_key)
+            log.info("Google GenAI Client initialized successfully for image generation.")
         except Exception as e:
-            log.critical(f"Failed to initialize Google GenAI for image generation: {e}", exc_info=True)
-            # genai_image_model_instance remains None, subsequent calls will fail or be skipped.
-            raise # Re-raise to halt if initialization is critical at call time
-
+            log.critical(f"Failed to initialize Google GenAI Client: {e}", exc_info=True)
+            return None
+    return genai_client_instance
 
 def parse_html_article(html_content: str) -> tuple[str | None, str | None]:
     """
@@ -88,23 +80,28 @@ def parse_html_article(html_content: str) -> tuple[str | None, str | None]:
 
 
 # --- Actual LLM Image Generation ---
-def generate_featured_image_llm(article_title: str, article_text_snippet: str) -> bytes | None:
+def generate_featured_image_llm(
+    client: genai.client.Client,
+    model_name: str,
+    article_title: str,
+    article_text_snippet: str
+) -> bytes | None:
     """
-    Generates a featured image using the Gemini API based on article title and text snippet.
-    Uses the globally initialized genai_image_model_instance.
+    Generates a featured image using the Gemini API (via genai.Client)
+    based on article title and text snippet.
     """
-    global genai_image_model_instance # Original code below
-    if genai_image_model_instance is None:
-        log.error("GenAI image model not initialized. Cannot generate image.")
+    if client is None:
+        log.error("GenAI client not initialized. Cannot generate image.")
         return None
 
     prompt = f"Generate a compelling and relevant featured image for a news article titled '{article_title}'. The article is about: {article_text_snippet}"
     log.info(f"Generating image with prompt (first 150 chars): {prompt[:150]}...")
 
     try:
-        response = genai_image_model_instance.generate_content(
+        response = client.generate_content(
+            model=f"models/{model_name}",
             contents=[prompt],
-            generation_config=types.GenerationConfig()
+            generation_config=genai_types.GenerationConfig()
         )
 
         if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
@@ -135,17 +132,17 @@ def run_image_generation():
     (if one doesn't already exist), and saves it to the images directory.
     """
     log.info("Starting image generation process...")
-    try:
-        # Initialize the GenAI model for image generation (loads API key)
-        _initialize_genai_for_image_generation()
-    except Exception:
-        # Error already logged by _initialize_genai_for_image_generation
-        log.error("Halting image generation due to initialization failure.")
+
+    client = _initialize_genai_client()
+    if not client:
+        log.error("Failed to initialize GenAI client. Halting image generation.")
         return
 
-    if genai_image_model_instance is None:
-        log.error("Image generation model could not be initialized. Skipping image generation.")
+    image_model_name = config.GENAI_IMAGE_GENERATION_MODEL
+    if not image_model_name:
+        log.critical("GENAI_IMAGE_GENERATION_MODEL not set in config. Cannot generate images.")
         return
+    log.info(f"Using image generation model: {image_model_name}")
 
     api_delay = load_api_call_delay()
     log.info(f"Using API call delay of {api_delay} seconds between image generation calls.")
@@ -208,6 +205,8 @@ def run_image_generation():
             image_bytes: bytes | None = None
             try:
                 image_bytes = generate_featured_image_llm(
+                    client=client,
+                    model_name=image_model_name,
                     article_title=prompt_title,
                     article_text_snippet=prompt_text_snippet
                 )

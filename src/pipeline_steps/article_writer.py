@@ -2,12 +2,13 @@
 import logging # Keep for potential direct use
 import pathlib
 import sys
-import time # Added for API delay
-import json # Added for JSON parsing
-import google.generativeai as genai # Changed from google.generai
-from google.api_core import exceptions as google_exceptions # Added for specific error handling
-from pydantic import BaseModel, ValidationError # Added for Pydantic model and validation error
-from typing import List # Added for potential future use, good practice
+import time
+import json
+from google import genai # Changed import for google-genai
+from google.genai import types as genai_types # For GenerationConfig and schema types
+from google.api_core import exceptions as google_exceptions
+from pydantic import BaseModel, ValidationError, TypeAdapter
+from typing import List
 
 # Ensure src directory is in sys.path for config import
 project_root_for_import = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -15,18 +16,14 @@ if str(project_root_for_import) not in sys.path:
     sys.path.insert(0, str(project_root_for_import))
 
 try:
-    from src import config # For PROJECT_ROOT, ARTICLES_DIR_NAME
-    # from src.pipeline_steps import db_loader # Removed ChromaDB dependency
-    # Specific config items for LLM
+    from src import config
     from src.config import (
         load_google_api_key,
         GENAI_ARTICLE_GENERATION_MODEL,
         load_api_call_delay
     )
-    from src.prompts import GENAI_JOURNALISTIC_ARTICLE_PROMPT # Moved from config
+    from src.prompts import GENAI_JOURNALISTIC_ARTICLE_PROMPT
 except ImportError as e:
-    # Fallback print if logging isn't configured due to config import error
-    # Use a basic logger setup or print if config fails, as 'log' might not be initialized.
     temp_log_article_writer = logging.getLogger("article_writer_bootstrap_error")
     temp_log_article_writer.error(f"Error importing modules/config in article_writer.py: {e}")
     print(f"CRITICAL: Error importing modules/config in article_writer.py: {e}. Check sys.path and config.py.", file=sys.stderr)
@@ -59,51 +56,59 @@ def sanitize_filename(name: str) -> str:
 
 def generate_articles_from_text_llm(
     protocol_text: str,
-    genai_model_instance, # Expecting an initialized genai.GenerativeModel
+    client: genai.client.Client,
+    model_name: str,
     prompt_template: str
-) -> List[SingleArticle] | None: # Return type changed to List of SingleArticle
+) -> List[SingleArticle] | None:
     """
-    Generates multiple journalistic articles from a single block of protocol text using an LLM.
+    Generates multiple journalistic articles from protocol text using the Gemini API via genai.Client.
     Expects a JSON response containing a list of articles.
     """
-    if not protocol_text:
+    if not protocol_text: # Real logic below
         log.warning("LLM generation skipped: Protocol text is empty.")
         return None
 
     formatted_prompt = prompt_template.format(PROTOCOL_TEXT=protocol_text)
-    # Log a snippet of the prompt for debugging, being mindful of not logging too much if content is large
     log.debug(f"Formatted prompt for LLM (first 200 chars of protocol text): {protocol_text[:200]}...")
 
-    # Define generation config for JSON output
-    generation_config = genai.types.GenerationConfig(
+    try:
+        schema_dict = LLMGeneratedArticles.model_json_schema()
+    except Exception as e_schema:
+        log.error(f"Error generating JSON schema from Pydantic model: {e_schema}", exc_info=True)
+        return None
+
+    generation_config = genai_types.GenerationConfig(
         response_mime_type="application/json",
-        response_schema=LLMGeneratedArticles # Use the new Pydantic model for the list
+        response_schema=schema_dict
     )
 
+    request_options = {"timeout": 300}
+
     try:
-        response = genai_model_instance.generate_content(
+        response = client.generate_content(
+            model=f"models/{model_name}",
             contents=[formatted_prompt],
             generation_config=generation_config,
-            request_options={"timeout": 300} # Increased timeout for potentially longer generation
+            request_options=request_options
         )
 
-        if not response.text: # Check if response.text is empty
+        if not response.text:
             log.error("LLM response text is empty. Cannot parse JSON.")
+            if response.prompt_feedback:
+                log.error(f"Prompt feedback: {response.prompt_feedback}")
             return None
 
         log.debug(f"Raw LLM response text: {response.text}")
-
-        # Parse and validate the JSON response
         llm_output = json.loads(response.text)
         validated_data = LLMGeneratedArticles(**llm_output)
 
         log.info(f"Successfully parsed and validated LLM response: Found {len(validated_data.articles)} articles.")
-        return validated_data.articles # Return the list of SingleArticle objects
+        return validated_data.articles
 
     except json.JSONDecodeError as e:
-        log.error(f"JSONDecodeError parsing LLM response: {e}. Response text: '{response.text if 'response' in locals() and hasattr(response, 'text') else 'Response text not available'}'", exc_info=True)
+        log.error(f"JSONDecodeError parsing LLM response: {e}. Response text: '{response.text if hasattr(response, 'text') else 'Response text not available'}'", exc_info=True)
         return None
-    except ValidationError as e: # Pydantic validation error
+    except ValidationError as e:
         log.error(f"Pydantic ValidationError for LLM response: {e}. LLM output: '{llm_output if 'llm_output' in locals() else 'LLM output not available'}'", exc_info=True)
         return None
     except google_exceptions.GoogleAPIError as e:
@@ -161,24 +166,28 @@ def run_article_writing(extracted_texts: dict[str, str]): # Takes dict of pdf_fi
         log.info("No extracted texts provided. Skipping article generation.")
         return
 
-    # Initialize Google Generative AI client
-    genai_model_instance = None
+    # Initialize Google GenAI Client
+    genai_client = None
     try:
         google_api_key = load_google_api_key()
         if not google_api_key:
-            log.critical("Google API key not found. LLM generation disabled.")
+            log.critical("Google API key not found in config.ini. LLM generation disabled.")
             return
-        genai.configure(api_key=google_api_key)
-
-        llm_model_name = GENAI_ARTICLE_GENERATION_MODEL
-        if not llm_model_name:
-            log.critical("GENAI_ARTICLE_GENERATION_MODEL not set in config. LLM generation disabled.")
-            return
-        genai_model_instance = genai.GenerativeModel(llm_model_name)
-        log.info(f"Google GenAI client initialized with model: {llm_model_name}")
+        # For google-genai, client is initialized with the key.
+        # Global configuration via genai.configure() might still work or be relevant for other genai functions,
+        # but client object will use the key passed to its constructor if any.
+        # Based on research, genai.Client(api_key=...) is the way.
+        genai_client = genai.Client(api_key=google_api_key)
+        log.info(f"Google GenAI client initialized successfully.")
     except Exception as e:
         log.critical(f"Failed to initialize Google GenAI client: {e}. LLM generation will be skipped.", exc_info=True)
         return
+
+    llm_model_name = GENAI_ARTICLE_GENERATION_MODEL
+    if not llm_model_name:
+        log.critical("GENAI_ARTICLE_GENERATION_MODEL not set in config. LLM generation disabled.")
+        return
+    log.info(f"Using LLM model for article generation: {llm_model_name}")
 
     api_delay = load_api_call_delay()
     log.info(f"Using API call delay of {api_delay} seconds between LLM calls for different PDFs.")
@@ -210,8 +219,9 @@ def run_article_writing(extracted_texts: dict[str, str]): # Takes dict of pdf_fi
         try:
             articles_from_llm = generate_articles_from_text_llm(
                 protocol_text=protocol_full_text,
-                genai_model_instance=genai_model_instance,
-                prompt_template=GENAI_JOURNALISTIC_ARTICLE_PROMPT # From src.prompts
+                client=genai_client,
+                model_name=llm_model_name,
+                prompt_template=GENAI_JOURNALISTIC_ARTICLE_PROMPT
             )
         except Exception as e: # Catch any unexpected error from the generation function itself
             log.error(f"Unexpected outer error during LLM call for '{pdf_filename}': {e}", exc_info=True)
