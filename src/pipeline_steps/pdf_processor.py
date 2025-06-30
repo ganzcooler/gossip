@@ -1,14 +1,15 @@
-from google import genai
 import pathlib
-import json
-import time
+import time # Keep for potential delays if needed, though not strictly for extraction
 import logging
 import sys
-import uuid
-from src.pipeline_steps import db_loader
-import chromadb # For type annotation
-from pydantic import BaseModel
-from typing import List
+import fitz # PyMuPDF
+# from google import genai # No longer needed for extraction
+# import json # No longer needed for extraction response parsing
+# import uuid # No longer needed for ChromaDB IDs
+# from src.pipeline_steps import db_loader # No longer needed
+# import chromadb # No longer needed
+# from pydantic import BaseModel # No longer needed for extraction response
+# from typing import List # No longer needed for extraction response
 
 # Ensure src directory is in sys.path for config import
 project_root_for_import = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -17,7 +18,7 @@ if str(project_root_for_import) not in sys.path:
 
 try:
     from src import config
-    from src.prompts import PDF_EXTRACTION_PROMPT # Added import
+    # from src.prompts import PDF_EXTRACTION_PROMPT # No longer needed for PyMuPDF
 except ImportError as e:
     print(f"Error importing src.config: {e}")
     print(f"Current sys.path: {sys.path}")
@@ -27,110 +28,53 @@ except ImportError as e:
 # Initialize logger using the helper from config
 log = config.get_logger(__name__, config.PDF_PROCESSING_LOG_FILENAME)
 
-class ExtractedPdfData(BaseModel):
-    title: str
-    datum: str # Assuming YYYY-MM-DD
-    tops: List[str]
+# ExtractedPdfData class is removed as we are not using GenAI for structured extraction here.
 
-# PROMPT_TEXT was moved to src/prompts.py and is now imported as PDF_EXTRACTION_PROMPT
-
-# The get_top_relevance function was removed as its functionality is now integrated
-# into the main PROMPT_TEXT used by process_single_pdf.
-
-def process_single_pdf(pdf_filepath: pathlib.Path, genai_model_instance: genai.GenerativeModel, prompt: str, chroma_collection: chromadb.api.models.Collection.Collection):
-    log.info(f"Attempting to process PDF: {pdf_filepath.name}")
-
+def extract_text_from_pdf_pymupdf(pdf_filepath: pathlib.Path) -> str:
+    """
+    Extracts all text content from a PDF file using PyMuPDF.
+    """
+    full_text = ""
     try:
-        pdf_bytes = pdf_filepath.read_bytes()
-        # model_name is implicit in the genai_model_instance
-        response = genai_model_instance.generate_content(
-            contents=[
-                {"inline_data": {"mime_type": "application/pdf", "data": pdf_bytes}},
-                prompt
-            ],
-            generation_config={
-                "response_mime_type": "application/json",
-                "response_schema": ExtractedPdfData
-            },
-            request_options={"timeout": 120} # Increased timeout
-        )
-
-        response_json = None
-        if response.parts:
-            try:
-                raw_text = response.text
-                response_json = json.loads(raw_text)
-                log.info(f"Successfully received and parsed JSON response for {pdf_filepath.name}")
-            except json.JSONDecodeError as e:
-                log.error(f"Error parsing JSON response for {pdf_filepath.name}: {e}. Response text: {raw_text[:500]}")
-            except Exception as e:
-                 log.error(f"Error accessing response text for {pdf_filepath.name}: {e}. Full response: {response}")
-        else:
-            log.error(f"No parts found in response for {pdf_filepath.name}. Full response: {response}")
-
-        if response_json is not None:
-            protocol_title = response_json.get('title', 'N/A')
-            protocol_date = response_json.get('datum', 'N/A')
-            tops_processed_count = 0
-
-            tops_data = response_json.get('tops', [])
-            if not isinstance(tops_data, list):
-                log.warning(f"'tops' field is not a list or not found in response for {pdf_filepath.name}. Response: {str(response_json)[:300]}")
-                # Consider how to handle this case: return, raise error, or process 0 tops
-            else:
-                for index, top_content in enumerate(tops_data):
-                    if not isinstance(top_content, str) or not top_content.strip():
-                        log.warning(f"Empty or invalid content (not a non-empty string) for a TOP at index {index} in {pdf_filepath.name}. Content: '{str(top_content)[:50]}...'. Skipping this TOP.")
-                        continue
-
-                    chroma_id = str(uuid.uuid4())
-                    metadata = {
-                        "protocol_title": protocol_title,
-                        "protocol_date": protocol_date,
-                        "top_sequence_in_protocol": index + 1
-                    }
-
-                    success = db_loader.add_top_to_chromadb(
-                        top_id=chroma_id, # Use generated UUID for ChromaDB's unique ID
-                        document=top_content, # This is the string content of the TOP
-                        metadata=metadata,
-                        collection=chroma_collection
-                    )
-                    if success:
-                        tops_processed_count += 1
-            log.info(f"Processed and attempted to add {tops_processed_count} TOPs from {pdf_filepath.name} to ChromaDB.")
-        else:
-            log.error(f"No JSON response to process for {pdf_filepath.name} (either not received or parsing failed).")
-
+        doc = fitz.open(pdf_filepath)
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            full_text += page.get_text()
+        doc.close()
+        log.info(f"Successfully extracted text from {pdf_filepath.name} using PyMuPDF.")
+        return full_text
     except Exception as e:
-        log.error(f"Error during GenAI call or ChromaDB operations for {pdf_filepath.name}: {e}", exc_info=True)
-    finally:
-        log.info("Waiting for 6 seconds due to potential API rate limits...")
-        time.sleep(6)
+        log.error(f"Error extracting text from {pdf_filepath.name} using PyMuPDF: {e}", exc_info=True)
+        return "" # Return empty string on error
 
+def process_single_pdf(pdf_filepath: pathlib.Path):
+    """
+    Processes a single PDF: extracts text using PyMuPDF.
+    The extracted text will be passed to the next stage of the pipeline.
+    """
+    log.info(f"Attempting to extract text from PDF: {pdf_filepath.name} using PyMuPDF.")
 
-def run_pdf_extraction_and_storage():
-    log.info("Starting PDF extraction and storage to ChromaDB process...")
-    try:
-        api_key = config.load_google_api_key()
-        genai.configure(api_key=api_key)
-        # Instantiate the model to be used for PDF extraction
-        pdf_extraction_model = genai.GenerativeModel(config.GENAI_PDF_EXTRACTION_MODEL)
-        log.info(f"GenAI model {config.GENAI_PDF_EXTRACTION_MODEL} initialized for PDF extraction.")
-    except Exception as e:
-        log.critical(f"CRITICAL: Error initializing GenAI (configuring or creating model): {e}", exc_info=True)
-        return
+    extracted_text = extract_text_from_pdf_pymupdf(pdf_filepath)
 
-    try:
-        chroma_collection = db_loader.initialize_chroma_collection(
-            db_path_name=config.CHROMA_DB_DIR_NAME,
-            collection_name=config.CHROMA_COLLECTION_NAME,
-            project_root=config.PROJECT_ROOT
-        )
-        log.info(f"ChromaDB collection '{config.CHROMA_COLLECTION_NAME}' initialized for PDF processing.")
-    except Exception as e:
-        log.critical(f"CRITICAL: Could not initialize ChromaDB for PDF processing: {e}", exc_info=True)
-        return
+    if extracted_text:
+        # For now, just log the first 500 chars of the extracted text.
+        # In a later step, this text will be passed to the LLM for article generation.
+        log.info(f"Extracted text from {pdf_filepath.name} (first 500 chars): \n{extracted_text[:500]}")
+        # Placeholder for where the text would be passed to the article generator
+    else:
+        log.warning(f"No text extracted from {pdf_filepath.name} or an error occurred.")
+
+    # Removed GenAI call for structured extraction
+    # Removed ChromaDB storage logic
+    # Removed API rate limit sleep as it was tied to GenAI calls.
+    # If PyMuPDF processing is very rapid for many files, a small delay could be reintroduced
+    # here if it causes issues, but it's unlikely to be an API limit.
+
+def run_pdf_text_extraction(): # Renamed from run_pdf_extraction_and_storage
+    log.info("Starting PDF text extraction process using PyMuPDF...")
+
+    # Removed GenAI initialization
+    # Removed ChromaDB initialization
 
     pdf_dir = config.PROJECT_ROOT / config.PDF_DIR_NAME
     log.info(f"Project root resolved to: {config.PROJECT_ROOT}")
@@ -147,16 +91,38 @@ def run_pdf_extraction_and_storage():
 
     log.info(f"Found {len(pdf_files)} PDF files to process in {pdf_dir}.")
 
+    all_extracted_texts = {} # To store extracted texts, filename -> text
     for filepath in pdf_files:
-        process_single_pdf(
-            pdf_filepath=filepath,
-            genai_model_instance=pdf_extraction_model,
-            prompt=PDF_EXTRACTION_PROMPT, # Use imported prompt
-            chroma_collection=chroma_collection
-        )
+        # Modified call to process_single_pdf, it no longer needs genai model or chroma collection
+        # process_single_pdf(pdf_filepath=filepath) # This was just logging
 
-    log.info("PDF extraction and storage to ChromaDB process finished.")
+        log.info(f"Extracting text from PDF: {filepath.name}")
+        extracted_text = extract_text_from_pdf_pymupdf(filepath)
+        if extracted_text:
+            all_extracted_texts[filepath.name] = extracted_text
+            log.info(f"Successfully extracted text from {filepath.name}. Length: {len(extracted_text)} characters.")
+            # Log a snippet for verification
+            # log.debug(f"Snippet from {filepath.name}: {extracted_text[:200]}")
+        else:
+            log.warning(f"Failed to extract text or empty text from {filepath.name}.")
+
+
+    # At this point, all_extracted_texts dictionary holds the content of all PDFs.
+    # This data would then be passed to the next step (article generation).
+    # For now, we'll just log completion.
+    log.info(f"PDF text extraction process finished. Extracted text from {len(all_extracted_texts)} PDF files.")
+
+    # This function will likely return `all_extracted_texts` in the future
+    # to be used by the next pipeline step.
+    return all_extracted_texts
+
 
 if __name__ == "__main__":
     print(f"Executing pdf_processor.py directly. Project root: {config.PROJECT_ROOT}")
-    run_pdf_extraction_and_storage()
+    # Example of how to run and see output, though it won't be fully integrated yet.
+    extracted_data = run_pdf_text_extraction()
+    if extracted_data:
+        for filename, text_content in extracted_data.items():
+            print(f"\n--- Content for {filename} (first 200 chars) ---")
+            print(text_content[:200])
+            print("--- End of content ---")

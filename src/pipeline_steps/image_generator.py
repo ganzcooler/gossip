@@ -3,8 +3,14 @@ import logging
 import pathlib
 import sys
 import time
-import random # For mock image generation
+# import random # No longer needed for mock generation
 import os # For path joining
+import re # For parsing HTML
+from google import genai # Changed import
+from google.genai import types as genai_types # For GenerationConfig
+from google.api_core import exceptions as google_exceptions
+# from PIL import Image # Not strictly needed if just saving bytes directly
+# from io import BytesIO # Not strictly needed if just saving bytes directly
 
 # Ensure src directory is in sys.path for config import
 project_root_for_import = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -13,14 +19,11 @@ if str(project_root_for_import) not in sys.path:
 
 try:
     from src import config
-    from src.pipeline_steps import db_loader
-    # Assuming similar setup for Google API key if needed for actual image model
     from src.config import (
         load_google_api_key,
-        GENAI_IMAGE_GENERATION_MODEL, # Will be used if we had a real model
+        GENAI_IMAGE_GENERATION_MODEL,
         load_api_call_delay
     )
-    # from src.prompts import IMAGE_GENERATION_PROMPT # If we had a specific prompt template
 except ImportError as e:
     temp_log_image_generator = logging.getLogger("image_generator_bootstrap_error")
     temp_log_image_generator.error(f"Error importing modules/config in image_generator.py: {e}")
@@ -29,187 +32,221 @@ except ImportError as e:
 
 log = config.get_logger(__name__, config.IMAGE_GENERATOR_LOG_FILENAME)
 
-# --- Placeholder LLM Image Generation ---
-def generate_featured_image_llm(article_text: str, article_title: str, model_name: str) -> bytes | None:
-    """
-    Placeholder function to simulate LLM-based image generation.
-    In a real scenario, this would call an image generation API (e.g., Imagen, DALL-E).
-    """
-    log.info(f"Simulating LLM image generation for article: '{article_title}' using model '{model_name}'...")
-    # prompt = f"Generate a compelling featured image for an article titled '{article_title}' with the following content: {article_text[:500]}..."
-    # log.debug(f"Generated prompt for image LLM (first 100 chars): {prompt[:100]}")
+# To store the initialized client
+genai_client_instance = None
 
-    # Simulate API call
-    time.sleep(random.uniform(1, 3)) # Simulate network latency and processing time
+def _initialize_genai_client() -> genai.client.Client | None:
+    """Initializes and returns a GenAI client using the API key from config."""
+    global genai_client_instance
+    if genai_client_instance is None:
+        try:
+            api_key = load_google_api_key()
+            if not api_key:
+                log.critical("API key not found in config. Cannot initialize GenAI client.")
+                return None
+            genai_client_instance = genai.Client(api_key=api_key)
+            log.info("Google GenAI Client initialized successfully for image generation.")
+        except Exception as e:
+            log.critical(f"Failed to initialize Google GenAI Client: {e}", exc_info=True)
+            return None
+    return genai_client_instance
 
-    # Simulate a successful image generation (e.g., a simple PNG)
-    # This creates a tiny, valid, transparent PNG image as bytes
-    # (Source: https://stackoverflow.com/a/3969448/14993403 - slightly modified)
-    # In a real case, this would be the byte content from the API response.
-    if random.random() > 0.1: # Simulate occasional failure
-        log.info(f"Successfully simulated image generation for '{article_title}'.")
-        # A minimal 1x1 transparent PNG.
-        return b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\xfa\x0f\x00\x01\x05\x01\x02\xcf\x00\x01\x00\x00\x00\x00IEND\xaeB`\x82'
-    else:
-        log.error(f"Simulated LLM image generation failed for '{article_title}'.")
+def parse_html_article(html_content: str) -> tuple[str | None, str | None]:
+    """
+    Parses HTML content to extract title (from <h1>) and body (from <pre>).
+    This is a very basic parser assuming the specific HTML structure used.
+    Returns (title, body)
+    """
+    title = None
+    body = None
+
+    # Extract title from <h1>
+    title_match = re.search(r"<h1[^>]*>(.*?)</h1>", html_content, re.IGNORECASE | re.DOTALL)
+    if title_match:
+        title = title_match.group(1).strip()
+
+    # Extract body from <pre>
+    # Assuming the first <pre> tag encountered contains the main article body
+    body_match = re.search(r"<pre[^>]*>(.*?)</pre>", html_content, re.IGNORECASE | re.DOTALL)
+    if body_match:
+        body = body_match.group(1).strip()
+
+    if not title:
+        log.warning("Could not parse title from HTML.")
+    if not body:
+        log.warning("Could not parse body from HTML.")
+
+    return title, body
+
+
+# --- Actual LLM Image Generation ---
+def generate_featured_image_llm(
+    client: genai.client.Client,
+    model_name: str,
+    article_title: str,
+    article_text_snippet: str
+) -> bytes | None:
+    """
+    Generates a featured image using the Gemini API (via genai.Client)
+    based on article title and text snippet.
+    """
+    if client is None:
+        log.error("GenAI client not initialized. Cannot generate image.")
         return None
 
-def sanitize_filename_for_image(name: str, top_id: str) -> str:
-    """Sanitizes a string to be a valid filename for an image, incorporating TOP ID."""
-    name = str(name) # Ensure name is a string
-    sanitized_title = "".join(c if c.isalnum() or c in (' ', '-') else '_' for c in name).strip()
-    sanitized_title = "_".join(sanitized_title.split()) # Replace spaces with underscores
-    if not sanitized_title: # Handle empty or fully sanitized titles
-        sanitized_title = "untitled"
+    prompt = f"Generate a compelling and relevant featured image for a news article titled '{article_title}'. The article is about: {article_text_snippet}"
+    log.info(f"Generating image with prompt (first 150 chars): {prompt[:150]}...")
 
-    # Truncate title part if too long to keep filenames manageable
-    max_title_len = 50
-    return f"IMG_{top_id}_{sanitized_title[:max_title_len]}.png"
+    try:
+        response = client.generate_content(
+            model=f"models/{model_name}",
+            contents=[prompt],
+            generation_config=genai_types.GenerationConfig()
+        )
 
+        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                if part.inline_data and part.inline_data.data:
+                    log.info(f"Successfully generated image for article: '{article_title}'.")
+                    return part.inline_data.data
+
+        log.warning(f"No image data found in response for article: '{article_title}'. Response: {response}")
+        return None
+
+    except google_exceptions.GoogleAPIError as e:
+        log.error(f"Google API Error during image generation for '{article_title}': {e}", exc_info=True)
+        return None
+    except Exception as e:
+        log.error(f"Unexpected error during image generation for '{article_title}': {e}", exc_info=True)
+        return None
+
+def get_image_filepath(html_filepath: pathlib.Path, images_output_dir: pathlib.Path) -> pathlib.Path:
+    """Determines the corresponding image filepath based on the HTML article filepath."""
+    image_filename_stem = html_filepath.stem # e.g., "my-article" from "my-article.html"
+    image_filename = f"{image_filename_stem}.png" # Assuming PNG, can be configurable
+    return images_output_dir / image_filename
 
 def run_image_generation():
     """
-    Fetches articles from the 'generated_articles' collection,
-    generates a featured image for each using a (simulated) LLM,
-    saves the image, and updates the article's metadata in ChromaDB.
+    Scans the articles directory for HTML files, generates a featured image for each
+    (if one doesn't already exist), and saves it to the images directory.
     """
     log.info("Starting image generation process...")
 
-    # Initialize Google API (if a real Google model were used for images)
-    # try:
-    #     google_api_key = load_google_api_key()
-    #     if not google_api_key:
-    #         log.critical("Google API key not found. Image generation (if using Google model) disabled.")
-    #         # Depending on whether the placeholder always runs, this might not be a fatal error
-    #     # genai.configure(api_key=google_api_key) # If using genai for images
-    #     log.info("Google API key loaded (relevant if using a Google image model).")
-    # except Exception as e:
-    #     log.warning(f"Could not load Google API key: {e}. This might affect real image generation.")
+    client = _initialize_genai_client()
+    if not client:
+        log.error("Failed to initialize GenAI client. Halting image generation.")
+        return
 
-    # Placeholder for image model name from config
     image_model_name = config.GENAI_IMAGE_GENERATION_MODEL
-    log.info(f"Using (simulated) image generation model: {image_model_name}")
+    if not image_model_name:
+        log.critical("GENAI_IMAGE_GENERATION_MODEL not set in config. Cannot generate images.")
+        return
+    log.info(f"Using image generation model: {image_model_name}")
 
     api_delay = load_api_call_delay()
-    log.info(f"Using API call delay of {api_delay} seconds between (simulated) image generation calls.")
+    log.info(f"Using API call delay of {api_delay} seconds between image generation calls.")
 
-    # Create generated_images directory
+    articles_input_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
     images_output_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
+
+    # Ensure directories exist
     try:
+        articles_input_dir.mkdir(parents=True, exist_ok=True)
         images_output_dir.mkdir(parents=True, exist_ok=True)
-        log.info(f"Ensured '{config.IMAGES_DIR_NAME}' directory exists at: {images_output_dir}")
+        log.info(f"Article input directory: {articles_input_dir}")
+        log.info(f"Image output directory: {images_output_dir}")
     except OSError as e:
-        log.error(f"Error creating directory {images_output_dir}: {e}", exc_info=True)
-        return # Cannot proceed if images can't be saved
-
-    # Initialize ChromaDB
-    try:
-        articles_collection = db_loader.initialize_chroma_collection(
-            db_path_name=config.CHROMA_DB_DIR_NAME,
-            collection_name=config.CHROMA_ARTICLES_COLLECTION_NAME,
-            project_root=config.PROJECT_ROOT
-        )
-        log.info(f"ChromaDB Articles collection '{config.CHROMA_ARTICLES_COLLECTION_NAME}' initialized.")
-    except Exception as e:
-        log.critical(f"CRITICAL: Initialization error (ChromaDB articles collection): {e}", exc_info=True)
+        log.error(f"Error creating directories: {e}", exc_info=True)
         return
 
-    # Fetch all articles that don't have an image filename yet
-    try:
-        # Query for articles where 'image_filename' metadata does NOT exist or is null.
-        # ChromaDB's filtering for non-existence of a key can be tricky.
-        # A common way is to fetch all and filter in Python, or use a specific value like "NOT_SET".
-        # For simplicity, we'll fetch articles and check metadata.
-        # A more optimized query would be `where={"image_filename": {"$exists": False}}` if supported
-        # or query for a placeholder value you ensure is not set otherwise.
-        # As a workaround, one might need to fetch all and filter, or ensure `image_filename` is always present, possibly as `None`.
-
-        articles_results = articles_collection.get(include=['ids', 'metadatas', 'documents'])
-
-        articles_to_process = []
-        if articles_results and articles_results['ids']:
-            for i in range(len(articles_results['ids'])):
-                meta = articles_results['metadatas'][i]
-                if meta is None or 'image_filename' not in meta or meta['image_filename'] is None:
-                    articles_to_process.append({
-                        "id": articles_results['ids'][i],
-                        "metadata": meta if meta is not None else {}, # Ensure metadata is a dict
-                        "document": articles_results['documents'][i]
-                    })
-            log.info(f"Retrieved {len(articles_results.get('ids', []))} total articles. "
-                       f"Found {len(articles_to_process)} articles needing image generation.")
-        else:
-            log.info("No articles found in the collection.")
-            return
-
-    except Exception as e:
-        log.error(f"Error querying ChromaDB for articles: {e}", exc_info=True)
+    html_files = list(articles_input_dir.glob('*.html'))
+    if not html_files:
+        log.info(f"No HTML articles found in {articles_input_dir}. Nothing to process.")
         return
 
-    if not articles_to_process:
-        log.info("No articles found that require image generation.")
-        return
+    log.info(f"Found {len(html_files)} HTML articles to check for image generation.")
 
     generated_count = 0
+    skipped_count = 0
     error_count = 0
 
-    for article_data in articles_to_process:
-        article_id = article_data['id']
-        article_metadata = article_data['metadata']
-        article_text = article_data['document']
+    for html_filepath in html_files:
+        log.info(f"Processing article: {html_filepath.name}")
 
-        # Fallback for title if not present in metadata for some reason
-        article_title = article_metadata.get('article_title', 'Untitled Article')
-        original_top_id = article_metadata.get('original_top_id', 'UNKNOWN_TOP_ID')
+        # Determine the target image filepath; re-create Path object for a fresh check
+        image_filename_stem = html_filepath.stem
+        image_filename = f"{image_filename_stem}.png"
+        target_image_filepath = images_output_dir / image_filename
 
-        log.info(f"Processing article ID {article_id} (Title: '{article_title}') for image generation.")
+        # Explicitly create a new Path object for the existence check
+        check_image_path = pathlib.Path(target_image_filepath)
 
-        image_bytes: bytes | None = None
-        try {
-            image_bytes = generate_featured_image_llm(
-                article_text=article_text,
-                article_title=article_title,
-                model_name=image_model_name
-            )
-        } except Exception as e:
-            log.error(f"Unexpected error during (simulated) image generation for article {article_id}: {e}", exc_info=True)
-        finally:
-            log.debug(f"Image generation attempt for article {article_id} concluded. Sleeping for {api_delay}s.")
-            time.sleep(api_delay)
+        if check_image_path.exists():
+            log.info(f"Image already exists for {html_filepath.name} at {check_image_path}. Skipping.")
+            skipped_count += 1
+            continue
 
-        if image_bytes:
+        try:
+            html_content = html_filepath.read_text(encoding="utf-8")
+            article_title, article_body = parse_html_article(html_content)
+
+            if not article_title and not article_body:
+                log.warning(f"Could not parse title or body from {html_filepath.name}. Skipping image generation.")
+                error_count +=1
+                continue
+
+            # Use title for image gen, fallback to a snippet of body if title is missing
+            prompt_title = article_title if article_title else "Untitled Article"
+            prompt_text_snippet = (article_body if article_body else "")[:500] # Use a snippet of body for context
+
+            log.info(f"Attempting to generate image for '{prompt_title}' (from {html_filepath.name})")
+
+            image_bytes: bytes | None = None
             try:
-                image_filename = sanitize_filename_for_image(article_title, original_top_id)
-                image_filepath = images_output_dir / image_filename
-
-                with open(image_filepath, "wb") as f:
-                    f.write(image_bytes)
-                log.info(f"Saved (simulated) generated image to: {image_filepath}")
-
-                # Update metadata in ChromaDB for this article
-                update_success = db_loader.update_article_metadata_field(
-                    article_id=article_id,
-                    field_name="image_filename",
-                    field_value=image_filename,
-                    collection=articles_collection
+                image_bytes = generate_featured_image_llm(
+                    client=client,
+                    model_name=image_model_name,
+                    article_title=prompt_title,
+                    article_text_snippet=prompt_text_snippet
                 )
-                if update_success:
-                    log.info(f"Successfully updated article {article_id} with image_filename: {image_filename}")
-                    generated_count += 1
-                else:
-                    log.error(f"Failed to update article {article_id} metadata with image_filename.")
-                    error_count += 1 # Count as error if DB update fails
-            except Exception as e:
-                log.error(f"Error saving image or updating DB for article {article_id}: {e}", exc_info=True)
+            except Exception as e_gen:
+                log.error(f"Unexpected error during image generation call for {html_filepath.name}: {e_gen}", exc_info=True)
                 error_count += 1
-        else:
-            log.warning(f"(Simulated) LLM failed to generate image for article {article_id}. Skipping file save and DB update.")
-            # Not necessarily an error_count increment here unless we expect 100% success
-            # For now, let's count it as a miss but not a processing error.
+                continue # Skip this article if generation itself had an issue
+            finally:
+                # Apply delay only if there are more files to process potentially
+                is_last_file_to_attempt = (html_files.index(html_filepath) == len(html_files) - 1)
+                if not is_last_file_to_attempt:
+                     log.debug(f"API call delay of {api_delay}s...")
+                     time.sleep(api_delay)
+
+            if image_bytes:
+                try:
+                    with open(target_image_filepath, "wb") as f:
+                        f.write(image_bytes)
+                    log.info(f"Saved generated image to: {target_image_filepath}")
+                    if target_image_filepath.exists():
+                        log.info(f"Verified: Image file now exists at {target_image_filepath}")
+                        generated_count += 1
+                    else:
+                        log.error(f"File write seemed to succeed but image file NOT FOUND at {target_image_filepath} after write attempt.")
+                        error_count += 1 # Count as error if file not found after write
+                except Exception as e_save:
+                    log.error(f"Error saving image for {html_filepath.name} to {target_image_filepath}: {e_save}", exc_info=True)
+                    error_count += 1
+            else:
+                log.warning(f"LLM did not return image data for {html_filepath.name}. No image saved.")
+                # This could be due to API error, safety settings, or no image part in response.
+
+        except Exception as e_read_parse:
+            log.error(f"Error reading or parsing HTML file {html_filepath.name}: {e_read_parse}", exc_info=True)
+            error_count += 1
+            continue
+
 
     log.info(f"Image generation process finished. "
-             f"Successfully generated and saved {generated_count} images. "
-             f"Encountered {error_count} errors during saving or DB update.")
+             f"Generated: {generated_count}, Skipped (already exist): {skipped_count}, Errors: {error_count}.")
 
 if __name__ == "__main__":
     log.info(f"Executing image_generator.py directly. Project root: {config.PROJECT_ROOT}")

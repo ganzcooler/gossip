@@ -8,10 +8,9 @@ sys.path.insert(0, str(project_root))
 
 try:
     from src.pipeline_steps import pdf_processor
-    from src.pipeline_steps import relevance_determiner
-    from src.pipeline_steps import reference_finder
     from src.pipeline_steps import article_writer
-    from src.pipeline_steps import image_generator # Added new step
+    from src.pipeline_steps import image_generator # Added back image_generator
+    # relevance_determiner, reference_finder are removed as they were ChromaDB dependent
     from src import config # To initialize logging or access other configs if needed directly
 except ImportError as e:
     print(f"Error: Could not import pipeline step modules or config: {e}")
@@ -23,8 +22,8 @@ def main():
     parser = argparse.ArgumentParser(description='Run individual steps of the data processing pipeline.')
     parser.add_argument(
         'step',
-        choices=['process_pdfs', 'determine_relevance', 'find_references', 'write_articles', 'generate_images', 'all'],
-        help='The pipeline step to execute: "process_pdfs", "determine_relevance", "find_references", "write_articles", "generate_images", or "all" to run all steps in sequence.'
+        choices=['process_pdfs', 'write_articles', 'generate_images', 'all'],
+        help='The pipeline step to execute: "process_pdfs", "write_articles", "generate_images", or "all" to run all steps in sequence.'
     )
 
     args = parser.parse_args()
@@ -34,27 +33,63 @@ def main():
 
     print(f"Executing step: {args.step}")
 
+    # Global variable to hold data between steps if 'all' is chosen
+    processed_data = None
+
     if args.step == 'process_pdfs':
-        pdf_processor.run_pdf_extraction_and_storage()
-    elif args.step == 'determine_relevance':
-        relevance_determiner.run_relevance_determination()
-    elif args.step == 'find_references':
-        reference_finder.run_reference_finding()
+        # When run individually, pdf_processor just extracts and logs (or returns if captured)
+        # It doesn't inherently store for the next step unless part of 'all'
+        print("Running step: PDF Text Extraction")
+        processed_data = pdf_processor.run_pdf_text_extraction()
+        if processed_data:
+            print(f"PDF processing complete. Extracted text from {len(processed_data)} files.")
+        else:
+            print("PDF processing complete. No data extracted or an error occurred.")
+    # Removed determine_relevance, find_references, generate_images steps as they were ChromaDB dependent
     elif args.step == 'write_articles':
-        article_writer.run_article_writing()
-    elif args.step == 'generate_images': # Added new step condition
+        # When run individually, this step won't have `processed_data` from pdf extraction.
+        # It will log that it needs data or try to run with empty input.
+        print("Running step: Article Writing")
+        print("Warning: Running 'write_articles' individually expects prior PDF processing.")
+        print("This run might not produce articles if no data is available from a previous step in this session.")
+        # article_writer.run_article_writing({}) # Example: Call with empty dict
+        # Or, ideally, this step would load from a known file if run standalone,
+        # but current design passes data in memory.
+        # For now, let's make it clear it needs input.
+        # To make it runnable standalone for testing, one might add a way to load dummy data here.
+        # However, the primary path is via 'all'.
+        # For now, we call it with None, and it should handle it gracefully (e.g. log and exit)
+        article_writer.run_article_writing(extracted_texts=None) # Or an empty dict: {}
+    elif args.step == 'generate_images':
+        print("Running step: Image Generation")
         image_generator.run_image_generation()
     elif args.step == 'all':
-        print("Running step: process_pdfs")
-        pdf_processor.run_pdf_extraction_and_storage()
-        print("Running step: determine_relevance")
-        relevance_determiner.run_relevance_determination()
-        print("Running step: find_references")
-        reference_finder.run_reference_finding()
-        print("Running step: write_articles")
-        article_writer.run_article_writing()
-        print("Running step: generate_images") # Added new step to 'all'
+        print("Running all steps in sequence...")
+
+        print("\nStep 1: PDF Text Extraction")
+        extracted_pdf_texts = pdf_processor.run_pdf_text_extraction()
+        if not extracted_pdf_texts:
+            print("PDF text extraction failed or produced no data. Halting 'all' pipeline.")
+            sys.exit(1)
+        print(f"PDF text extraction complete. Extracted text from {len(extracted_pdf_texts)} files.")
+
+        # These steps are no longer part of the primary flow as per requirements.
+        # They could be re-integrated or removed entirely later.
+        # print("\nStep X: Determine Relevance (SKIPPED as per new requirements)")
+        # relevance_determiner.run_relevance_determination() # This would need input if it were to run
+
+        # print("\nStep Y: Find References (SKIPPED as per new requirements)")
+        # reference_finder.run_reference_finding() # This would need input
+
+        print("\nStep 2: Article Writing")
+        article_writer.run_article_writing(extracted_texts=extracted_pdf_texts)
+        print("Article writing complete.")
+
+        print("\nStep 3: Image Generation")
         image_generator.run_image_generation()
+        print("Image generation complete.")
+
+        print("\n'all' steps execution finished.")
     else:
         # This case should not be reached due to argparse choices
         print(f"Error: Unknown step '{args.step}'. Please choose from the available steps.")

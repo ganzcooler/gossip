@@ -108,26 +108,15 @@ ENV/
 env.bak/
 venv.bak/
 
-# Eigener Ordner für PDF-Dateien
-pdf_files/
-chroma_db/
-
-# config.ini
+# Configuration files (sensitive or local)
 config.ini
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Environment variables
 *.env
-config.ini
 
-# Data directories
+# Data and Log directories
 pdf_files/
 articles/
-chroma_db/
-
-# Log files
+generated_images/
 logs/
+
+# Obsolete directories (if any remnants)
+# chroma_db/ # ChromaDB has been removed
