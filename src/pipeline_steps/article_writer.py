@@ -1,9 +1,9 @@
 # src/pipeline_steps/article_writer.py
-import logging # Keep for potential direct use
 import pathlib
 import sys
 import time
 import json
+import re
 from google import genai # Changed import for google-genai
 from google.genai import types as genai_types # For GenerationConfig and schema types
 from google.api_core import exceptions as google_exceptions
@@ -24,18 +24,11 @@ try:
     )
     from src.prompts import GENAI_JOURNALISTIC_ARTICLE_PROMPT
 except ImportError as e:
-    temp_log_article_writer = logging.getLogger("article_writer_bootstrap_error")
-    temp_log_article_writer.error(f"Error importing modules/config in article_writer.py: {e}")
     print(f"CRITICAL: Error importing modules/config in article_writer.py: {e}. Check sys.path and config.py.", file=sys.stderr)
     raise # Re-raise to ensure failure is noted
 
-import os # Already present
-import re # Already present
-import uuid # For generating unique article IDs
-
 # Initialize logger using the new constant (config must be loaded by this point)
 log = config.get_logger(__name__, config.ARTICLE_WRITER_LOG_FILENAME)
-
 
 # --- Pydantic Models for LLM Response ---
 class SingleArticle(BaseModel):
@@ -44,9 +37,6 @@ class SingleArticle(BaseModel):
 
 class LLMGeneratedArticles(BaseModel):
     articles: List[SingleArticle]
-
-
-# Local prompt template removed, will be imported from config.
 
 def sanitize_filename(name: str) -> str:
     """Sanitizes a string to be a valid filename."""

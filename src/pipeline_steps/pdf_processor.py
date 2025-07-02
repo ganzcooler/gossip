@@ -1,15 +1,6 @@
 import pathlib
-import time # Keep for potential delays if needed, though not strictly for extraction
-import logging
 import sys
 import fitz # PyMuPDF
-# from google import genai # No longer needed for extraction
-# import json # No longer needed for extraction response parsing
-# import uuid # No longer needed for ChromaDB IDs
-# from src.pipeline_steps import db_loader # No longer needed
-# import chromadb # No longer needed
-# from pydantic import BaseModel # No longer needed for extraction response
-# from typing import List # No longer needed for extraction response
 
 # Ensure src directory is in sys.path for config import
 project_root_for_import = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -18,7 +9,6 @@ if str(project_root_for_import) not in sys.path:
 
 try:
     from src import config
-    # from src.prompts import PDF_EXTRACTION_PROMPT # No longer needed for PyMuPDF
 except ImportError as e:
     print(f"Error importing src.config: {e}")
     print(f"Current sys.path: {sys.path}")
@@ -27,8 +17,6 @@ except ImportError as e:
 
 # Initialize logger using the helper from config
 log = config.get_logger(__name__, config.PDF_PROCESSING_LOG_FILENAME)
-
-# ExtractedPdfData class is removed as we are not using GenAI for structured extraction here.
 
 def extract_text_from_pdf_pymupdf(pdf_filepath: pathlib.Path) -> str:
     """
@@ -47,34 +35,8 @@ def extract_text_from_pdf_pymupdf(pdf_filepath: pathlib.Path) -> str:
         log.error(f"Error extracting text from {pdf_filepath.name} using PyMuPDF: {e}", exc_info=True)
         return "" # Return empty string on error
 
-def process_single_pdf(pdf_filepath: pathlib.Path):
-    """
-    Processes a single PDF: extracts text using PyMuPDF.
-    The extracted text will be passed to the next stage of the pipeline.
-    """
-    log.info(f"Attempting to extract text from PDF: {pdf_filepath.name} using PyMuPDF.")
-
-    extracted_text = extract_text_from_pdf_pymupdf(pdf_filepath)
-
-    if extracted_text:
-        # For now, just log the first 500 chars of the extracted text.
-        # In a later step, this text will be passed to the LLM for article generation.
-        log.info(f"Extracted text from {pdf_filepath.name} (first 500 chars): \n{extracted_text[:500]}")
-        # Placeholder for where the text would be passed to the article generator
-    else:
-        log.warning(f"No text extracted from {pdf_filepath.name} or an error occurred.")
-
-    # Removed GenAI call for structured extraction
-    # Removed ChromaDB storage logic
-    # Removed API rate limit sleep as it was tied to GenAI calls.
-    # If PyMuPDF processing is very rapid for many files, a small delay could be reintroduced
-    # here if it causes issues, but it's unlikely to be an API limit.
-
 def run_pdf_text_extraction(): # Renamed from run_pdf_extraction_and_storage
     log.info("Starting PDF text extraction process using PyMuPDF...")
-
-    # Removed GenAI initialization
-    # Removed ChromaDB initialization
 
     pdf_dir = config.PROJECT_ROOT / config.PDF_DIR_NAME
     log.info(f"Project root resolved to: {config.PROJECT_ROOT}")
@@ -102,20 +64,15 @@ def run_pdf_text_extraction(): # Renamed from run_pdf_extraction_and_storage
             all_extracted_texts[filepath.name] = extracted_text
             log.info(f"Successfully extracted text from {filepath.name}. Length: {len(extracted_text)} characters.")
             # Log a snippet for verification
-            # log.debug(f"Snippet from {filepath.name}: {extracted_text[:200]}")
         else:
             log.warning(f"Failed to extract text or empty text from {filepath.name}.")
-
 
     # At this point, all_extracted_texts dictionary holds the content of all PDFs.
     # This data would then be passed to the next step (article generation).
     # For now, we'll just log completion.
     log.info(f"PDF text extraction process finished. Extracted text from {len(all_extracted_texts)} PDF files.")
 
-    # This function will likely return `all_extracted_texts` in the future
-    # to be used by the next pipeline step.
     return all_extracted_texts
-
 
 if __name__ == "__main__":
     print(f"Executing pdf_processor.py directly. Project root: {config.PROJECT_ROOT}")
