@@ -19,6 +19,7 @@ DEFAULT_LOG_LEVEL = logging.INFO
 # --- Directory Names ---
 # These are relative to PROJECT_ROOT
 PDF_DIR_NAME = "pdf_files"
+EXTRACTED_TEXTS_DIR_NAME = "extracted_texts" # New directory for extracted texts
 # CHROMA_DB_DIR_NAME = "chroma_db" # Removed
 ARTICLES_DIR_NAME = "articles"
 

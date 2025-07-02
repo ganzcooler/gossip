@@ -117,6 +117,7 @@ pdf_files/
 articles/
 generated_images/
 logs/
+extracted_texts/
 
 # Obsolete directories (if any remnants)
 # chroma_db/ # ChromaDB has been removed
