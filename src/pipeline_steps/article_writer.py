@@ -20,7 +20,8 @@ try:
     from src.config import (
         load_google_api_key,
         GENAI_ARTICLE_GENERATION_MODEL,
-        load_api_call_delay
+        load_api_call_delay,
+        EXTRACTED_TEXTS_DIR_NAME # Import the new directory name
     )
     from src.prompts import GENAI_JOURNALISTIC_ARTICLE_PROMPT
 except ImportError as e:
@@ -145,15 +146,46 @@ def generate_html_article(headline: str, content: str, original_pdf_name: str) -
 """
     return html_output
 
-def run_article_writing(extracted_texts: dict[str, str]): # Takes dict of pdf_filename: text_content
+def run_article_writing(extracted_texts_dir_override: pathlib.Path | None = None):
     """
-    Takes extracted texts from PDFs, uses an LLM to generate journalistic articles for each,
+    Reads extracted text files from a directory, uses an LLM to generate journalistic articles for each,
     and saves these as HTML files.
     """
     log.info("Starting article writing process (LLM generation & saving HTML files)...")
 
-    if not extracted_texts:
-        log.info("No extracted texts provided. Skipping article generation.")
+    # Determine the directory to read extracted texts from
+    input_texts_dir = extracted_texts_dir_override if extracted_texts_dir_override else config.PROJECT_ROOT / EXTRACTED_TEXTS_DIR_NAME
+
+    if not input_texts_dir.is_dir():
+        log.error(f"Extracted texts directory not found: {input_texts_dir}. Cannot proceed with article writing.")
+        return
+
+    # Read text files and populate a dictionary similar to the old extracted_texts
+    extracted_texts_map = {}
+    text_files = list(input_texts_dir.glob('*.txt'))
+
+    if not text_files:
+        log.info(f"No text files found in {input_texts_dir}. Skipping article generation.")
+        return
+
+    log.info(f"Found {len(text_files)} text files to process from {input_texts_dir}.")
+
+    for text_filepath in text_files:
+        try:
+            with open(text_filepath, "r", encoding="utf-8") as f:
+                content = f.read()
+            # Store with original PDF filename convention (e.g., "document.pdf" from "document.txt")
+            # This assumes that other parts of the system might still expect the .pdf extension in logs or metadata.
+            # If only the stem is needed internally, this can be text_filepath.stem
+            original_pdf_name = text_filepath.stem + ".pdf" # Or just text_filepath.stem if .pdf is not needed
+            extracted_texts_map[original_pdf_name] = content
+            log.debug(f"Successfully read text from '{text_filepath.name}'.")
+        except IOError as e:
+            log.error(f"Error reading text file {text_filepath.name}: {e}", exc_info=True)
+            continue # Skip this file
+
+    if not extracted_texts_map:
+        log.info("No texts successfully read from files. Skipping article generation.")
         return
 
     # Initialize Google GenAI Client
@@ -197,8 +229,8 @@ def run_article_writing(extracted_texts: dict[str, str]): # Takes dict of pdf_fi
     protocols_processed_count = 0
     error_count = 0
 
-    for pdf_filename, protocol_full_text in extracted_texts.items():
-        log.info(f"Processing extracted text from '{pdf_filename}' for LLM article generation.")
+    for pdf_filename, protocol_full_text in extracted_texts_map.items(): # Use the new map
+        log.info(f"Processing extracted text from '{pdf_filename}' (derived from {pathlib.Path(pdf_filename).stem + '.txt'}) for LLM article generation.")
 
         if not protocol_full_text.strip():
             log.warning(f"Protocol text for '{pdf_filename}' is empty or whitespace. Skipping LLM generation.")
@@ -217,8 +249,10 @@ def run_article_writing(extracted_texts: dict[str, str]): # Takes dict of pdf_fi
             log.error(f"Unexpected outer error during LLM call for '{pdf_filename}': {e}", exc_info=True)
             error_count += 1 # Count this as an error for the protocol
         finally:
-            if len(extracted_texts) > 1 : # Only sleep if there are more PDFs to process
-                log.debug(f"LLM processing for '{pdf_filename}' concluded. Sleeping for {api_delay}s before next PDF (if any).")
+            # Adjust sleep condition if necessary, e.g., if processing one by one and map size changes.
+            # For now, using the size of the initially populated map.
+            if len(extracted_texts_map) > 1 : # Check against the total number of files to process
+                log.debug(f"LLM processing for '{pdf_filename}' concluded. Sleeping for {api_delay}s before next text file (if any).")
                 time.sleep(api_delay)
 
 
@@ -288,14 +322,35 @@ def run_article_writing(extracted_texts: dict[str, str]): # Takes dict of pdf_fi
 
 if __name__ == "__main__":
     log.info(f"Executing article_writer.py directly. Project root: {config.PROJECT_ROOT}")
-    # This direct execution part needs to be updated to simulate input
-    # For example, create a dummy extracted_texts dictionary
-    dummy_texts = {
-        "protocol1.pdf": "This is the full text of protocol one. It contains discussion on Topic A and a decision on Topic B.",
-        "protocol2.pdf": "Protocol two details the new budget allocations and a lengthy debate on future projects."
-    }
-    # To run this standalone, you'd need to ensure pdf_processor.py has run or provide sample text.
-    # For now, this part is more for illustration.
-    # run_article_writing(dummy_texts)
-    print("To run article_writer.py directly, provide a dictionary of extracted texts.")
-    print("Example: run_article_writing({'my_doc.pdf': 'Text of the document...'})")
+    # This will now attempt to read from the default extracted_texts directory.
+    # For direct execution, ensure that pdf_processor.py has been run first,
+    # or manually place .txt files in the 'extracted_texts' directory.
+    print(f"Attempting to run article_writer.py directly.")
+    print(f"This script will look for .txt files in the '{EXTRACTED_TEXTS_DIR_NAME}' directory.")
+    print(f"Make sure that directory exists and contains text files from PDF processing.")
+
+    # Create a dummy extracted_texts directory and a file for testing if it doesn't exist
+    dummy_test_dir = config.PROJECT_ROOT / EXTRACTED_TEXTS_DIR_NAME
+    dummy_test_file = dummy_test_dir / "test_document.txt"
+
+    if not dummy_test_dir.exists():
+        dummy_test_dir.mkdir(parents=True, exist_ok=True)
+        log.info(f"Created dummy directory for direct run: {dummy_test_dir}")
+
+    if not list(dummy_test_dir.glob('*.txt')): # If no text files exist, create one for testing
+        log.info(f"No .txt files found in {dummy_test_dir}. Creating a dummy file for testing.")
+        try:
+            with open(dummy_test_file, "w", encoding="utf-8") as f:
+                f.write("This is a dummy text from a test document for article_writer.py direct execution.")
+            log.info(f"Created dummy file: {dummy_test_file}")
+            run_article_writing() # Run with the default directory
+            # Clean up the dummy file after the test run
+            # dummy_test_file.unlink() # Optional: remove dummy file
+            # log.info(f"Removed dummy file: {dummy_test_file}")
+        except Exception as e:
+            log.error(f"Could not create or process dummy file for testing: {e}")
+    else:
+        log.info(f"Found existing .txt files in {dummy_test_dir}. Proceeding with those.")
+        run_article_writing()
+
+    print(f"Article writing process finished. Check the '{config.ARTICLES_DIR_NAME}' directory for output HTML files.")

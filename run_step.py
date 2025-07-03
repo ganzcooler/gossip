@@ -30,73 +30,67 @@ def main():
 
     # Initialize a general logger for run_step.py itself, if desired
     # log = config.get_logger('run_step', 'logs/run_step.log') # Example
+    log = config.get_logger('run_step', 'logs/run_step.log') # Initialize logger for run_step
 
-    print(f"Executing step: {args.step}")
-
-    # Global variable to hold data between steps if 'all' is chosen
-    processed_data = None
+    log.info(f"Executing step: {args.step}")
 
     if args.step == 'process_pdfs':
-        # When run individually, pdf_processor just extracts and logs (or returns if captured)
-        # It doesn't inherently store for the next step unless part of 'all'
-        print("Running step: PDF Text Extraction")
-        processed_data = pdf_processor.run_pdf_text_extraction()
-        if processed_data:
-            print(f"PDF processing complete. Extracted text from {len(processed_data)} files.")
+        log.info("Running step: PDF Text Extraction")
+        pdf_processor.run_pdf_text_extraction() # No return value, writes to files
+        # Check if files were created in extracted_texts_dir
+        extracted_texts_dir = config.PROJECT_ROOT / config.EXTRACTED_TEXTS_DIR_NAME
+        if not extracted_texts_dir.is_dir() or not any(extracted_texts_dir.iterdir()):
+            log.warning(f"PDF processing complete, but no files found in {extracted_texts_dir}. Check logs for details.")
         else:
-            print("PDF processing complete. No data extracted or an error occurred.")
-    # Removed determine_relevance, find_references, generate_images steps as they were ChromaDB dependent
-    elif args.step == 'write_articles':
-        # When run individually, this step won't have `processed_data` from pdf extraction.
-        # It will log that it needs data or try to run with empty input.
-        print("Running step: Article Writing")
-        print("Warning: Running 'write_articles' individually expects prior PDF processing.")
-        print("This run might not produce articles if no data is available from a previous step in this session.")
-        # article_writer.run_article_writing({}) # Example: Call with empty dict
-        # Or, ideally, this step would load from a known file if run standalone,
-        # but current design passes data in memory.
-        # For now, let's make it clear it needs input.
-        # To make it runnable standalone for testing, one might add a way to load dummy data here.
-        # However, the primary path is via 'all'.
-        # For now, we call it with None, and it should handle it gracefully (e.g. log and exit)
-        article_writer.run_article_writing(extracted_texts=None) # Or an empty dict: {}
-    elif args.step == 'generate_images':
-        print("Running step: Image Generation")
-        image_generator.run_image_generation()
-    elif args.step == 'all':
-        print("Running all steps in sequence...")
+            log.info(f"PDF processing complete. Text files should be in '{config.EXTRACTED_TEXTS_DIR_NAME}'.")
 
-        print("\nStep 1: PDF Text Extraction")
-        extracted_pdf_texts = pdf_processor.run_pdf_text_extraction()
-        if not extracted_pdf_texts:
-            print("PDF text extraction failed or produced no data. Halting 'all' pipeline.")
+    elif args.step == 'write_articles':
+        log.info("Running step: Article Writing")
+        # article_writer now reads from the directory specified in config or passed as argument
+        article_writer.run_article_writing()
+        log.info(f"Article writing process initiated. Check '{config.ARTICLES_DIR_NAME}' for HTML articles and logs for details.")
+
+    elif args.step == 'generate_images':
+        log.info("Running step: Image Generation")
+        image_generator.run_image_generation()
+        log.info(f"Image generation process initiated. Check '{config.IMAGES_DIR_NAME}' for images and logs for details.")
+
+    elif args.step == 'all':
+        log.info("Running all steps in sequence...")
+
+        log.info("\nStep 1: PDF Text Extraction")
+        pdf_processor.run_pdf_text_extraction()
+        # Optional: Check if extracted_texts directory was populated before proceeding
+        extracted_texts_dir = config.PROJECT_ROOT / config.EXTRACTED_TEXTS_DIR_NAME
+        if not extracted_texts_dir.is_dir() or not any(extracted_texts_dir.glob('*.txt')):
+            log.error(f"PDF text extraction may have failed or produced no data in {extracted_texts_dir}. Halting 'all' pipeline. Check pdf-processing.log.")
             sys.exit(1)
-        print(f"PDF text extraction complete. Extracted text from {len(extracted_pdf_texts)} files.")
+        log.info(f"PDF text extraction complete. Text files should be in '{config.EXTRACTED_TEXTS_DIR_NAME}'.")
 
         # These steps are no longer part of the primary flow as per requirements.
-        # They could be re-integrated or removed entirely later.
         # print("\nStep X: Determine Relevance (SKIPPED as per new requirements)")
         # relevance_determiner.run_relevance_determination() # This would need input if it were to run
 
         # print("\nStep Y: Find References (SKIPPED as per new requirements)")
         # reference_finder.run_reference_finding() # This would need input
 
-        print("\nStep 2: Article Writing")
-        article_writer.run_article_writing(extracted_texts=extracted_pdf_texts)
-        print("Article writing complete.")
+        log.info("\nStep 2: Article Writing")
+        article_writer.run_article_writing() # Reads from the configured directory
+        log.info(f"Article writing process initiated. Check '{config.ARTICLES_DIR_NAME}' for HTML articles and logs for details.")
 
-        print("\nStep 3: Image Generation")
+        log.info("\nStep 3: Image Generation")
         image_generator.run_image_generation()
-        print("Image generation complete.")
+        log.info(f"Image generation process initiated. Check '{config.IMAGES_DIR_NAME}' for images and logs for details.")
 
-        print("\n'all' steps execution finished.")
+
+        log.info("\n'all' steps execution finished.")
     else:
         # This case should not be reached due to argparse choices
-        print(f"Error: Unknown step '{args.step}'. Please choose from the available steps.")
+        log.error(f"Error: Unknown step '{args.step}'. Please choose from the available steps.")
         parser.print_help()
         sys.exit(1)
 
-    print(f"Step '{args.step}' completed.")
+    log.info(f"Step '{args.step}' completed.")
 
 if __name__ == "__main__":
     main()

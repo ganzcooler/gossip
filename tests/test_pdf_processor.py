@@ -10,184 +10,225 @@ if str(project_root_for_test) not in sys.path:
     sys.path.insert(0, str(project_root_for_test))
 
 # Import the functions and variables to be tested
-from src.pipeline_steps.pdf_processor import process_single_pdf, run_pdf_extraction # Renamed main function
+from src.pipeline_steps.pdf_processor import run_pdf_text_extraction, extract_text_from_pdf_pymupdf
 from src import config # For accessing config constants in assertions
-# PDF_PROCESSOR_PROMPT_TEXT is now directly from src.prompts, imported by pdf_processor.py
-# No need to import it here if pdf_processor.PROMPT_TEXT is used.
-
-class TestPDFProcessing(unittest.TestCase):
-
-    @patch('src.pipeline_steps.pdf_processor.time.sleep')
-    @patch('src.pipeline_steps.pdf_processor.pathlib.Path.read_bytes')
-    @patch('src.pipeline_steps.pdf_processor.genai.GenerativeModel') # Mock the constructor
-    @patch('src.pipeline_steps.pdf_processor.log') # Mock logger
-    def test_process_single_pdf_extracts_text_successfully(
-        self, mock_log, MockGenerativeModel, mock_read_bytes, mock_time_sleep
-    ):
-        # 1. Setup mock GenAI Model instance and its response
-        mock_model_instance = MockGenerativeModel.return_value # Get the instance from the mocked constructor
-        llm_response_data = { # This structure is based on the old PDF_EXTRACTION_PROMPT
-            "title": "Test Protocol Title from LLM",
-            "datum": "2023-10-26",
-            "tops": [
-                "TOP 1: Discussion about budget.",
-                "TOP 2: Decision on new park."
-            ]
-        }
-        # The new process_single_pdf expects the LLM to return the *full text* of the PDF,
-        # not a structured JSON anymore. The old PDF_EXTRACTION_PROMPT is gone.
-        # The prompt used by process_single_pdf is now for *summarization/extraction to a single block of text*
-        # if the old `PROMPT_TEXT` variable in `pdf_processor.py` was generic enough, or it needs to be assumed
-        # that the model simply returns the extracted text.
-
-        # For the purpose of this test, let's assume the LLM returns a single string of the PDF's content.
-        # The prompt for actual text extraction is now part of the `genai.Part.from_data` call.
-        # The `prompt` argument to `process_single_pdf` is not used anymore with Gemini 1.5 Flash.
-
-        mock_llm_extracted_text = "This is the full extracted text from the PDF by the LLM."
-        mock_llm_response = MagicMock()
-        mock_llm_response.text = mock_llm_extracted_text
-        mock_model_instance.generate_content.return_value = mock_llm_response
-
-        # 2. Mock PDF file interactions
-        mock_read_bytes.return_value = b"dummy raw pdf content"
-        pdf_filepath = MagicMock(spec=pathlib.Path)
-        pdf_filepath.name = "test_protocol.pdf"
-
-        # 3. Call process_single_pdf
-        # The `prompt` argument is removed from process_single_pdf call
-        result_text = process_single_pdf(
-            pdf_filepath=pdf_filepath,
-            genai_model_instance=mock_model_instance
-        )
-
-        # 4. Assertions
-        mock_read_bytes.assert_called_once_with() # read_bytes on pdf_filepath
-        mock_model_instance.generate_content.assert_called_once()
-        # Verify the content passed to the LLM (the PDF data)
-        args, kwargs = mock_model_instance.generate_content.call_args
-        self.assertIsInstance(args[0][0], str) # System prompt part
-        self.assertEqual(args[0][1].data, b"dummy raw pdf content") # The PDF data
-        self.assertEqual(args[0][1].mime_type, "application/pdf")
 
 
-        self.assertEqual(result_text, mock_llm_extracted_text)
-        mock_time_sleep.assert_called_once() # Ensure sleep was called
-        mock_log.info.assert_any_call(f"Successfully processed '{pdf_filepath.name}'. Extracted text length: {len(mock_llm_extracted_text)}.")
+class TestPDFProcessingPyMuPDF(unittest.TestCase):
 
-
-    @patch('src.pipeline_steps.pdf_processor.time.sleep')
-    @patch('src.pipeline_steps.pdf_processor.pathlib.Path.read_bytes')
-    @patch('src.pipeline_steps.pdf_processor.genai.GenerativeModel')
+    @patch('src.pipeline_steps.pdf_processor.fitz.open')
     @patch('src.pipeline_steps.pdf_processor.log')
-    def test_process_single_pdf_llm_error(
-        self, mock_log, MockGenerativeModel, mock_read_bytes, mock_time_sleep
-    ):
-        mock_model_instance = MockGenerativeModel.return_value
-        mock_model_instance.generate_content.side_effect = Exception("LLM API Error")
+    def test_extract_text_from_pdf_pymupdf_success(self, mock_log, mock_fitz_open):
+        # Mock PyMuPDF document and page
+        mock_doc = MagicMock()
+        mock_page1 = MagicMock()
+        mock_page1.get_text.return_value = "Text from page 1. "
+        mock_page2 = MagicMock()
+        mock_page2.get_text.return_value = "Text from page 2."
+        mock_doc.load_page.side_effect = [mock_page1, mock_page2]
+        mock_doc.__len__.return_value = 2 # Two pages
+        mock_fitz_open.return_value = mock_doc
 
-        mock_read_bytes.return_value = b"dummy pdf content"
         pdf_filepath = MagicMock(spec=pathlib.Path)
-        pdf_filepath.name = "error_protocol.pdf"
+        pdf_filepath.name = "test.pdf"
 
-        result_text = process_single_pdf(
-            pdf_filepath=pdf_filepath,
-            genai_model_instance=mock_model_instance
-        )
+        extracted_text = extract_text_from_pdf_pymupdf(pdf_filepath)
 
-        self.assertIsNone(result_text)
-        mock_log.error.assert_any_call(f"Error processing PDF '{pdf_filepath.name}' with LLM: LLM API Error", exc_info=True)
-        mock_time_sleep.assert_called_once()
+        self.assertEqual(extracted_text, "Text from page 1. Text from page 2.")
+        mock_fitz_open.assert_called_once_with(pdf_filepath)
+        mock_doc.load_page.assert_any_call(0)
+        mock_doc.load_page.assert_any_call(1)
+        mock_page1.get_text.assert_called_once()
+        mock_page2.get_text.assert_called_once()
+        mock_doc.close.assert_called_once()
+        mock_log.info.assert_any_call(f"Successfully extracted text from {pdf_filepath.name} using PyMuPDF.")
 
-
-    @patch('src.pipeline_steps.pdf_processor.config.load_google_api_key')
-    @patch('src.pipeline_steps.pdf_processor.genai.configure') # genai.configure might not be used if client takes key
-    @patch('src.pipeline_steps.pdf_processor.genai.GenerativeModel') # Mock the constructor
-    @patch('src.pipeline_steps.pdf_processor.process_single_pdf')
-    @patch('src.pipeline_steps.pdf_processor.pathlib.Path.glob')
-    @patch('src.pipeline_steps.pdf_processor.config') # Mock the config module used by pdf_processor
+    @patch('src.pipeline_steps.pdf_processor.fitz.open')
     @patch('src.pipeline_steps.pdf_processor.log')
-    def test_run_pdf_extraction_processes_files_and_returns_dict(
-        self, mock_log, mock_pdf_processor_config, mock_glob, mock_process_single_pdf,
-        MockGenerativeModel, mock_genai_configure, mock_load_google_api_key
-    ):
-        # 1. Mock config values and setup
-        mock_load_google_api_key.return_value = "dummy_key_pdf"
-        mock_pdf_processor_config.PDF_DIR_NAME = "test_pdfs"
-        mock_pdf_processor_config.GENAI_PDF_EXTRACTION_MODEL = "gemini-test-model"
-        mock_pdf_processor_config.load_api_call_delay.return_value = 0 # No delay for test speed
+    def test_extract_text_from_pdf_pymupdf_error(self, mock_log, mock_fitz_open):
+        mock_fitz_open.side_effect = Exception("PyMuPDF error")
+        pdf_filepath = MagicMock(spec=pathlib.Path)
+        pdf_filepath.name = "error.pdf"
 
-        # Mock Project Root and PDF directory path
-        mock_project_root_path = MagicMock(spec=pathlib.Path)
-        mock_pdf_dir_path = MagicMock(spec=pathlib.Path)
-        mock_project_root_path.__truediv__.return_value = mock_pdf_dir_path # PROJECT_ROOT / PDF_DIR_NAME
-        mock_pdf_processor_config.PROJECT_ROOT = mock_project_root_path
+        extracted_text = extract_text_from_pdf_pymupdf(pdf_filepath)
+
+        self.assertEqual(extracted_text, "")
+        mock_log.error.assert_any_call(f"Error extracting text from {pdf_filepath.name} using PyMuPDF: PyMuPDF error", exc_info=True)
+
+    @patch('builtins.open', new_callable=unittest.mock.mock_open)
+    @patch('src.pipeline_steps.pdf_processor.extract_text_from_pdf_pymupdf')
+    @patch('src.pipeline_steps.pdf_processor.pathlib.Path.glob') # Target for glob
+    @patch('src.pipeline_steps.pdf_processor.pathlib.Path.mkdir') # Target for mkdir
+    @patch('src.pipeline_steps.pdf_processor.config') # Mock the config module
+    @patch('src.pipeline_steps.pdf_processor.log')
+    def test_run_pdf_text_extraction_creates_text_files(
+        self, mock_log, mock_config_module, mock_path_mkdir, mock_path_glob, # Correct order of patches
+        mock_extract_text_pymupdf, mock_open_file
+    ):
+        # 1. Mock config values
+        mock_config_module.PROJECT_ROOT = MagicMock(spec=pathlib.Path)
+        mock_config_module.PDF_DIR_NAME = "test_pdfs_dir"
+        mock_config_module.EXTRACTED_TEXTS_DIR_NAME = "test_extracted_texts_dir"
+
+        # Mock paths
+        # When PROJECT_ROOT / "name" is called, it should return a mock path
+        mock_pdf_dir_path = MagicMock(spec=pathlib.Path, name="mock_pdf_dir_path_instance")
+        mock_extracted_texts_path = MagicMock(spec=pathlib.Path, name="mock_extracted_texts_path_instance")
+
+        def project_root_truediv_side_effect(name):
+            if name == mock_config_module.PDF_DIR_NAME:
+                return mock_pdf_dir_path
+            if name == mock_config_module.EXTRACTED_TEXTS_DIR_NAME:
+                return mock_extracted_texts_path
+            return MagicMock() # default for other divisions
+
+        mock_config_module.PROJECT_ROOT.__truediv__.side_effect = project_root_truediv_side_effect
+
+        # mock_path_mkdir is the mock for pathlib.Path.mkdir
+        # We need to assert it's called on mock_extracted_texts_path
+        # This is tricky because Path.mkdir is a method of Path instances.
+        # Instead, we check that `mock_extracted_texts_path.mkdir` is called.
+        # So, `mock_extracted_texts_path` (returned by PROJECT_ROOT / EXTRACTED_TEXTS_DIR_NAME)
+        # needs to have a `mkdir` mock attribute.
+        mock_extracted_texts_path.mkdir = MagicMock(name="mkdir_on_extracted_texts_path")
+
+        # Simulate PDF directory exists
         mock_pdf_dir_path.is_dir.return_value = True
 
+        # Mock PDF files found by glob - this should be on the *instance* of the path
+        mock_pdf_file1 = MagicMock(spec=pathlib.Path)
+        mock_pdf_file1.name = "doc1.pdf"
+        mock_pdf_file1.stem = "doc1"
+        mock_pdf_file2 = MagicMock(spec=pathlib.Path)
+        mock_pdf_file2.name = "doc2.pdf"
+        mock_pdf_file2.stem = "doc2"
+        mock_pdf_dir_path.glob.return_value = [mock_pdf_file1, mock_pdf_file2] # glob is called on the path instance
 
-        # Mock GenAI Model instance
-        mock_model_instance = MockGenerativeModel.return_value
 
-        # Mock PDF files found by glob
-        mock_pdf_file1 = MagicMock(spec=pathlib.Path, name="file1.pdf")
-        mock_pdf_file2 = MagicMock(spec=pathlib.Path, name="file2.pdf")
-        mock_pdf_dir_path.glob.return_value = [mock_pdf_file1, mock_pdf_file2]
+        # Mock return values for extract_text_from_pdf_pymupdf
+        mock_extract_text_pymupdf.side_effect = ["Text from doc1", "Text from doc2"]
 
-        # Mock return values for process_single_pdf
-        mock_process_single_pdf.side_effect = ["Text from file1", "Text from file2"]
+        # Mock that text files do not exist initially
+        mock_txt_file1_path = MagicMock(spec=pathlib.Path, name="doc1.txt_path_instance")
+        mock_txt_file1_path.exists.return_value = False
+        mock_txt_file2_path = MagicMock(spec=pathlib.Path, name="doc2.txt_path_instance")
+        mock_txt_file2_path.exists.return_value = False
 
-        # 2. Call run_pdf_extraction
-        result_dict = run_pdf_extraction()
+        def extracted_texts_truediv_side_effect(filename):
+            if filename == "doc1.txt": return mock_txt_file1_path
+            if filename == "doc2.txt": return mock_txt_file2_path
+            return MagicMock()
+        mock_extracted_texts_path.__truediv__.side_effect = extracted_texts_truediv_side_effect
+
+        # 2. Call run_pdf_text_extraction
+        run_pdf_text_extraction()
 
         # 3. Assertions
-        mock_load_google_api_key.assert_called_once()
-        # genai.configure might not be called if API key is passed directly to client/model
-        # Depending on exact genai library usage for model initialization.
-        # If GenerativeModel itself is configured with the key, configure might not be needed.
-        # For safety, let's assume it might be called or not.
-        # mock_genai_configure.assert_called_once_with(api_key="dummy_key_pdf")
+        # Check that PROJECT_ROOT was used to create paths
+        mock_config_module.PROJECT_ROOT.__truediv__.assert_any_call(mock_config_module.PDF_DIR_NAME)
+        mock_config_module.PROJECT_ROOT.__truediv__.assert_any_call(mock_config_module.EXTRACTED_TEXTS_DIR_NAME)
 
-        MockGenerativeModel.assert_called_once_with(model_name="models/gemini-test-model") # Name is prefixed with models/
+        # Check creation of extracted_texts_dir
+        mock_extracted_texts_path.mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
-        mock_project_root_path.__truediv__.assert_called_once_with("test_pdfs")
+        # Check glob call on the correct path object
         mock_pdf_dir_path.glob.assert_called_once_with('*.pdf')
 
-        expected_process_calls = [
-            call(pdf_filepath=mock_pdf_file1, genai_model_instance=mock_model_instance),
-            call(pdf_filepath=mock_pdf_file2, genai_model_instance=mock_model_instance)
+        # Check extraction calls
+        mock_extract_text_pymupdf.assert_any_call(mock_pdf_file1)
+        mock_extract_text_pymupdf.assert_any_call(mock_pdf_file2)
+        self.assertEqual(mock_extract_text_pymupdf.call_count, 2)
+
+        # Check file writing operations
+        # mock_open_file is the mock for the built-in open
+        # We need to check it was called with the correct path objects.
+        expected_write_calls = [
+            call(mock_txt_file1_path, "w", encoding="utf-8"), # Path objects from truediv
+            call(mock_txt_file2_path, "w", encoding="utf-8")
         ]
-        mock_process_single_pdf.assert_has_calls(expected_process_calls, any_order=True)
-        self.assertEqual(mock_process_single_pdf.call_count, 2)
+        mock_open_file.assert_has_calls(expected_write_calls, any_order=True)
+        # Check content written
+        mock_open_file().write.assert_any_call("Text from doc1")
+        mock_open_file().write.assert_any_call("Text from doc2")
 
-        expected_dict = {
-            "file1.pdf": "Text from file1",
-            "file2.pdf": "Text from file2"
-        }
-        self.assertEqual(result_dict, expected_dict)
-        mock_log.info.assert_any_call(f"PDF extraction run finished. Successfully processed {len(expected_dict)} PDF(s).")
+        mock_log.info.assert_any_call(f"Successfully processed and saved text for 2 PDF files.")
 
 
-    @patch('src.pipeline_steps.pdf_processor.config.load_google_api_key')
-    @patch('src.pipeline_steps.pdf_processor.genai.GenerativeModel')
-    @patch('src.pipeline_steps.pdf_processor.pathlib.Path.glob')
-    @patch('src.pipeline_steps.pdf_processor.config')
+    @patch('builtins.open', new_callable=unittest.mock.mock_open)
+    @patch('src.pipeline_steps.pdf_processor.extract_text_from_pdf_pymupdf')
+    @patch('src.pipeline_steps.pdf_processor.config') # Mock the config module
     @patch('src.pipeline_steps.pdf_processor.log')
-    def test_run_pdf_extraction_pdf_dir_not_found(
-        self, mock_log, mock_pdf_processor_config, mock_glob, MockGenerativeModel, mock_load_google_api_key
+    def test_run_pdf_text_extraction_skips_existing_files(
+        self, mock_log, mock_config_module,
+        mock_extract_text_pymupdf, mock_open_file
     ):
-        mock_load_google_api_key.return_value = "dummy_key"
-        mock_pdf_processor_config.PDF_DIR_NAME = "non_existent_pdfs"
-        mock_project_root_path = MagicMock(spec=pathlib.Path)
+        mock_config_module.PROJECT_ROOT = MagicMock(spec=pathlib.Path)
+        mock_config_module.PDF_DIR_NAME = "pdfs"
+        mock_config_module.EXTRACTED_TEXTS_DIR_NAME = "texts"
+
         mock_pdf_dir_path = MagicMock(spec=pathlib.Path)
-        mock_project_root_path.__truediv__.return_value = mock_pdf_dir_path
-        mock_pdf_processor_config.PROJECT_ROOT = mock_project_root_path
-        mock_pdf_dir_path.is_dir.return_value = False # Simulate directory not found
+        mock_extracted_texts_path = MagicMock(spec=pathlib.Path)
+        mock_config_module.PROJECT_ROOT.__truediv__.side_effect = lambda name: mock_pdf_dir_path if name == "pdfs" else mock_extracted_texts_path
 
-        result_dict = run_pdf_extraction()
+        mock_extracted_texts_path.mkdir = MagicMock()
+        mock_pdf_dir_path.is_dir.return_value = True
 
-        self.assertEqual(result_dict, {})
-        mock_log.error.assert_any_call(f"PDF directory '{mock_pdf_dir_path}' not found. Skipping PDF processing.")
-        MockGenerativeModel.assert_not_called() # Model should not be initialized if dir is missing
+        mock_pdf_file1 = MagicMock(spec=pathlib.Path, name="existing.pdf", stem="existing")
+        mock_pdf_file2 = MagicMock(spec=pathlib.Path, name="new.pdf", stem="new")
+        mock_pdf_dir_path.glob.return_value = [mock_pdf_file1, mock_pdf_file2]
+
+        mock_existing_txt_path = MagicMock(spec=pathlib.Path, name="existing.txt_path")
+        mock_existing_txt_path.exists.return_value = True
+        mock_new_txt_path = MagicMock(spec=pathlib.Path, name="new.txt_path")
+        mock_new_txt_path.exists.return_value = False
+
+        def truediv_side_effect(filename):
+            if filename == "existing.txt": return mock_existing_txt_path
+            if filename == "new.txt": return mock_new_txt_path
+            return MagicMock()
+        mock_extracted_texts_path.__truediv__.side_effect = truediv_side_effect
+
+        mock_extract_text_pymupdf.return_value = "Text from new PDF"
+
+        run_pdf_text_extraction()
+
+        mock_extract_text_pymupdf.assert_called_once_with(mock_pdf_file2)
+        mock_open_file.assert_called_once_with(mock_new_txt_path, "w", encoding="utf-8")
+        mock_open_file().write.assert_called_once_with("Text from new PDF")
+        mock_log.info.assert_any_call(f"Skipping PDF '{mock_pdf_file1.name}': Extracted text file already exists at '{mock_existing_txt_path}'.")
+        mock_log.info.assert_any_call(f"Successfully processed and saved text for 1 PDF files.")
+        mock_log.info.assert_any_call(f"Skipped 1 PDF files (text file already existed).")
+
+
+    @patch('src.pipeline_steps.pdf_processor.config') # Mock config
+    @patch('src.pipeline_steps.pdf_processor.log')
+    def test_run_pdf_text_extraction_pdf_dir_not_found(
+        self, mock_log, mock_config_module
+    ):
+        mock_config_module.PROJECT_ROOT = MagicMock(spec=pathlib.Path)
+        mock_config_module.PDF_DIR_NAME = "non_existent_pdfs"
+        mock_config_module.EXTRACTED_TEXTS_DIR_NAME = "texts_output"
+
+        mock_pdf_dir_path = MagicMock(spec=pathlib.Path)
+        mock_extracted_texts_dir_path = MagicMock(spec=pathlib.Path)
+
+        def project_root_truediv_side_effect(name):
+            if name == mock_config_module.PDF_DIR_NAME:
+                return mock_pdf_dir_path
+            if name == mock_config_module.EXTRACTED_TEXTS_DIR_NAME:
+                return mock_extracted_texts_dir_path
+            return MagicMock()
+        mock_config_module.PROJECT_ROOT.__truediv__ = MagicMock(side_effect=project_root_truediv_side_effect)
+
+        mock_extracted_texts_dir_path.mkdir = MagicMock()
+        mock_pdf_dir_path.is_dir.return_value = False
+        mock_pdf_dir_path.glob = MagicMock() # Add glob mock to avoid AttributeError if is_dir was True
+
+        run_pdf_text_extraction()
+
+        mock_extracted_texts_dir_path.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+        mock_log.error.assert_any_call(f"PDF directory not found: {mock_pdf_dir_path}. Please ensure it exists and contains PDF files.")
+        mock_pdf_dir_path.glob.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main(argv=['first-arg-is-ignored'], exit=False)
