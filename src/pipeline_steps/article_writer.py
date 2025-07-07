@@ -33,6 +33,7 @@ log = config.get_logger(__name__, config.ARTICLE_WRITER_LOG_FILENAME)
 class SingleArticle(BaseModel):
     headline: str
     content: str
+    tags: List[str] = [] # Added tags field
 
 class LLMGeneratedArticles(BaseModel):
     articles: List[SingleArticle]
@@ -57,8 +58,32 @@ def generate_articles_from_text_llm(
         log.warning("LLM generation skipped: Protocol text is empty.")
         return None
 
-    formatted_prompt = prompt_template.format(PROTOCOL_TEXT=protocol_text)
+    # Update prompt to include tag instructions
+    possible_tags_str = ", ".join(config.POSSIBLE_TAGS)
+    tag_instruction = (
+        f"Assign relevant tags to each article from the following list: {possible_tags_str}. "
+        "The 'tags' field in the JSON output for each article should be a list of strings."
+    )
+    # Assuming GENAI_JOURNALISTIC_ARTICLE_PROMPT has a placeholder for additional instructions
+    # If not, we might need to adjust the prompt structure or append this instruction.
+    # For now, let's assume we can append it or it's part of a more complex formatting.
+    # A simple append might be:
+    # formatted_prompt = prompt_template.format(PROTOCOL_TEXT=protocol_text) + "\n\n" + tag_instruction
+    # However, to be safer and ensure it's integrated, let's assume the prompt has a placeholder
+    # like {TAG_INSTRUCTIONS} or we modify the prompt to include it.
+    # For this example, I'll format it into the existing prompt assuming it can take it.
+    # This might require `GENAI_JOURNALISTIC_ARTICLE_PROMPT` to be like:
+    # "... {PROTOCOL_TEXT} ... {TAG_INSTRUCTIONS}"
+    # If `GENAI_JOURNALISTIC_ARTICLE_PROMPT` is just a simple string, we'll need to adjust `src/prompts.py`
+    # For now, let's try to inject it. A common way is to add it to the protocol text or as a preamble.
+
+    # Let's modify the prompt_template directly here for now.
+    # This is a simplification; ideally, the prompt itself in prompts.py would be designed for this.
+    enhanced_prompt_template = f"{prompt_template}\n\n{tag_instruction}"
+    formatted_prompt = enhanced_prompt_template.format(PROTOCOL_TEXT=protocol_text)
+
     log.debug(f"Formatted prompt for LLM (first 200 chars of protocol text): {protocol_text[:200]}...")
+    log.debug(f"Tag instruction added to prompt: {tag_instruction}")
 
     try:
         schema_dict = LLMGeneratedArticles.model_json_schema()
@@ -93,15 +118,19 @@ def generate_articles_from_text_llm(
         log.error(f"Unexpected error during LLM article generation: {e}", exc_info=True)
         return None
 
-def generate_html_article(headline: str, content: str, original_pdf_name: str) -> str:
+def generate_html_article(headline: str, content: str, tags: List[str], original_pdf_name: str) -> str:
     """
-    Generates a simple HTML article from the LLM-generated headline and content.
+    Generates a simple HTML article from the LLM-generated headline, content, and tags.
     original_pdf_name is used for context/logging, not displayed directly in this basic HTML.
     """
-    # Basic HTML escaping for content to be safe in <pre> or body
     import html
     escaped_headline = html.escape(headline)
     escaped_content = html.escape(content)
+
+    tags_html = ""
+    if tags:
+        escaped_tags = [html.escape(tag) for tag in tags]
+        tags_html = f'<div class="tags"><strong>Tags:</strong> {", ".join(escaped_tags)}</div>'
 
     html_output = f"""<!DOCTYPE html>
 <html lang="de">
@@ -116,12 +145,15 @@ def generate_html_article(headline: str, content: str, original_pdf_name: str) -
         p {{ text-align: justify; }}
         /* Using <pre> for content to preserve line breaks from LLM, but with word wrap */
         pre {{ white-space: pre-wrap; word-wrap: break-word; background-color: #f9f9f9; border: 1px solid #eee; padding: 15px; border-radius: 4px; font-family: inherit; font-size: inherit;}}
+        .tags {{ margin-top: 20px; font-size: 0.9em; color: #555; }}
+        .tags strong {{ color: #333; }}
     </style>
 </head>
 <body>
     <div class="container">
         <h1>{escaped_headline}</h1>
         <pre>{escaped_content}</pre>
+        {tags_html}
         <!-- Metadaten könnten hier hinzugefügt werden, falls gewünscht, z.B. als Kommentar oder sichtbarer Text -->
         <!-- Source PDF: {html.escape(original_pdf_name)} -->
     </div>
@@ -267,6 +299,7 @@ def run_article_writing(extracted_texts_dir_override: pathlib.Path | None = None
                         html_article_content = generate_html_article(
                             headline=article_data.headline,
                             content=article_data.content,
+                            tags=article_data.tags, # Pass tags
                             original_pdf_name=pdf_filename # Pass PDF name for context
                         )
 

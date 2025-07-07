@@ -36,6 +36,20 @@ GENAI_IMAGE_GENERATION_MODEL = "gemini-2.0-flash-preview-image-generation"
 # --- API Call Settings ---
 DEFAULT_API_CALL_DELAY_SECONDS = 6
 
+# --- Article Tags ---
+POSSIBLE_TAGS = [
+    "Technology",
+    "Science",
+    "Health",
+    "Business",
+    "Entertainment",
+    "Sports",
+    "Politics",
+    "Education",
+    "Environment",
+    "Lifestyle"
+]
+
 # --- API Key Loading ---
 def load_google_api_key():
     """Loads Google API Key from config.ini located in the project root."""
