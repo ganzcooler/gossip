@@ -3,8 +3,6 @@ import logging
 import pathlib
 import sys
 import time
-# import random # No longer needed for mock generation
-import os # For path joining
 import re # For parsing HTML
 from google import genai # Changed import
 from google.genai import types as genai_types # For GenerationConfig

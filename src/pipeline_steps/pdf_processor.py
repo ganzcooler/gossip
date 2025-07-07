@@ -36,7 +36,7 @@ def extract_text_from_pdf_pymupdf(pdf_filepath: pathlib.Path) -> str:
         log.error(f"Error extracting text from {pdf_filepath.name} using PyMuPDF: {e}", exc_info=True)
         return "" # Return empty string on error
 
-def run_pdf_text_extraction(): # Renamed from run_pdf_extraction_and_storage
+def run_pdf_text_extraction():
     log.info("Starting PDF text extraction process using PyMuPDF...")
 
     pdf_dir = config.PROJECT_ROOT / config.PDF_DIR_NAME
@@ -92,10 +92,8 @@ def run_pdf_text_extraction(): # Renamed from run_pdf_extraction_and_storage
     log.info(f"PDF text extraction process finished. "
              f"Successfully processed and saved text for {processed_files_count} PDF files. "
              f"Skipped {skipped_files_count} PDF files (text file already existed).")
-    # No return value, as data is now stored in files.
 
 if __name__ == "__main__":
     print(f"Executing pdf_processor.py directly. Project root: {config.PROJECT_ROOT}")
-    # Example of how to run. This will now create files in the extracted_texts directory.
     run_pdf_text_extraction()
     print(f"PDF processing finished. Check the '{EXTRACTED_TEXTS_DIR_NAME}' directory for output files.")

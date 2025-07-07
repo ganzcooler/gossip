@@ -7,10 +7,8 @@ from src import prompts
 # Project root directory - assuming config.ini is in the parent directory of src/
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# Re-establish prompt variables from src.prompts
+# Get prompt variables from src.prompts
 GENAI_JOURNALISTIC_ARTICLE_PROMPT = prompts.GENAI_JOURNALISTIC_ARTICLE_PROMPT
-GENAI_TOPIC_SELECTION_PROMPT = prompts.GENAI_TOPIC_SELECTION_PROMPT
-PDF_EXTRACTION_PROMPT = prompts.PDF_EXTRACTION_PROMPT
 
 # --- Logging Configuration ---
 LOG_FORMAT = '%(asctime)s %(levelname)s %(name)s: %(message)s'
@@ -19,24 +17,21 @@ DEFAULT_LOG_LEVEL = logging.INFO
 # --- Directory Names ---
 # These are relative to PROJECT_ROOT
 PDF_DIR_NAME = "pdf_files"
-EXTRACTED_TEXTS_DIR_NAME = "extracted_texts" # New directory for extracted texts
-# CHROMA_DB_DIR_NAME = "chroma_db" # Removed
+EXTRACTED_TEXTS_DIR_NAME = "extracted_texts"
 ARTICLES_DIR_NAME = "articles"
+IMAGES_DIR_NAME = "generated_images"
 
 # --- Log File Names ---
 # These are relative to PROJECT_ROOT in a "logs" subdirectory
 LOG_DIR_NAME = "logs" # All logs will go into a "logs" subdirectory at project root
 PDF_PROCESSING_LOG_FILENAME = LOG_DIR_NAME + "/pdf-processing.log"
-# CHROMA_DB_UTILS_LOG_FILENAME = LOG_DIR_NAME + "/chromadb-utils.log" # Removed
-# CHROMA_TO_ARTICLES_LOG_FILENAME = LOG_DIR_NAME + "/chroma-to-articles.log" # Removed
-# RELEVANCE_DETERMINER_LOG_FILENAME = LOG_DIR_NAME + "/relevance-determiner.log" # Removed (file deleted)
-# REFERENCE_FINDER_LOG_FILENAME = LOG_DIR_NAME + "/reference-finder.log" # Removed (file deleted)
 ARTICLE_WRITER_LOG_FILENAME = LOG_DIR_NAME + "/article-writer.log"
+IMAGE_GENERATOR_LOG_FILENAME = LOG_DIR_NAME + "/image-generator.log" # New log for image generator
 
 # --- Model Names ---
-GENAI_PDF_EXTRACTION_MODEL = "gemini-2.5-flash-preview-05-20" # Retained for potential direct PDF Q&A in future
-# OLLAMA_EMBEDDING_MODEL = "nomic-embed-text" # Removed
-GENAI_ARTICLE_GENERATION_MODEL = "gemini-2.5-flash-preview-05-20"
+GENAI_PDF_EXTRACTION_MODEL = "gemini-2.5-flash"
+GENAI_ARTICLE_GENERATION_MODEL = "gemini-2.5-flash"
+GENAI_IMAGE_GENERATION_MODEL = "gemini-2.0-flash-preview-image-generation"
 
 # --- API Call Settings ---
 DEFAULT_API_CALL_DELAY_SECONDS = 6
@@ -62,7 +57,7 @@ def load_api_call_delay():
     Returns DEFAULT_API_CALL_DELAY_SECONDS if not found or invalid.
     """
     config_file_path = PROJECT_ROOT / "config.ini"
-    logger = get_logger(__name__, PDF_PROCESSING_LOG_FILENAME) # Using an existing logger for now
+    logger = get_logger(__name__, PDF_PROCESSING_LOG_FILENAME)
 
     if not config_file_path.exists():
         logger.warning(f"Konfigurationsdatei nicht gefunden: {config_file_path}. "
@@ -84,25 +79,6 @@ def load_api_call_delay():
         logger.warning(f"Ungültiger Wert für 'API_CALL_DELAY_SECONDS' in {config_file_path}. "
                        f"Muss eine Ganzzahl sein. Verwende Standardwert: {DEFAULT_API_CALL_DELAY_SECONDS}s.")
         return DEFAULT_API_CALL_DELAY_SECONDS
-
-# --- ChromaDB Configuration --- # Removed
-# CHROMA_COLLECTION_NAME = "tops_content" # Removed
-# CHROMA_ARTICLES_COLLECTION_NAME = "generated_articles" # Removed
-
-# --- Directory Names ---
-# (Existing PDF_DIR_NAME, ARTICLES_DIR_NAME)
-IMAGES_DIR_NAME = "generated_images" # New directory for images
-
-# --- Log File Names ---
-# (Existing log file names)
-IMAGE_GENERATOR_LOG_FILENAME = LOG_DIR_NAME + "/image-generator.log" # New log for image generator
-
-# --- Model Names ---
-# (Existing GENAI_PDF_EXTRACTION_MODEL, GENAI_ARTICLE_GENERATION_MODEL)
-GENAI_IMAGE_GENERATION_MODEL = "gemini-2.0-flash-preview-image-generation" # Using the model from user's example code.
-
-# --- Article Generation ---
-# SIMILAR_DOCS_COUNT = 2 # This seems related to the removed reference_finder
 
 # Helper function to get a configured logger
 def get_logger(name, log_file_name_with_subdir, level=DEFAULT_LOG_LEVEL, project_root_path=PROJECT_ROOT, log_format=LOG_FORMAT):

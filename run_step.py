@@ -9,8 +9,7 @@ sys.path.insert(0, str(project_root))
 try:
     from src.pipeline_steps import pdf_processor
     from src.pipeline_steps import article_writer
-    from src.pipeline_steps import image_generator # Added back image_generator
-    # relevance_determiner, reference_finder are removed as they were ChromaDB dependent
+    from src.pipeline_steps import image_generator
     from src import config # To initialize logging or access other configs if needed directly
 except ImportError as e:
     print(f"Error: Could not import pipeline step modules or config: {e}")
@@ -36,7 +35,7 @@ def main():
 
     if args.step == 'process_pdfs':
         log.info("Running step: PDF Text Extraction")
-        pdf_processor.run_pdf_text_extraction() # No return value, writes to files
+        pdf_processor.run_pdf_text_extraction()
         # Check if files were created in extracted_texts_dir
         extracted_texts_dir = config.PROJECT_ROOT / config.EXTRACTED_TEXTS_DIR_NAME
         if not extracted_texts_dir.is_dir() or not any(extracted_texts_dir.iterdir()):
@@ -46,7 +45,6 @@ def main():
 
     elif args.step == 'write_articles':
         log.info("Running step: Article Writing")
-        # article_writer now reads from the directory specified in config or passed as argument
         article_writer.run_article_writing()
         log.info(f"Article writing process initiated. Check '{config.ARTICLES_DIR_NAME}' for HTML articles and logs for details.")
 
@@ -67,15 +65,8 @@ def main():
             sys.exit(1)
         log.info(f"PDF text extraction complete. Text files should be in '{config.EXTRACTED_TEXTS_DIR_NAME}'.")
 
-        # These steps are no longer part of the primary flow as per requirements.
-        # print("\nStep X: Determine Relevance (SKIPPED as per new requirements)")
-        # relevance_determiner.run_relevance_determination() # This would need input if it were to run
-
-        # print("\nStep Y: Find References (SKIPPED as per new requirements)")
-        # reference_finder.run_reference_finding() # This would need input
-
         log.info("\nStep 2: Article Writing")
-        article_writer.run_article_writing() # Reads from the configured directory
+        article_writer.run_article_writing()
         log.info(f"Article writing process initiated. Check '{config.ARTICLES_DIR_NAME}' for HTML articles and logs for details.")
 
         log.info("\nStep 3: Image Generation")
