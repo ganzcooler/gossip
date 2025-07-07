@@ -207,12 +207,29 @@ def run_article_writing(extracted_texts_dir_override: pathlib.Path | None = None
         log.error(f"Error creating directory {articles_dir}: {e}", exc_info=True)
         return
 
+    # Get a list of existing article filenames for checking
+    existing_articles = [f.name for f in articles_dir.glob('*.html')]
+    log.debug(f"Found existing articles: {existing_articles}")
+
     total_articles_generated_count = 0
     protocols_processed_count = 0
     error_count = 0
 
     for pdf_filename, protocol_full_text in extracted_texts_map.items(): # Use the new map
-        log.info(f"Processing extracted text from '{pdf_filename}' (derived from {pathlib.Path(pdf_filename).stem + '.txt'}) for LLM article generation.")
+        # pdf_filename is like "document.pdf", text_file_stem is "document"
+        text_file_stem = pathlib.Path(pdf_filename).stem
+        log.info(f"Checking processing for text file stem: '{text_file_stem}' (derived from {pdf_filename})")
+
+        # Check if articles for this text file already exist
+        # An article filename is like "text_file_stem_some_headline.html"
+        article_exists_for_stem = any(name.startswith(text_file_stem + "_") for name in existing_articles)
+
+        if article_exists_for_stem:
+            log.info(f"Articles for '{text_file_stem}' already exist. Skipping generation for this file.")
+            # Optionally, count as skipped rather than error, or just log and continue
+            continue # Skip to the next text file
+
+        log.info(f"Processing extracted text from '{pdf_filename}' for LLM article generation.")
 
         if not protocol_full_text.strip():
             log.warning(f"Protocol text for '{pdf_filename}' is empty or whitespace. Skipping LLM generation.")
