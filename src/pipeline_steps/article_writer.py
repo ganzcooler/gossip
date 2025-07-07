@@ -4,10 +4,8 @@ import sys
 import time
 import json
 import re
-from google import genai # Changed import for google-genai
-from google.genai import types as genai_types # For GenerationConfig and schema types
-from google.api_core import exceptions as google_exceptions
-from pydantic import BaseModel, ValidationError, TypeAdapter
+from google import genai
+from pydantic import BaseModel
 from typing import List
 
 # Ensure src directory is in sys.path for config import
@@ -68,19 +66,14 @@ def generate_articles_from_text_llm(
         log.error(f"Error generating JSON schema from Pydantic model: {e_schema}", exc_info=True)
         return None
 
-    generation_config = genai_types.GenerationConfig(
-        response_mime_type="application/json",
-        response_schema=schema_dict
-    )
-
-    request_options = {"timeout": 300}
-
     try:
-        response = client.generate_content(
+        response = client.models.generate_content(
             model=f"models/{model_name}",
             contents=[formatted_prompt],
-            generation_config=generation_config,
-            request_options=request_options
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": LLMGeneratedArticles,
+            }
         )
 
         if not response.text:
@@ -95,16 +88,7 @@ def generate_articles_from_text_llm(
 
         log.info(f"Successfully parsed and validated LLM response: Found {len(validated_data.articles)} articles.")
         return validated_data.articles
-
-    except json.JSONDecodeError as e:
-        log.error(f"JSONDecodeError parsing LLM response: {e}. Response text: '{response.text if hasattr(response, 'text') else 'Response text not available'}'", exc_info=True)
-        return None
-    except ValidationError as e:
-        log.error(f"Pydantic ValidationError for LLM response: {e}. LLM output: '{llm_output if 'llm_output' in locals() else 'LLM output not available'}'", exc_info=True)
-        return None
-    except google_exceptions.GoogleAPIError as e:
-        log.error(f"Google API Error during LLM article generation: {e}", exc_info=True)
-        return None
+    
     except Exception as e:
         log.error(f"Unexpected error during LLM article generation: {e}", exc_info=True)
         return None
@@ -222,8 +206,6 @@ def run_article_writing(extracted_texts_dir_override: pathlib.Path | None = None
     except OSError as e:
         log.error(f"Error creating directory {articles_dir}: {e}", exc_info=True)
         return
-
-    # Removed ChromaDB initialization and fetching logic
 
     total_articles_generated_count = 0
     protocols_processed_count = 0

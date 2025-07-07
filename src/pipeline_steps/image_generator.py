@@ -5,10 +5,7 @@ import sys
 import time
 import re # For parsing HTML
 from google import genai # Changed import
-from google.genai import types as genai_types # For GenerationConfig
-from google.api_core import exceptions as google_exceptions
-# from PIL import Image # Not strictly needed if just saving bytes directly
-# from io import BytesIO # Not strictly needed if just saving bytes directly
+from google.genai import types
 
 # Ensure src directory is in sys.path for config import
 project_root_for_import = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -96,10 +93,12 @@ def generate_featured_image_llm(
     log.info(f"Generating image with prompt (first 150 chars): {prompt[:150]}...")
 
     try:
-        response = client.generate_content(
+        response = client.models.generate_content(
             model=f"models/{model_name}",
             contents=[prompt],
-            generation_config=genai_types.GenerationConfig()
+            config=types.GenerateContentConfig(
+                response_modalities=['TEXT', 'IMAGE']
+            )
         )
 
         if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
@@ -111,9 +110,6 @@ def generate_featured_image_llm(
         log.warning(f"No image data found in response for article: '{article_title}'. Response: {response}")
         return None
 
-    except google_exceptions.GoogleAPIError as e:
-        log.error(f"Google API Error during image generation for '{article_title}': {e}", exc_info=True)
-        return None
     except Exception as e:
         log.error(f"Unexpected error during image generation for '{article_title}': {e}", exc_info=True)
         return None
