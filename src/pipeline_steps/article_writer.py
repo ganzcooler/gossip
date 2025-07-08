@@ -58,32 +58,16 @@ def generate_articles_from_text_llm(
         log.warning("LLM generation skipped: Protocol text is empty.")
         return None
 
-    # Update prompt to include tag instructions
-    possible_tags_str = ", ".join(config.POSSIBLE_TAGS)
-    tag_instruction = (
-        f"Assign relevant tags to each article from the following list: {possible_tags_str}. "
-        "The 'tags' field in the JSON output for each article should be a list of strings."
-    )
-    # Assuming GENAI_JOURNALISTIC_ARTICLE_PROMPT has a placeholder for additional instructions
-    # If not, we might need to adjust the prompt structure or append this instruction.
-    # For now, let's assume we can append it or it's part of a more complex formatting.
-    # A simple append might be:
-    # formatted_prompt = prompt_template.format(PROTOCOL_TEXT=protocol_text) + "\n\n" + tag_instruction
-    # However, to be safer and ensure it's integrated, let's assume the prompt has a placeholder
-    # like {TAG_INSTRUCTIONS} or we modify the prompt to include it.
-    # For this example, I'll format it into the existing prompt assuming it can take it.
-    # This might require `GENAI_JOURNALISTIC_ARTICLE_PROMPT` to be like:
-    # "... {PROTOCOL_TEXT} ... {TAG_INSTRUCTIONS}"
-    # If `GENAI_JOURNALISTIC_ARTICLE_PROMPT` is just a simple string, we'll need to adjust `src/prompts.py`
-    # For now, let's try to inject it. A common way is to add it to the protocol text or as a preamble.
-
-    # Let's modify the prompt_template directly here for now.
-    # This is a simplification; ideally, the prompt itself in prompts.py would be designed for this.
-    enhanced_prompt_template = f"{prompt_template}\n\n{tag_instruction}"
-    formatted_prompt = enhanced_prompt_template.format(PROTOCOL_TEXT=protocol_text)
+    # Tag instructions are now part of the prompt_template from src.prompts
+    # No need to dynamically add them here.
+    # Ensure PROTOCOL_TEXT is correctly substituted.
+    # The prompt from src.prompts.py is now an f-string, so it expects .format(PROTOCOL_TEXT=...)
+    # or direct f-string interpolation if used differently.
+    # Given prompt_template is passed, .format() is the way it's used.
+    formatted_prompt = prompt_template.format(PROTOCOL_TEXT=protocol_text)
 
     log.debug(f"Formatted prompt for LLM (first 200 chars of protocol text): {protocol_text[:200]}...")
-    log.debug(f"Tag instruction added to prompt: {tag_instruction}")
+    # log.debug(f"Tag instruction added to prompt: {tag_instruction}") # This was removed
 
     try:
         schema_dict = LLMGeneratedArticles.model_json_schema()
