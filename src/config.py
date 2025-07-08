@@ -38,16 +38,25 @@ DEFAULT_API_CALL_DELAY_SECONDS = 6
 
 # --- Article Tags ---
 POSSIBLE_TAGS = [
-    "Technology",
-    "Science",
-    "Health",
-    "Business",
-    "Entertainment",
-    "Sports",
-    "Politics",
-    "Education",
-    "Environment",
-    "Lifestyle"
+    "Bau, Umwelt und Verkehr",
+    "Schule, Bildung und Integration",
+    "Sport, Kultur und Soziales",
+    "Wirtschaft und Finanzen",
+    "Feuerwehr",
+    "Jugend",
+    "Schule",
+    "Kita",
+    "Atzenhausen",
+    "Dahlenrode",
+    "Dramfeld",
+    "Klein Wiershausen",
+    "Lemshausen",
+    "Mengershausen",
+    "Obernjesa",
+    "Rosdorf",
+    "Settmarshausen",
+    "Sieboldshausen",
+    "Volkerode"
 ]
 
 # --- API Key Loading ---
