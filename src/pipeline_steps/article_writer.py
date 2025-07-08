@@ -57,17 +57,10 @@ def generate_articles_from_text_llm(
     if not protocol_text: # Real logic below
         log.warning("LLM generation skipped: Protocol text is empty.")
         return None
-
-    # Tag instructions are now part of the prompt_template from src.prompts
-    # No need to dynamically add them here.
-    # Ensure PROTOCOL_TEXT is correctly substituted.
-    # The prompt from src.prompts.py is now an f-string, so it expects .format(PROTOCOL_TEXT=...)
-    # or direct f-string interpolation if used differently.
-    # Given prompt_template is passed, .format() is the way it's used.
+    
     formatted_prompt = prompt_template.format(PROTOCOL_TEXT=protocol_text)
 
     log.debug(f"Formatted prompt for LLM (first 200 chars of protocol text): {protocol_text[:200]}...")
-    # log.debug(f"Tag instruction added to prompt: {tag_instruction}") # This was removed
 
     try:
         schema_dict = LLMGeneratedArticles.model_json_schema()
@@ -195,10 +188,7 @@ def run_article_writing(extracted_texts_dir_override: pathlib.Path | None = None
         if not google_api_key:
             log.critical("Google API key not found in config.ini. LLM generation disabled.")
             return
-        # For google-genai, client is initialized with the key.
-        # Global configuration via genai.configure() might still work or be relevant for other genai functions,
-        # but client object will use the key passed to its constructor if any.
-        # Based on research, genai.Client(api_key=...) is the way.
+        
         genai_client = genai.Client(api_key=google_api_key)
         log.info(f"Google GenAI client initialized successfully.")
     except Exception as e:
