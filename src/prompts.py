@@ -15,6 +15,7 @@ Gehe dabei wie folgt vor:
   * Priorisiere Informationen mit weitreichenden Auswirkungen, wichtigen Entscheidungen oder überraschenden Wendungen, da diese sich am besten für eine ansprechende Aufmachung eignen.
 2. Erstellung der News-Blog-Artikel:
   * Erstelle für jede identifizierte relevante Information einen eigenständigen Blog-Artikel.
+  * Die Sprache der Artikel soll deutsch sein.
   * Journalistische Struktur: Jeder Artikel muss eine klassische journalistische Struktur aufweisen:
 	* Interesse weckende Überschrift: Die Überschrift soll die Neugier der Leser wecken und das Thema klar benennen, ohne dabei zu übertreiben. Eine gewisse Pointierung und Fragezeichen*Stellung ist erlaubt.
 	* Kurze, prägnante Einleitung: Fasse das Kernthema des Artikels zusammen und mache neugierig auf mehr.
