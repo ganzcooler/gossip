@@ -37,7 +37,7 @@ GENAI_IMAGE_GENERATION_MODEL = "gemini-2.0-flash-preview-image-generation"
 DEFAULT_API_CALL_DELAY_SECONDS = 6
 
 # --- Article Tags ---
-POSSIBLE_TAGS = [
+CATEGORY_TAGS = [
     "Bau, Umwelt und Verkehr",
     "Schule, Bildung und Integration",
     "Sport, Kultur und Soziales",
@@ -45,7 +45,10 @@ POSSIBLE_TAGS = [
     "Feuerwehr",
     "Jugend",
     "Schule",
-    "Kita",
+    "Kita"
+]
+
+LOCATION_TAGS = [
     "Atzenhausen",
     "Dahlenrode",
     "Dramfeld",
