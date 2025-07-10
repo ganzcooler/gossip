@@ -58,7 +58,7 @@ def generate_articles_from_text_llm(
         log.warning("LLM generation skipped: Protocol text is empty.")
         return None
     
-    formatted_prompt = prompt_template.format(PROTOCOL_TEXT=protocol_text)
+    formatted_prompt = prompt_template.replace("{PROTOCOL_TEXT}", protocol_text)
 
     log.debug(f"Formatted prompt for LLM (first 200 chars of protocol text): {protocol_text[:200]}...")
 
