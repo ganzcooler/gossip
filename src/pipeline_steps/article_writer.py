@@ -31,12 +31,12 @@ log = config.get_logger(__name__, config.ARTICLE_WRITER_LOG_FILENAME)
 
 # --- Pydantic Models for LLM Response ---
 class SingleArticle(BaseModel):
-    headline: str
-    content: str
-    tags: List[str] = [] # Added tags field
+    ueberschrift: str
+    inhalt: str
+    tags: List[str] = []
 
 class LLMGeneratedArticles(BaseModel):
-    articles: List[SingleArticle]
+    artikel: List[SingleArticle]
 
 def sanitize_filename(name: str) -> str:
     """Sanitizes a string to be a valid filename."""
@@ -88,8 +88,8 @@ def generate_articles_from_text_llm(
         llm_output = json.loads(response.text)
         validated_data = LLMGeneratedArticles(**llm_output)
 
-        log.info(f"Successfully parsed and validated LLM response: Found {len(validated_data.articles)} articles.")
-        return validated_data.articles
+        log.info(f"Successfully parsed and validated LLM response: Found {len(validated_data.artikel)} articles.")
+        return validated_data.artikel
     
     except Exception as e:
         log.error(f"Unexpected error during LLM article generation: {e}", exc_info=True)
@@ -266,13 +266,13 @@ def run_article_writing(extracted_texts_dir_override: pathlib.Path | None = None
             protocols_processed_count +=1
 
             for article_index, article_data in enumerate(articles_from_llm):
-                if article_data and article_data.content and article_data.headline:
-                    log.info(f"  Article {article_index+1}/{len(articles_from_llm)} from '{pdf_filename}': '{article_data.headline}'")
+                if article_data and article_data.inhalt and article_data.ueberschrift:
+                    log.info(f"  Article {article_index+1}/{len(articles_from_llm)} from '{pdf_filename}': '{article_data.ueberschrift}'")
 
                     try:
                         html_article_content = generate_html_article(
-                            headline=article_data.headline,
-                            content=article_data.content,
+                            headline=article_data.ueberschrift,
+                            content=article_data.inhalt,
                             tags=article_data.tags, # Pass tags
                             original_pdf_name=pdf_filename # Pass PDF name for context
                         )
@@ -280,7 +280,7 @@ def run_article_writing(extracted_texts_dir_override: pathlib.Path | None = None
                         # Create a unique filename for each article
                         # Sanitize PDF name and headline for use in filename
                         sane_pdf_name = sanitize_filename(pathlib.Path(pdf_filename).stem)
-                        sane_headline = sanitize_filename(article_data.headline)
+                        sane_headline = sanitize_filename(article_data.ueberschrift)
 
                         # Ensure filename is not too long and is unique enough
                         # Using first few words of headline and index
@@ -306,7 +306,7 @@ def run_article_writing(extracted_texts_dir_override: pathlib.Path | None = None
                         total_articles_generated_count += 1
 
                     except Exception as e:
-                        log.error(f"  Error saving HTML article file for '{article_data.headline}' from '{pdf_filename}': {e}", exc_info=True)
+                        log.error(f"  Error saving HTML article file for '{article_data.ueberschrift}' from '{pdf_filename}': {e}", exc_info=True)
                         error_count += 1 # Count error for this specific article saving
                 else:
                     log.warning(f"  LLM returned an incomplete article item (missing headline or content) for '{pdf_filename}'. Skipping this item.")

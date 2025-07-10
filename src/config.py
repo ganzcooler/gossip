@@ -3,6 +3,7 @@ import pathlib
 import logging
 import sys
 from src import prompts
+from src import tags
 
 # Project root directory - assuming config.ini is in the parent directory of src/
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -37,30 +38,8 @@ GENAI_IMAGE_GENERATION_MODEL = "gemini-2.0-flash-preview-image-generation"
 DEFAULT_API_CALL_DELAY_SECONDS = 6
 
 # --- Article Tags ---
-CATEGORY_TAGS = [
-    "Bau, Umwelt und Verkehr",
-    "Schule, Bildung und Integration",
-    "Sport, Kultur und Soziales",
-    "Wirtschaft und Finanzen",
-    "Feuerwehr",
-    "Jugend",
-    "Schule",
-    "Kita"
-]
-
-LOCATION_TAGS = [
-    "Atzenhausen",
-    "Dahlenrode",
-    "Dramfeld",
-    "Klein Wiershausen",
-    "Lemshausen",
-    "Mengershausen",
-    "Obernjesa",
-    "Rosdorf",
-    "Settmarshausen",
-    "Sieboldshausen",
-    "Volkerode"
-]
+CATEGORY_TAGS = tags.CATEGORY_TAGS
+LOCATION_TAGS = tags.LOCATION_TAGS
 
 # --- API Key Loading ---
 def load_google_api_key():

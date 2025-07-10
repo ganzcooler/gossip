@@ -1,4 +1,4 @@
-from src.config import CATEGORY_TAGS, LOCATION_TAGS
+from src.tags import CATEGORY_TAGS, LOCATION_TAGS
 
 # Format the tags into comma-separated strings
 category_tags_str = ", ".join(CATEGORY_TAGS)
@@ -49,7 +49,7 @@ Beispiel für die JSON-Ausgabe:
 {{
   "artikel": [
     {{
-      "ueberschrift": "Großer Batteriespeicher für Rosdorf beschlossen – Chance oder Herausforderung?",
+      "ueberschrift": "Großer Batteriespeicher für Rosdorf beschlossen - Chance oder Herausforderung?",
       "inhalt": "In einer Sitzung des Gemeinderats wurde die Errichtung eines großflächigen Batteriespeichers für Photovoltaik-Anlagen im Gemeindegebiet thematisiert und beschlossen. Während Befürworter von einem wichtigen Schritt für die lokale Energiewende sprechen, wurden auch kritische Stimmen laut. Ein Ratsmitglied äußerte Bedenken bezüglich der genauen Standortwahl und potenzieller Auswirkungen. Trotzdem sprach sich die Mehrheit für das Vorhaben aus. Die Verwaltung ist nun mit der weiteren Planung und Umsetzung betraut.",
       "tags": ["Umwelt", "Politik", "Infrastruktur", "Rosdorf"]
     }},
