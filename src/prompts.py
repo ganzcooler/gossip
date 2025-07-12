@@ -67,3 +67,10 @@ Hier ist das Protokoll:
 ---
 """
 
+GENAI_IMAGE_PROMPT_GENERATOR_PROMPT = """
+Erstelle einen detaillierten und kreativen Prompt für eine Bildgenerator-KI.
+Der Prompt soll ein fesselndes und relevantes Beitragsbild für einen Nachrichtenartikel mit dem Titel '{article_title}' erstellen.
+Der Artikel handelt von folgendem Thema: {article_text_snippet}
+Der erstellte Prompt soll die KI anweisen, ein Bild zu generieren, das sowohl zum Titel als auch zum Inhalt des Artikels passt.
+Der Stil des Bildes sollte modern und ansprechend sein und zum Stil eines News-Blogs passen.
+"""

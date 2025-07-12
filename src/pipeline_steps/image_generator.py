@@ -3,9 +3,8 @@ import logging
 import pathlib
 import sys
 import time
-import re # For parsing HTML
-from google import genai # Changed import
-from google.genai import types
+import google.generativeai as genai
+from google.generativeai import types
 
 # Ensure src directory is in sys.path for config import
 project_root_for_import = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -27,10 +26,9 @@ except ImportError as e:
 
 log = config.get_logger(__name__, config.IMAGE_GENERATOR_LOG_FILENAME)
 
-# To store the initialized client
 genai_client_instance = None
 
-def _initialize_genai_client() -> genai.client.Client | None:
+def _initialize_genai_client() -> genai.GenerativeModel | None:
     """Initializes and returns a GenAI client using the API key from config."""
     global genai_client_instance
     if genai_client_instance is None:
@@ -39,64 +37,34 @@ def _initialize_genai_client() -> genai.client.Client | None:
             if not api_key:
                 log.critical("API key not found in config. Cannot initialize GenAI client.")
                 return None
-            genai_client_instance = genai.Client(api_key=api_key)
+            genai.configure(api_key=api_key)
+            genai_client_instance = genai.GenerativeModel(config.GENAI_IMAGE_GENERATION_MODEL)
             log.info("Google GenAI Client initialized successfully for image generation.")
         except Exception as e:
             log.critical(f"Failed to initialize Google GenAI Client: {e}", exc_info=True)
             return None
     return genai_client_instance
 
-def parse_html_article(html_content: str) -> tuple[str | None, str | None]:
-    """
-    Parses HTML content to extract title (from <h1>) and body (from <pre>).
-    This is a very basic parser assuming the specific HTML structure used.
-    Returns (title, body)
-    """
-    title = None
-    body = None
-
-    # Extract title from <h1>
-    title_match = re.search(r"<h1[^>]*>(.*?)</h1>", html_content, re.IGNORECASE | re.DOTALL)
-    if title_match:
-        title = title_match.group(1).strip()
-
-    # Extract body from <pre>
-    # Assuming the first <pre> tag encountered contains the main article body
-    body_match = re.search(r"<pre[^>]*>(.*?)</pre>", html_content, re.IGNORECASE | re.DOTALL)
-    if body_match:
-        body = body_match.group(1).strip()
-
-    if not title:
-        log.warning("Could not parse title from HTML.")
-    if not body:
-        log.warning("Could not parse body from HTML.")
-
-    return title, body
-
-
-# --- Actual LLM Image Generation ---
 def generate_featured_image_llm(
-    client: genai.client.Client,
+    client: genai.GenerativeModel,
     model_name: str,
-    article_title: str,
-    article_text_snippet: str
+    prompt: str,
+    prompt_filename: str,
 ) -> bytes | None:
     """
     Generates a featured image using the Gemini API (via genai.Client)
-    based on article title and text snippet.
+    based on the given prompt.
     """
     if client is None:
         log.error("GenAI client not initialized. Cannot generate image.")
         return None
 
-    prompt = f"Generate a compelling and relevant featured image for a news article titled '{article_title}'. The article is about: {article_text_snippet}"
-    log.info(f"Generating image with prompt (first 150 chars): {prompt[:150]}...")
+    log.info(f"Generating image with prompt from '{prompt_filename}' (first 150 chars): {prompt[:150]}...")
 
     try:
-        response = client.models.generate_content(
-            model=f"models/{model_name}",
+        response = client.generate_content(
             contents=[prompt],
-            config=types.GenerateContentConfig(
+            generation_config=types.GenerationConfig(
                 response_modalities=['TEXT', 'IMAGE']
             )
         )
@@ -104,25 +72,25 @@ def generate_featured_image_llm(
         if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
                 if part.inline_data and part.inline_data.data:
-                    log.info(f"Successfully generated image for article: '{article_title}'.")
+                    log.info(f"Successfully generated image for prompt: '{prompt_filename}'.")
                     return part.inline_data.data
 
-        log.warning(f"No image data found in response for article: '{article_title}'. Response: {response}")
+        log.warning(f"No image data found in response for prompt: '{prompt_filename}'. Response: {response}")
         return None
 
     except Exception as e:
-        log.error(f"Unexpected error during image generation for '{article_title}': {e}", exc_info=True)
+        log.error(f"Unexpected error during image generation for '{prompt_filename}': {e}", exc_info=True)
         return None
 
-def get_image_filepath(html_filepath: pathlib.Path, images_output_dir: pathlib.Path) -> pathlib.Path:
-    """Determines the corresponding image filepath based on the HTML article filepath."""
-    image_filename_stem = html_filepath.stem # e.g., "my-article" from "my-article.html"
-    image_filename = f"{image_filename_stem}.png" # Assuming PNG, can be configurable
+def get_image_filepath(prompt_filepath: pathlib.Path, images_output_dir: pathlib.Path) -> pathlib.Path:
+    """Determines the corresponding image filepath based on the prompt filepath."""
+    image_filename_stem = prompt_filepath.stem
+    image_filename = f"{image_filename_stem}.png"
     return images_output_dir / image_filename
 
 def run_image_generation():
     """
-    Scans the articles directory for HTML files, generates a featured image for each
+    Scans the prompts directory for text files, generates a featured image for each
     (if one doesn't already exist), and saves it to the images directory.
     """
     log.info("Starting image generation process...")
@@ -141,76 +109,65 @@ def run_image_generation():
     api_delay = load_api_call_delay()
     log.info(f"Using API call delay of {api_delay} seconds between image generation calls.")
 
-    articles_input_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
+    prompts_input_dir = config.PROJECT_ROOT / config.PROMPTS_DIR_NAME
     images_output_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
 
-    # Ensure directories exist
     try:
-        articles_input_dir.mkdir(parents=True, exist_ok=True)
+        prompts_input_dir.mkdir(parents=True, exist_ok=True)
         images_output_dir.mkdir(parents=True, exist_ok=True)
-        log.info(f"Article input directory: {articles_input_dir}")
+        log.info(f"Prompts input directory: {prompts_input_dir}")
         log.info(f"Image output directory: {images_output_dir}")
     except OSError as e:
         log.error(f"Error creating directories: {e}", exc_info=True)
         return
 
-    html_files = list(articles_input_dir.glob('*.html'))
-    if not html_files:
-        log.info(f"No HTML articles found in {articles_input_dir}. Nothing to process.")
+    prompt_files = list(prompts_input_dir.glob('*.txt'))
+    if not prompt_files:
+        log.info(f"No prompt files found in {prompts_input_dir}. Nothing to process.")
         return
 
-    log.info(f"Found {len(html_files)} HTML articles to check for image generation.")
+    log.info(f"Found {len(prompt_files)} prompt files to check for image generation.")
 
     generated_count = 0
     skipped_count = 0
     error_count = 0
 
-    for html_filepath in html_files:
-        log.info(f"Processing article: {html_filepath.name}")
+    for prompt_filepath in prompt_files:
+        log.info(f"Processing prompt: {prompt_filepath.name}")
 
-        # Determine the target image filepath; re-create Path object for a fresh check
-        image_filename_stem = html_filepath.stem
-        image_filename = f"{image_filename_stem}.png"
-        target_image_filepath = images_output_dir / image_filename
+        target_image_filepath = get_image_filepath(prompt_filepath, images_output_dir)
 
-        # Explicitly create a new Path object for the existence check
         check_image_path = pathlib.Path(target_image_filepath)
 
         if check_image_path.exists():
-            log.info(f"Image already exists for {html_filepath.name} at {check_image_path}. Skipping.")
+            log.info(f"Image already exists for {prompt_filepath.name} at {check_image_path}. Skipping.")
             skipped_count += 1
             continue
 
         try:
-            html_content = html_filepath.read_text(encoding="utf-8")
-            article_title, article_body = parse_html_article(html_content)
+            prompt_content = prompt_filepath.read_text(encoding="utf-8")
 
-            if not article_title and not article_body:
-                log.warning(f"Could not parse title or body from {html_filepath.name}. Skipping image generation.")
+            if not prompt_content:
+                log.warning(f"Prompt file is empty {prompt_filepath.name}. Skipping image generation.")
                 error_count +=1
                 continue
 
-            # Use title for image gen, fallback to a snippet of body if title is missing
-            prompt_title = article_title if article_title else "Untitled Article"
-            prompt_text_snippet = (article_body if article_body else "")[:500] # Use a snippet of body for context
-
-            log.info(f"Attempting to generate image for '{prompt_title}' (from {html_filepath.name})")
+            log.info(f"Attempting to generate image for '{prompt_filepath.name}'")
 
             image_bytes: bytes | None = None
             try:
                 image_bytes = generate_featured_image_llm(
                     client=client,
                     model_name=image_model_name,
-                    article_title=prompt_title,
-                    article_text_snippet=prompt_text_snippet
+                    prompt=prompt_content,
+                    prompt_filename=prompt_filepath.name,
                 )
             except Exception as e_gen:
-                log.error(f"Unexpected error during image generation call for {html_filepath.name}: {e_gen}", exc_info=True)
+                log.error(f"Unexpected error during image generation call for {prompt_filepath.name}: {e_gen}", exc_info=True)
                 error_count += 1
-                continue # Skip this article if generation itself had an issue
+                continue
             finally:
-                # Apply delay only if there are more files to process potentially
-                is_last_file_to_attempt = (html_files.index(html_filepath) == len(html_files) - 1)
+                is_last_file_to_attempt = (prompt_files.index(prompt_filepath) == len(prompt_files) - 1)
                 if not is_last_file_to_attempt:
                      log.debug(f"API call delay of {api_delay}s...")
                      time.sleep(api_delay)
@@ -225,19 +182,17 @@ def run_image_generation():
                         generated_count += 1
                     else:
                         log.error(f"File write seemed to succeed but image file NOT FOUND at {target_image_filepath} after write attempt.")
-                        error_count += 1 # Count as error if file not found after write
+                        error_count += 1
                 except Exception as e_save:
-                    log.error(f"Error saving image for {html_filepath.name} to {target_image_filepath}: {e_save}", exc_info=True)
+                    log.error(f"Error saving image for {prompt_filepath.name} to {target_image_filepath}: {e_save}", exc_info=True)
                     error_count += 1
             else:
-                log.warning(f"LLM did not return image data for {html_filepath.name}. No image saved.")
-                # This could be due to API error, safety settings, or no image part in response.
+                log.warning(f"LLM did not return image data for {prompt_filepath.name}. No image saved.")
 
         except Exception as e_read_parse:
-            log.error(f"Error reading or parsing HTML file {html_filepath.name}: {e_read_parse}", exc_info=True)
+            log.error(f"Error reading or parsing prompt file {prompt_filepath.name}: {e_read_parse}", exc_info=True)
             error_count += 1
             continue
-
 
     log.info(f"Image generation process finished. "
              f"Generated: {generated_count}, Skipped (already exist): {skipped_count}, Errors: {error_count}.")
