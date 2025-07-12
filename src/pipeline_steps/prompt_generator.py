@@ -15,6 +15,7 @@ try:
     from src.config import (
         load_google_api_key,
     )
+    from src.prompts import GENAI_IMAGE_PROMPT_GENERATOR_PROMPT
 except ImportError as e:
     temp_log_prompt_generator = logging.getLogger("prompt_generator_bootstrap_error")
     temp_log_prompt_generator.error(f"Error importing modules/config in prompt_generator.py: {e}")
@@ -73,7 +74,10 @@ def generate_prompt_for_image(
         log.error("GenAI client not initialized. Cannot generate prompt.")
         return None
 
-    prompt = f"Erstelle einen Prompt für eine Bildgenerator-KI, die ein Beitragsbild passend zu einem Artikel mit dem Titel '{article_title}' und folgendem Inhalt erstellen soll: {article_text_snippet}"
+    prompt = GENAI_IMAGE_PROMPT_GENERATOR_PROMPT.format(
+        article_title=article_title,
+        article_text_snippet=article_text_snippet
+    )
     log.info(f"Generating prompt for image with prompt (first 150 chars): {prompt[:150]}...")
 
     try:
