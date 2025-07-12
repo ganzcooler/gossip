@@ -9,6 +9,7 @@ sys.path.insert(0, str(project_root))
 try:
     from src.pipeline_steps import pdf_processor
     from src.pipeline_steps import article_writer
+    from src.pipeline_steps import prompt_generator
     from src.pipeline_steps import image_generator
     from src import config # To initialize logging or access other configs if needed directly
 except ImportError as e:
@@ -21,8 +22,8 @@ def main():
     parser = argparse.ArgumentParser(description='Run individual steps of the data processing pipeline.')
     parser.add_argument(
         'step',
-        choices=['process_pdfs', 'write_articles', 'generate_images', 'all'],
-        help='The pipeline step to execute: "process_pdfs", "write_articles", "generate_images", or "all" to run all steps in sequence.'
+        choices=['process_pdfs', 'write_articles', 'generate_prompts', 'generate_images', 'all'],
+        help='The pipeline step to execute: "process_pdfs", "write_articles", "generate_prompts", "generate_images", or "all" to run all steps in sequence.'
     )
 
     args = parser.parse_args()
@@ -48,6 +49,11 @@ def main():
         article_writer.run_article_writing()
         log.info(f"Article writing process initiated. Check '{config.ARTICLES_DIR_NAME}' for HTML articles and logs for details.")
 
+    elif args.step == 'generate_prompts':
+        log.info("Running step: Prompt Generation")
+        prompt_generator.run_prompt_generation()
+        log.info(f"Prompt generation process initiated. Check '{config.PROMPTS_DIR_NAME}' for prompts and logs for details.")
+
     elif args.step == 'generate_images':
         log.info("Running step: Image Generation")
         image_generator.run_image_generation()
@@ -69,7 +75,11 @@ def main():
         article_writer.run_article_writing()
         log.info(f"Article writing process initiated. Check '{config.ARTICLES_DIR_NAME}' for HTML articles and logs for details.")
 
-        log.info("\nStep 3: Image Generation")
+        log.info("\nStep 3: Prompt Generation")
+        prompt_generator.run_prompt_generation()
+        log.info(f"Prompt generation process initiated. Check '{config.PROMPTS_DIR_NAME}' for prompts and logs for details.")
+
+        log.info("\nStep 4: Image Generation")
         image_generator.run_image_generation()
         log.info(f"Image generation process initiated. Check '{config.IMAGES_DIR_NAME}' for images and logs for details.")
 

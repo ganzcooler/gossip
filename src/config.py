@@ -20,6 +20,7 @@ DEFAULT_LOG_LEVEL = logging.INFO
 PDF_DIR_NAME = "pdf_files"
 EXTRACTED_TEXTS_DIR_NAME = "extracted_texts"
 ARTICLES_DIR_NAME = "articles"
+PROMPTS_DIR_NAME = "prompts"
 IMAGES_DIR_NAME = "generated_images"
 
 # --- Log File Names ---

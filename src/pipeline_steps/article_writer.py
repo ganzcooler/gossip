@@ -4,7 +4,7 @@ import sys
 import time
 import json
 import re
-from google import genai
+import google.generativeai as genai
 from pydantic import BaseModel
 from typing import List
 
@@ -46,7 +46,7 @@ def sanitize_filename(name: str) -> str:
 
 def generate_articles_from_text_llm(
     protocol_text: str,
-    client: genai.client.Client,
+    client: genai.GenerativeModel,
     model_name: str,
     prompt_template: str
 ) -> List[SingleArticle] | None:
@@ -69,13 +69,12 @@ def generate_articles_from_text_llm(
         return None
 
     try:
-        response = client.models.generate_content(
-            model=f"models/{model_name}",
+        response = client.generate_content(
             contents=[formatted_prompt],
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": LLMGeneratedArticles,
-            }
+            generation_config=genai.types.GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=LLMGeneratedArticles.model_json_schema(),
+            )
         )
 
         if not response.text:
@@ -189,7 +188,8 @@ def run_article_writing(extracted_texts_dir_override: pathlib.Path | None = None
             log.critical("Google API key not found in config.ini. LLM generation disabled.")
             return
         
-        genai_client = genai.Client(api_key=google_api_key)
+        genai.configure(api_key=google_api_key)
+        genai_client = genai.GenerativeModel(config.GENAI_ARTICLE_GENERATION_MODEL)
         log.info(f"Google GenAI client initialized successfully.")
     except Exception as e:
         log.critical(f"Failed to initialize Google GenAI client: {e}. LLM generation will be skipped.", exc_info=True)
