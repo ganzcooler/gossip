@@ -131,22 +131,23 @@ def save_article_and_image(article: SingleArticle, image_bytes: bytes, pdf_filen
     base_filename = f"{sane_pdf_name}_{short_headline}"
 
     # Save article
-    articles_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
-    articles_dir.mkdir(parents=True, exist_ok=True)
-    html_filepath = articles_dir / f"{base_filename}.html"
+    if not image_bytes:
+        articles_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
+        articles_dir.mkdir(parents=True, exist_ok=True)
+        html_filepath = articles_dir / f"{base_filename}.html"
 
-    # Ensure unique filenames
-    counter = 1
-    while html_filepath.exists():
-        html_filepath = articles_dir / f"{base_filename}_{counter}.html"
-        counter += 1
+        # Ensure unique filenames
+        counter = 1
+        while html_filepath.exists():
+            html_filepath = articles_dir / f"{base_filename}_{counter}.html"
+            counter += 1
 
-    tags_html = ""
-    if article.tags:
-        escaped_tags = [html.escape(tag) for tag in article.tags]
-        tags_html = f'<div class="tags"><strong>Tags:</strong> {", ".join(escaped_tags)}</div>'
+        tags_html = ""
+        if article.tags:
+            escaped_tags = [html.escape(tag) for tag in article.tags]
+            tags_html = f'<div class="tags"><strong>Tags:</strong> {", ".join(escaped_tags)}</div>'
 
-    html_content = f"""<!DOCTYPE html>
+        html_content = f"""<!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
@@ -160,25 +161,36 @@ def save_article_and_image(article: SingleArticle, image_bytes: bytes, pdf_filen
 </body>
 </html>
 """
-    try:
-        with open(html_filepath, "w", encoding="utf-8") as f:
-            f.write(html_content)
-        logger.info(f"Saved HTML article to: {html_filepath}")
-    except IOError as e:
-        logger.error(f"Error saving HTML article to {html_filepath}: {e}", exc_info=True)
+        try:
+            with open(html_filepath, "w", encoding="utf-8") as f:
+                f.write(html_content)
+            logger.info(f"Saved HTML article to: {html_filepath}")
+        except IOError as e:
+            logger.error(f"Error saving HTML article to {html_filepath}: {e}", exc_info=True)
 
     # Save image
     if image_bytes:
         images_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
         images_dir.mkdir(parents=True, exist_ok=True)
-        image_filepath = images_dir / f"{html_filepath.stem}.png"
 
-        try:
-            with open(image_filepath, "wb") as f:
-                f.write(image_bytes)
-            logger.info(f"Saved image to: {image_filepath}")
-        except IOError as e:
-            logger.error(f"Error saving image to {image_filepath}: {e}", exc_info=True)
+        # Find the corresponding html file
+        articles_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
+        html_filepath = None
+        for f in articles_dir.glob(f"{base_filename}*.html"):
+            html_filepath = f
+            break
+
+        if html_filepath:
+            image_filepath = images_dir / f"{html_filepath.stem}.png"
+
+            try:
+                with open(image_filepath, "wb") as f:
+                    f.write(image_bytes)
+                logger.info(f"Saved image to: {image_filepath}")
+            except IOError as e:
+                logger.error(f"Error saving image to {image_filepath}: {e}", exc_info=True)
+        else:
+            logger.error(f"Could not find corresponding HTML file for image for PDF '{pdf_filename}' and article '{article.ueberschrift}'")
 
 async def run_pipeline():
     """The main pipeline function."""
@@ -253,17 +265,18 @@ async def run_pipeline():
 
             # Process each article
             for article in articles:
-                # 3. Generate image prompt
+                # 3. Save article
+                save_article_and_image(article, b"", pdf_filepath.name, logger)
+
+                # 4. Generate image prompt
                 image_prompt = generate_image_prompt(article, logger)
                 if not image_prompt:
                     logger.warning(f"Image prompt generation failed for article: '{article.ueberschrift}'. Skipping image generation.")
-                    image_bytes = b""
                 else:
-                    # 4. Generate image
+                    # 5. Generate and save image
                     image_bytes = generate_image(image_prompt, logger)
-
-                # 5. Save article and image
-                save_article_and_image(article, image_bytes, pdf_filepath.name, logger)
+                    if image_bytes:
+                        save_article_and_image(article, image_bytes, pdf_filepath.name, logger)
 
                 # API call delay
                 time.sleep(config.API_CALL_DELAY_SECONDS)
