@@ -1,7 +1,9 @@
-google-generativeai
+google-genai
 python-dotenv
 beautifulsoup4
 PyMuPDF
 pydantic
 langchain
 langchain_google_genai
+langchain-community
+pypdf

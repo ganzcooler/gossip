@@ -1,6 +1,6 @@
 import pathlib
 import time
-import google.generativeai as genai
+import google.genai as genai
 from langchain_google_genai import GoogleGenerativeAI
 from langchain.prompts import PromptTemplate
 from langchain_core.pydantic_v1 import BaseModel, Field
