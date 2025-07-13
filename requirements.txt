@@ -1,4 +1,7 @@
-google-genai
-pydantic
+google-generativeai
+python-dotenv
+beautifulsoup4
 PyMuPDF
-Pillow
+pydantic
+langchain
+langchain_google_genai
