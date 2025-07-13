@@ -1,4 +1,9 @@
 google-genai
-pydantic
+python-dotenv
+beautifulsoup4
 PyMuPDF
-Pillow
+pydantic
+langchain
+langchain_google_genai
+langchain-community
+pypdf
