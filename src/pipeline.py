@@ -1,11 +1,14 @@
 import pathlib
 import time
-import fitz  # PyMuPDF
+from langchain_community.document_loaders import PyPDFLoader
+import asyncio
 import google.generativeai as genai
 from langchain_google_genai import GoogleGenerativeAI
 from langchain.prompts import PromptTemplate
 from langchain.schema import StrOutputParser
+from langchain_core.pydantic_v1 import BaseModel, Field
 from src import config, prompts
+import logging
 import re
 import html
 from pydantic import BaseModel
@@ -29,53 +32,51 @@ def sanitize_filename(name: str) -> str:
     name = re.sub(r'[-\s]+', '-', name).strip('-_')
     return name if name else "untitled"
 
-def extract_text_from_pdf(pdf_filepath: pathlib.Path) -> str:
-    """Extracts all text content from a PDF file using PyMuPDF."""
-    full_text = ""
+async def extract_text_from_pdf(pdf_filepath: pathlib.Path, logger) -> str:
+    """Extracts all text content from a PDF file using PyPDFLoader."""
     try:
-        doc = fitz.open(pdf_filepath)
-        for page_num in range(len(doc)):
-            page = doc.load_page(page_num)
-            full_text += page.get_text()
-        doc.close()
-        print(f"Successfully extracted text from {pdf_filepath.name} using PyMuPDF.")
+        loader = PyPDFLoader(str(pdf_filepath))
+        pages = []
+        async for page in loader.alazy_load():
+            pages.append(page)
+
+        full_text = "\n".join([page.page_content for page in pages])
+        logger.info(f"Successfully extracted text from {pdf_filepath.name} using PyPDFLoader.")
         return full_text
     except Exception as e:
-        print(f"Error extracting text from {pdf_filepath.name} using PyMuPDF: {e}", file=sys.stderr)
+        logger.error(f"Error extracting text from {pdf_filepath.name} using PyPDFLoader: {e}", exc_info=True)
         return ""
 
-def generate_articles(text: str) -> List[SingleArticle]:
+def generate_articles(text: str, logger) -> List[SingleArticle]:
     """Generates articles from text using a Langchain chain."""
-    print("Generating articles...")
+    logger.info("Generating articles...")
     try:
         llm = GoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=config.load_google_api_key())
+
+        class Articles(BaseModel):
+            """A list of articles."""
+            artikel: List[SingleArticle] = Field(description="A list of articles, each with a headline, content, and tags.")
+
+        structured_llm = llm.with_structured_output(Articles)
+
         prompt = PromptTemplate(
             template=prompts.GENAI_JOURNALISTIC_ARTICLE_PROMPT,
             input_variables=["PROTOCOL_TEXT"],
         )
-        chain = prompt | llm | StrOutputParser()
 
-        response_text = chain.invoke({"PROTOCOL_TEXT": text})
+        chain = prompt | structured_llm
 
-        # Clean the response to be valid JSON
-        response_text = response_text.strip()
-        if response_text.startswith("```json"):
-            response_text = response_text[7:]
-        if response_text.endswith("```"):
-            response_text = response_text[:-3]
+        response = chain.invoke({"PROTOCOL_TEXT": text})
 
-        response_json = json.loads(response_text)
-
-        validated_data = LLMGeneratedArticles(**response_json)
-        print(f"Successfully generated and validated {len(validated_data.artikel)} articles.")
-        return validated_data.artikel
+        logger.info(f"Successfully generated and validated {len(response.artikel)} articles.")
+        return response.artikel
     except Exception as e:
-        print(f"Error generating articles: {e}", file=sys.stderr)
+        logger.error(f"Error generating articles: {e}", exc_info=True)
         return []
 
-def generate_image_prompt(article: SingleArticle) -> str:
+def generate_image_prompt(article: SingleArticle, logger) -> str:
     """Generates an image prompt for an article using a Langchain chain."""
-    print(f"Generating image prompt for article: '{article.ueberschrift}'")
+    logger.info(f"Generating image prompt for article: '{article.ueberschrift}'")
     try:
         llm = GoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=config.load_google_api_key())
         prompt = PromptTemplate(
@@ -89,34 +90,36 @@ def generate_image_prompt(article: SingleArticle) -> str:
             "article_text_snippet": article.inhalt[:500]
         })
 
-        print(f"Successfully generated image prompt for article: '{article.ueberschrift}'")
+        logger.info(f"Successfully generated image prompt for article: '{article.ueberschrift}'")
         return image_prompt
     except Exception as e:
-        print(f"Error generating image prompt for article '{article.ueberschrift}': {e}", file=sys.stderr)
+        logger.error(f"Error generating image prompt for article '{article.ueberschrift}': {e}", exc_info=True)
         return ""
 
-def generate_image(prompt: str) -> bytes:
-    """Generates an image from a prompt using the Google Generative AI API."""
-    print("Generating image...")
+import requests
+
+def generate_image(prompt: str, logger) -> bytes:
+    """Generates an image from a prompt using Langchain."""
+    logger.info("Generating image...")
     try:
-        genai.configure(api_key=config.load_google_api_key())
-        img_model = genai.GenerativeModel("imagen-3-flash-001") # Using Imagen 3 as requested
-        response = img_model.generate_content(prompt)
+        llm = GoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=config.load_google_api_key())
 
-        # Check if the response has image data
-        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                if part.inline_data and part.inline_data.data:
-                    print("Successfully generated image.")
-                    return part.inline_data.data
+        # The image generation model returns a URL to the image.
+        image_url = llm.invoke(prompt)
 
-        print("No image data found in response.", file=sys.stderr)
+        if image_url and image_url.startswith("http"):
+            response = requests.get(image_url, stream=True)
+            response.raise_for_status()
+            logger.info("Successfully generated image.")
+            return response.content
+
+        logger.error("No image URL found in response.")
         return b""
     except Exception as e:
-        print(f"Error generating image: {e}", file=sys.stderr)
+        logger.error(f"Error generating image: {e}", exc_info=True)
         return b""
 
-def save_article_and_image(article: SingleArticle, image_bytes: bytes, pdf_filename: str):
+def save_article_and_image(article: SingleArticle, image_bytes: bytes, pdf_filename: str, logger):
     """Saves the article as an HTML file and the image as a PNG file."""
     sane_pdf_name = sanitize_filename(pathlib.Path(pdf_filename).stem)
     sane_headline = sanitize_filename(article.ueberschrift)
@@ -160,9 +163,9 @@ def save_article_and_image(article: SingleArticle, image_bytes: bytes, pdf_filen
     try:
         with open(html_filepath, "w", encoding="utf-8") as f:
             f.write(html_content)
-        print(f"Saved HTML article to: {html_filepath}")
+        logger.info(f"Saved HTML article to: {html_filepath}")
     except IOError as e:
-        print(f"Error saving HTML article to {html_filepath}: {e}", file=sys.stderr)
+        logger.error(f"Error saving HTML article to {html_filepath}: {e}", exc_info=True)
 
     # Save image
     if image_bytes:
@@ -173,25 +176,47 @@ def save_article_and_image(article: SingleArticle, image_bytes: bytes, pdf_filen
         try:
             with open(image_filepath, "wb") as f:
                 f.write(image_bytes)
-            print(f"Saved image to: {image_filepath}")
+            logger.info(f"Saved image to: {image_filepath}")
         except IOError as e:
-            print(f"Error saving image to {image_filepath}: {e}", file=sys.stderr)
+            logger.error(f"Error saving image to {image_filepath}: {e}", exc_info=True)
 
-def run_pipeline():
+async def run_pipeline():
     """The main pipeline function."""
+    log_dir = config.PROJECT_ROOT / config.LOG_DIR_NAME
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_filepath = log_dir / config.get_log_filename()
+
+    # Set up a logger for the entire run
+    logger = logging.getLogger("pipeline")
+    logger.setLevel(logging.INFO)
+
+    # Remove existing handlers
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+
+    # Add a file handler
+    fh = logging.FileHandler(log_filepath, encoding="utf-8")
+    fh.setFormatter(logging.Formatter(config.LOG_FORMAT))
+    logger.addHandler(fh)
+
+    # Also add a stream handler to see logs in the console
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setFormatter(logging.Formatter(config.LOG_FORMAT))
+    logger.addHandler(sh)
+
     try:
         pdf_dir = config.PROJECT_ROOT / config.PDF_DIR_NAME
         if not pdf_dir.is_dir():
-            print(f"PDF directory not found: {pdf_dir}", file=sys.stderr)
+            logger.error(f"PDF directory not found: {pdf_dir}")
             return
 
         pdf_files = list(pdf_dir.glob('*.pdf'))
         if not pdf_files:
-            print(f"No PDF files found in {pdf_dir}", file=sys.stderr)
+            logger.warning(f"No PDF files found in {pdf_dir}")
             return
 
         for pdf_filepath in pdf_files:
-            print(f"--- Starting pipeline for {pdf_filepath.name} ---")
+            logger.info(f"--- Starting pipeline for {pdf_filepath.name} ---")
 
             # Check if articles for this PDF already exist
             articles_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
@@ -199,7 +224,7 @@ def run_pipeline():
             existing_articles = list(articles_dir.glob(f"{sane_pdf_name}*.html"))
 
             if existing_articles:
-                print(f"Articles for '{pdf_filepath.name}' already exist. Checking for images.")
+                logger.info(f"Articles for '{pdf_filepath.name}' already exist. Checking for images.")
                 # Check if images for all articles exist
                 images_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
                 all_images_exist = True
@@ -210,39 +235,39 @@ def run_pipeline():
                         break
 
                 if all_images_exist:
-                    print(f"All articles and images for '{pdf_filepath.name}' already exist. Skipping.")
+                    logger.info(f"All articles and images for '{pdf_filepath.name}' already exist. Skipping.")
                     continue
 
 
             # 1. Extract text
-            extracted_text = extract_text_from_pdf(pdf_filepath)
+            extracted_text = await extract_text_from_pdf(pdf_filepath, logger)
             if not extracted_text:
-                print("Text extraction failed. Skipping rest of the pipeline for this file.", file=sys.stderr)
+                logger.error("Text extraction failed. Skipping rest of the pipeline for this file.")
                 continue
 
             # 2. Generate articles
-            articles = generate_articles(extracted_text)
+            articles = generate_articles(extracted_text, logger)
             if not articles:
-                print("Article generation failed. Skipping rest of the pipeline for this file.", file=sys.stderr)
+                logger.error("Article generation failed. Skipping rest of the pipeline for this file.")
                 continue
 
             # Process each article
             for article in articles:
                 # 3. Generate image prompt
-                image_prompt = generate_image_prompt(article)
+                image_prompt = generate_image_prompt(article, logger)
                 if not image_prompt:
-                    print(f"Image prompt generation failed for article: '{article.ueberschrift}'. Skipping image generation.", file=sys.stderr)
+                    logger.warning(f"Image prompt generation failed for article: '{article.ueberschrift}'. Skipping image generation.")
                     image_bytes = b""
                 else:
                     # 4. Generate image
-                    image_bytes = generate_image(image_prompt)
+                    image_bytes = generate_image(image_prompt, logger)
 
                 # 5. Save article and image
-                save_article_and_image(article, image_bytes, pdf_filepath.name)
+                save_article_and_image(article, image_bytes, pdf_filepath.name, logger)
 
                 # API call delay
-                time.sleep(config.load_api_call_delay())
+                time.sleep(config.API_CALL_DELAY_SECONDS)
 
-            print(f"--- Finished pipeline for {pdf_filepath.name} ---")
+            logger.info(f"--- Finished pipeline for {pdf_filepath.name} ---")
     except Exception as e:
-        print(f"An unexpected error occurred in the pipeline: {e}", file=sys.stderr)
+        logger.error(f"An unexpected error occurred in the pipeline: {e}", exc_info=True)
