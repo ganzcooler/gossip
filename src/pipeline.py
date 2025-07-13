@@ -193,6 +193,27 @@ def run_pipeline():
         for pdf_filepath in pdf_files:
             print(f"--- Starting pipeline for {pdf_filepath.name} ---")
 
+            # Check if articles for this PDF already exist
+            articles_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
+            sane_pdf_name = sanitize_filename(pdf_filepath.stem)
+            existing_articles = list(articles_dir.glob(f"{sane_pdf_name}*.html"))
+
+            if existing_articles:
+                print(f"Articles for '{pdf_filepath.name}' already exist. Checking for images.")
+                # Check if images for all articles exist
+                images_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
+                all_images_exist = True
+                for article_html in existing_articles:
+                    image_filepath = images_dir / f"{article_html.stem}.png"
+                    if not image_filepath.exists():
+                        all_images_exist = False
+                        break
+
+                if all_images_exist:
+                    print(f"All articles and images for '{pdf_filepath.name}' already exist. Skipping.")
+                    continue
+
+
             # 1. Extract text
             extracted_text = extract_text_from_pdf(pdf_filepath)
             if not extracted_text:
