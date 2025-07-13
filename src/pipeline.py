@@ -1,20 +1,17 @@
 import pathlib
 import time
-from langchain_community.document_loaders import PyPDFLoader
-import asyncio
 import google.generativeai as genai
 from langchain_google_genai import GoogleGenerativeAI
 from langchain.prompts import PromptTemplate
-from langchain.schema import StrOutputParser
 from langchain_core.pydantic_v1 import BaseModel, Field
 from src import config, prompts
 import logging
 import re
 import html
-from pydantic import BaseModel
 from typing import List
 import json
 import sys
+from langchain_community.document_loaders import PyPDFLoader
 
 
 class SingleArticle(BaseModel):
@@ -32,13 +29,11 @@ def sanitize_filename(name: str) -> str:
     name = re.sub(r'[-\s]+', '-', name).strip('-_')
     return name if name else "untitled"
 
-async def extract_text_from_pdf(pdf_filepath: pathlib.Path, logger) -> str:
+def extract_text_from_pdf(pdf_filepath: pathlib.Path, logger) -> str:
     """Extracts all text content from a PDF file using PyPDFLoader."""
     try:
         loader = PyPDFLoader(str(pdf_filepath))
-        pages = []
-        async for page in loader.alazy_load():
-            pages.append(page)
+        pages = loader.load()
 
         full_text = "\n".join([page.page_content for page in pages])
         logger.info(f"Successfully extracted text from {pdf_filepath.name} using PyPDFLoader.")
@@ -192,7 +187,7 @@ def save_article_and_image(article: SingleArticle, image_bytes: bytes, pdf_filen
         else:
             logger.error(f"Could not find corresponding HTML file for image for PDF '{pdf_filename}' and article '{article.ueberschrift}'")
 
-async def run_pipeline():
+def run_pipeline():
     """The main pipeline function."""
     log_dir = config.PROJECT_ROOT / config.LOG_DIR_NAME
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -252,7 +247,7 @@ async def run_pipeline():
 
 
             # 1. Extract text
-            extracted_text = await extract_text_from_pdf(pdf_filepath, logger)
+            extracted_text = extract_text_from_pdf(pdf_filepath, logger)
             if not extracted_text:
                 logger.error("Text extraction failed. Skipping rest of the pipeline for this file.")
                 continue
