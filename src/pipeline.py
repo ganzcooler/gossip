@@ -45,7 +45,7 @@ def generate_articles(text: str, logger) -> List[SingleArticle]:
         client = genai.Client(api_key=config.load_google_api_key())
         response = client.models.generate_content(
             model=config.GENAI_ARTICLE_GENERATION_MODEL,
-            contents=prompts.GENAI_JOURNALISTIC_ARTICLE_PROMPT.format(PROTOCOL_TEXT=text),
+            contents=prompts.GENAI_JOURNALISTIC_ARTICLE_PROMPT.replace("{PROTOCOL_TEXT}", text),
             config={
                 "response_mime_type": "application/json",
                 "response_schema": LLMGeneratedArticles,
@@ -218,11 +218,6 @@ def run_pipeline():
                 continue
 
             # 2. Generate articles
-            articles = generate_articles(extracted_text, logger)
-            if not articles:
-                logger.error("Article generation failed. Skipping rest of the pipeline for this file.")
-                continue
-
             articles = generate_articles(extracted_text, logger)
             if not articles:
                 logger.error("Article generation failed. Skipping rest of the pipeline for this file.")
