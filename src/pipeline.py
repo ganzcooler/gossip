@@ -1,18 +1,16 @@
 import pathlib
 import time
-import google.genai as genai
 from langchain_google_genai import GoogleGenerativeAI
 from langchain.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.pydantic_v1 import BaseModel, Field
 from src import config, prompts
 import logging
 import re
 import html
 from typing import List
-import json
 import sys
 from langchain_community.document_loaders import PyPDFLoader
-
 
 class SingleArticle(BaseModel):
     ueberschrift: str
@@ -21,7 +19,6 @@ class SingleArticle(BaseModel):
 
 class LLMGeneratedArticles(BaseModel):
     artikel: List[SingleArticle]
-
 
 def sanitize_filename(name: str) -> str:
     """Sanitizes a string to be a valid filename."""
@@ -46,7 +43,7 @@ def generate_articles(text: str, logger) -> List[SingleArticle]:
     """Generates articles from text using a Langchain chain."""
     logger.info("Generating articles...")
     try:
-        llm = GoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=config.load_google_api_key())
+        llm = GoogleGenerativeAI(model=config.GENAI_ARTICLE_GENERATION_MODEL, google_api_key=config.load_google_api_key())
 
         class Articles(BaseModel):
             """A list of articles."""
@@ -73,7 +70,7 @@ def generate_image_prompt(article: SingleArticle, logger) -> str:
     """Generates an image prompt for an article using a Langchain chain."""
     logger.info(f"Generating image prompt for article: '{article.ueberschrift}'")
     try:
-        llm = GoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=config.load_google_api_key())
+        llm = GoogleGenerativeAI(model=config.GENAI_ARTICLE_GENERATION_MODEL, google_api_key=config.load_google_api_key())
         prompt = PromptTemplate(
             template=prompts.GENAI_IMAGE_PROMPT_GENERATOR_PROMPT,
             input_variables=["article_title", "article_text_snippet"],
@@ -97,7 +94,7 @@ def generate_image(prompt: str, logger) -> bytes:
     """Generates an image from a prompt using Langchain."""
     logger.info("Generating image...")
     try:
-        llm = GoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=config.load_google_api_key())
+        llm = GoogleGenerativeAI(model=config.GENAI_IMAGE_GENERATION_MODEL, google_api_key=config.load_google_api_key())
 
         # The image generation model returns a URL to the image.
         image_url = llm.invoke(prompt)
