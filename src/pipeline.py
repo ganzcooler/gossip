@@ -97,8 +97,8 @@ def generate_image(prompt: str, logger) -> bytes:
         logger.error(f"Error generating image: {e}", exc_info=True)
         return b""
 
-def save_article_and_image(article: SingleArticle, image_bytes: bytes, pdf_filename: str, logger):
-    """Saves the article as an HTML file and the image as a PNG file."""
+def save_article(article: SingleArticle, pdf_filename: str, logger):
+    """Saves the article as an HTML file."""
     sane_pdf_name = sanitize_filename(pathlib.Path(pdf_filename).stem)
     sane_headline = sanitize_filename(article.ueberschrift)
 
@@ -109,49 +109,48 @@ def save_article_and_image(article: SingleArticle, image_bytes: bytes, pdf_filen
     base_filename = f"{sane_pdf_name}_{short_headline}"
 
     articles_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
-    images_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
     articles_dir.mkdir(parents=True, exist_ok=True)
-    images_dir.mkdir(parents=True, exist_ok=True)
 
     html_filepath = articles_dir / f"{base_filename}.html"
     counter = 1
-    while html_filepath.exists() and not image_bytes:
+    while html_filepath.exists():
         html_filepath = articles_dir / f"{base_filename}_{counter}.html"
         counter += 1
 
-    image_filepath = images_dir / f"{html_filepath.stem}.png"
-
-    image_html = ""
-    if image_bytes:
-        try:
-            with open(image_filepath, "wb") as f:
-                f.write(image_bytes)
-            logger.info(f"Saved image to: {image_filepath}")
-            image_html = f'<img src="../{config.IMAGES_DIR_NAME}/{image_filepath.name}" alt="{html.escape(article.ueberschrift)}">'
-        except IOError as e:
-            logger.error(f"Error saving image to {image_filepath}: {e}", exc_info=True)
-
-    # In the first pass, the file is created, in the second pass, the image is added.
-    if image_bytes:
-        with open(html_filepath, "r", encoding="utf-8") as f:
-            existing_content = f.read()
-
-        # Add the image tag after the h1 tag
-        h1_tag = f"<h1>{html.escape(article.ueberschrift)}</h1>"
-        new_content = existing_content.replace(h1_tag, f"{h1_tag}\n{image_html}")
-
+    html_content = f"<h1>{html.escape(article.ueberschrift)}</h1>\n{article.inhalt}"
+    try:
         with open(html_filepath, "w", encoding="utf-8") as f:
-            f.write(new_content)
-        logger.info(f"Updated HTML article with image: {html_filepath}")
+            f.write(html_content)
+        logger.info(f"Saved HTML article to: {html_filepath}")
+    except IOError as e:
+        logger.error(f"Error saving HTML article to {html_filepath}: {e}", exc_info=True)
 
-    else:
-        html_content = f"<h1>{html.escape(article.ueberschrift)}</h1>\n{article.inhalt}"
-        try:
-            with open(html_filepath, "w", encoding="utf-8") as f:
-                f.write(html_content)
-            logger.info(f"Saved HTML article to: {html_filepath}")
-        except IOError as e:
-            logger.error(f"Error saving HTML article to {html_filepath}: {e}", exc_info=True)
+def save_image(image_bytes: bytes, article: SingleArticle, pdf_filename: str, logger):
+    """Saves the image as a PNG file."""
+    sane_pdf_name = sanitize_filename(pathlib.Path(pdf_filename).stem)
+    sane_headline = sanitize_filename(article.ueberschrift)
+
+    # Create a unique filename for each article
+    short_headline = "_".join(sane_headline.split('-')[:5])
+    if not short_headline: short_headline = "article"
+
+    base_filename = f"{sane_pdf_name}_{short_headline}"
+
+    images_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
+    images_dir.mkdir(parents=True, exist_ok=True)
+
+    image_filepath = images_dir / f"{base_filename}.png"
+    counter = 1
+    while image_filepath.exists():
+        image_filepath = images_dir / f"{base_filename}_{counter}.png"
+        counter += 1
+
+    try:
+        with open(image_filepath, "wb") as f:
+            f.write(image_bytes)
+        logger.info(f"Saved image to: {image_filepath}")
+    except IOError as e:
+        logger.error(f"Error saving image to {image_filepath}: {e}", exc_info=True)
 
 def run_pipeline():
     """The main pipeline function."""
@@ -231,8 +230,8 @@ def run_pipeline():
 
             # Process each article
             for article in articles:
-                # 3. Save article without image
-                save_article_and_image(article, b"", pdf_filepath.name, logger)
+                # 3. Save article
+                save_article(article, pdf_filepath.name, logger)
 
                 # 4. Generate image prompt
                 image_prompt = generate_image_prompt(article, logger)
@@ -242,7 +241,7 @@ def run_pipeline():
                     # 5. Generate and save image
                     image_bytes = generate_image(image_prompt, logger)
                     if image_bytes:
-                        save_article_and_image(article, image_bytes, pdf_filepath.name, logger)
+                        save_image(image_bytes, article, pdf_filepath.name, logger)
 
                 # API call delay
                 time.sleep(config.API_CALL_DELAY_SECONDS)
