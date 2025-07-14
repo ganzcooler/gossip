@@ -69,7 +69,7 @@ def generate_image_prompt(article: SingleArticle, logger) -> str:
             contents=prompts.GENAI_IMAGE_PROMPT_GENERATOR_PROMPT.format(
                 article_title=article.ueberschrift,
                 article_text_snippet=article.inhalt[:500]
-            ),
+            )
         )
         logger.info(f"Successfully generated image prompt for article: '{article.ueberschrift}'")
         return response.text
