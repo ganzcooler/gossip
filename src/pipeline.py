@@ -223,11 +223,12 @@ def run_pipeline():
                 logger.error("Article generation failed. Skipping rest of the pipeline for this file.")
                 continue
 
-            # Process each article
+            # Save all articles first
             for article in articles:
-                # 3. Save article
                 save_article(article, pdf_filepath.name, logger)
 
+            # Then, generate images for all articles
+            for article in articles:
                 # 4. Generate image prompt
                 image_prompt = generate_image_prompt(article, logger)
                 if not image_prompt:
