@@ -108,24 +108,35 @@ def save_article_and_image(article: SingleArticle, image_bytes: bytes, pdf_filen
 
     base_filename = f"{sane_pdf_name}_{short_headline}"
 
-    # Save article
-    if not image_bytes:
-        articles_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
-        articles_dir.mkdir(parents=True, exist_ok=True)
-        html_filepath = articles_dir / f"{base_filename}.html"
+    articles_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
+    images_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
+    articles_dir.mkdir(parents=True, exist_ok=True)
+    images_dir.mkdir(parents=True, exist_ok=True)
 
-        # Ensure unique filenames
-        counter = 1
-        while html_filepath.exists():
-            html_filepath = articles_dir / f"{base_filename}_{counter}.html"
-            counter += 1
+    html_filepath = articles_dir / f"{base_filename}.html"
+    counter = 1
+    while html_filepath.exists():
+        html_filepath = articles_dir / f"{base_filename}_{counter}.html"
+        counter += 1
 
-        tags_html = ""
-        if article.tags:
-            escaped_tags = [html.escape(tag) for tag in article.tags]
-            tags_html = f'<div class="tags"><strong>Tags:</strong> {", ".join(escaped_tags)}</div>'
+    image_filepath = images_dir / f"{html_filepath.stem}.png"
 
-        html_content = f"""<!DOCTYPE html>
+    tags_html = ""
+    if article.tags:
+        escaped_tags = [html.escape(tag) for tag in article.tags]
+        tags_html = f'<div class="tags"><strong>Tags:</strong> {", ".join(escaped_tags)}</div>'
+
+    image_html = ""
+    if image_bytes:
+        try:
+            with open(image_filepath, "wb") as f:
+                f.write(image_bytes)
+            logger.info(f"Saved image to: {image_filepath}")
+            image_html = f'<img src="../{config.IMAGES_DIR_NAME}/{image_filepath.name}" alt="{html.escape(article.ueberschrift)}">'
+        except IOError as e:
+            logger.error(f"Error saving image to {image_filepath}: {e}", exc_info=True)
+
+    html_content = f"""<!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
@@ -134,41 +145,18 @@ def save_article_and_image(article: SingleArticle, image_bytes: bytes, pdf_filen
 </head>
 <body>
     <h1>{html.escape(article.ueberschrift)}</h1>
+    {image_html}
     <pre>{html.escape(article.inhalt)}</pre>
     {tags_html}
 </body>
 </html>
 """
-        try:
-            with open(html_filepath, "w", encoding="utf-8") as f:
-                f.write(html_content)
-            logger.info(f"Saved HTML article to: {html_filepath}")
-        except IOError as e:
-            logger.error(f"Error saving HTML article to {html_filepath}: {e}", exc_info=True)
-
-    # Save image
-    if image_bytes:
-        images_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
-        images_dir.mkdir(parents=True, exist_ok=True)
-
-        # Find the corresponding html file
-        articles_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
-        html_filepath = None
-        for f in articles_dir.glob(f"{base_filename}*.html"):
-            html_filepath = f
-            break
-
-        if html_filepath:
-            image_filepath = images_dir / f"{html_filepath.stem}.png"
-
-            try:
-                with open(image_filepath, "wb") as f:
-                    f.write(image_bytes)
-                logger.info(f"Saved image to: {image_filepath}")
-            except IOError as e:
-                logger.error(f"Error saving image to {image_filepath}: {e}", exc_info=True)
-        else:
-            logger.error(f"Could not find corresponding HTML file for image for PDF '{pdf_filename}' and article '{article.ueberschrift}'")
+    try:
+        with open(html_filepath, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        logger.info(f"Saved HTML article to: {html_filepath}")
+    except IOError as e:
+        logger.error(f"Error saving HTML article to {html_filepath}: {e}", exc_info=True)
 
 def run_pipeline():
     """The main pipeline function."""
@@ -241,20 +229,31 @@ def run_pipeline():
                 logger.error("Article generation failed. Skipping rest of the pipeline for this file.")
                 continue
 
-            # Process each article
-            for article in articles:
-                # 3. Save article
-                save_article_and_image(article, b"", pdf_filepath.name, logger)
+            # 3. Save articles to JSON
+            articles_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
+            articles_dir.mkdir(parents=True, exist_ok=True)
+            json_filepath = articles_dir / f"{sane_pdf_name}.json"
 
-                # 4. Generate image prompt
+            # Use Pydantic's json() method to dump the list of articles
+            with open(json_filepath, "w", encoding="utf-8") as f:
+                # Create a list of dicts from the list of SingleArticle objects
+                articles_dict = [article.dict() for article in articles]
+                import json
+                json.dump(articles_dict, f, ensure_ascii=False, indent=4)
+            logger.info(f"Saved articles to: {json_filepath}")
+
+            # 4. Process each article for image generation
+            for article in articles:
+                # Generate image prompt
                 image_prompt = generate_image_prompt(article, logger)
                 if not image_prompt:
                     logger.warning(f"Image prompt generation failed for article: '{article.ueberschrift}'. Skipping image generation.")
+                    # Save article without image
+                    save_article_and_image(article, b"", pdf_filepath.name, logger)
                 else:
-                    # 5. Generate and save image
+                    # Generate and save image
                     image_bytes = generate_image(image_prompt, logger)
-                    if image_bytes:
-                        save_article_and_image(article, image_bytes, pdf_filepath.name, logger)
+                    save_article_and_image(article, image_bytes, pdf_filepath.name, logger)
 
                 # API call delay
                 time.sleep(config.API_CALL_DELAY_SECONDS)
