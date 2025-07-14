@@ -38,7 +38,7 @@ def extract_text_from_pdf(pdf_filepath: pathlib.Path, logger) -> str:
         logger.error(f"Error extracting text from {pdf_filepath.name} using PyMuPDF: {e}", exc_info=True)
         return ""
 
-def generate_articles(text: str, logger) -> str:
+def generate_articles(text: str, logger) -> List[SingleArticle]:
     """Generates articles from text using a direct Google GenAI API call."""
     logger.info("Generating articles...")
     try:
@@ -52,11 +52,12 @@ def generate_articles(text: str, logger) -> str:
             },
         )
 
-        logger.info("Successfully generated articles.")
-        return response.text
+        articles = response.parsed
+        logger.info(f"Successfully generated and validated {len(articles.artikel)} articles.")
+        return articles.artikel
     except Exception as e:
         logger.error(f"Error generating articles: {e}", exc_info=True)
-        return ""
+        return []
 
 def generate_image_prompt(article: SingleArticle, logger) -> str:
     """Generates an image prompt for an article using a direct Google GenAI API call."""
@@ -96,14 +97,10 @@ def generate_image(prompt: str, logger) -> bytes:
         logger.error(f"Error generating image: {e}", exc_info=True)
         return b""
 
-def save_article_and_image(json_string: str, image_bytes: bytes, pdf_filename: str, logger, article_index: int):
+def save_article_and_image(article: SingleArticle, image_bytes: bytes, pdf_filename: str, logger):
     """Saves the article as an HTML file and the image as a PNG file."""
-    import json
-    articles = json.loads(json_string)
-    article_data = articles[article_index]
-
     sane_pdf_name = sanitize_filename(pathlib.Path(pdf_filename).stem)
-    sane_headline = sanitize_filename(article_data['ueberschrift'])
+    sane_headline = sanitize_filename(article.ueberschrift)
 
     # Create a unique filename for each article
     short_headline = "_".join(sane_headline.split('-')[:5])
@@ -130,7 +127,7 @@ def save_article_and_image(json_string: str, image_bytes: bytes, pdf_filename: s
             with open(image_filepath, "wb") as f:
                 f.write(image_bytes)
             logger.info(f"Saved image to: {image_filepath}")
-            image_html = f'<img src="../{config.IMAGES_DIR_NAME}/{image_filepath.name}" alt="{html.escape(article_data["ueberschrift"])}">'
+            image_html = f'<img src="../{config.IMAGES_DIR_NAME}/{image_filepath.name}" alt="{html.escape(article.ueberschrift)}">'
         except IOError as e:
             logger.error(f"Error saving image to {image_filepath}: {e}", exc_info=True)
 
@@ -140,7 +137,7 @@ def save_article_and_image(json_string: str, image_bytes: bytes, pdf_filename: s
             existing_content = f.read()
 
         # Add the image tag after the h1 tag
-        h1_tag = f"<h1>{html.escape(article_data['ueberschrift'])}</h1>"
+        h1_tag = f"<h1>{html.escape(article.ueberschrift)}</h1>"
         new_content = existing_content.replace(h1_tag, f"{h1_tag}\n{image_html}")
 
         with open(html_filepath, "w", encoding="utf-8") as f:
@@ -148,7 +145,7 @@ def save_article_and_image(json_string: str, image_bytes: bytes, pdf_filename: s
         logger.info(f"Updated HTML article with image: {html_filepath}")
 
     else:
-        html_content = f"<h1>{html.escape(article_data['ueberschrift'])}</h1>\n{article_data['inhalt']}"
+        html_content = f"<h1>{html.escape(article.ueberschrift)}</h1>\n{article.inhalt}"
         try:
             with open(html_filepath, "w", encoding="utf-8") as f:
                 f.write(html_content)
@@ -227,19 +224,15 @@ def run_pipeline():
                 logger.error("Article generation failed. Skipping rest of the pipeline for this file.")
                 continue
 
-            articles_json = generate_articles(extracted_text, logger)
-            if not articles_json:
+            articles = generate_articles(extracted_text, logger)
+            if not articles:
                 logger.error("Article generation failed. Skipping rest of the pipeline for this file.")
                 continue
 
-            import json
-            articles = json.loads(articles_json)
-
             # Process each article
-            for i, article_data in enumerate(articles):
-                article = SingleArticle(**article_data)
+            for article in articles:
                 # 3. Save article without image
-                save_article_and_image(articles_json, b"", pdf_filepath.name, logger, i)
+                save_article_and_image(article, b"", pdf_filepath.name, logger)
 
                 # 4. Generate image prompt
                 image_prompt = generate_image_prompt(article, logger)
@@ -249,7 +242,7 @@ def run_pipeline():
                     # 5. Generate and save image
                     image_bytes = generate_image(image_prompt, logger)
                     if image_bytes:
-                        save_article_and_image(articles_json, image_bytes, pdf_filepath.name, logger, i)
+                        save_article_and_image(article, image_bytes, pdf_filepath.name, logger)
 
                 # API call delay
                 time.sleep(config.API_CALL_DELAY_SECONDS)
