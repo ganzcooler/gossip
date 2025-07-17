@@ -68,9 +68,23 @@ Hier ist das Protokoll:
 """
 
 GENAI_IMAGE_PROMPT_GENERATOR_PROMPT = """
-Erstelle einen detaillierten und kreativen Prompt für eine Bildgenerator-KI.
-Der Prompt soll ein fesselndes und relevantes Beitragsbild für einen Nachrichtenartikel mit dem Titel '{article_title}' erstellen.
-Der Artikel handelt von folgendem Thema: {article_text_snippet}
-Der erstellte Prompt soll die KI anweisen, ein Bild zu generieren, das sowohl zum Titel als auch zum Inhalt des Artikels passt.
-Der Stil des Bildes sollte modern und ansprechend sein und zum Stil eines News-Blogs passen.
+Du bist ein erfahrener Prompt-Engineer, spezialisiert auf die Erstellung präziser und kreativer Bildbeschreibungen für fortgeschrittene Text-zu-Bild-Modelle wie Imagen 3. Deine Aufgabe ist es, einen **detaillierten und effektiven Bild-Prompt in englischer Sprache** zu erstellen, der als direkte Eingabe für ein solches Modell dient, basierend auf dem Inhalt des folgenden News-Blog-Artikels.
+
+Das generierte Bild soll als **Beitragsbild (Hero Image)** für diesen Artikel dienen. Es muss visuell ansprechend sein, die Kernaussage des Artikels auf den ersten Blick erfassen und die Leser zum Weiterlesen anregen. Auch wenn es auf einer Webseite relativ klein dargestellt wird, soll die allgemeine Aussage des Bildes klar erkennbar sein. Daher **vermeide übermäßig kleine oder komplexe Merkmale**, die bei reduzierter Größe verloren gehen würden. Konzentriere dich auf klare, starke visuelle Elemente.
+
+**Beachte bei der Erstellung des Bild-Prompts folgende Kriterien:**
+ * Thema: Das Bild muss das zentrale Thema des Artikels visuell aufgreifen. **Konzentriere dich bei der visuellen Darstellung primär auf die Auswirkungen des Themas, Konzepte oder symbolische Darstellungen, anstatt wiederholt Politiker in Anzügen abzubilden, die etwas verbieten oder vorschreiben.** Wähle Elemente, die direkt mit dem Inhalt in Verbindung stehen und diesen visuell repräsentieren. Vermeide irreführende oder zu allgemeine Darstellungen.
+ * Stil: Das Bild soll einen realistischen Stil haben.
+ * Wirkung: Das Bild muss ein Eye-Catcher sein und darf auf keinen Fall langweilig wirken.
+ * Tonalität: Das Bild soll das Thema des Artikels auf eine leicht sarkastische, überzogene und humorvolle Weise darstellen. Denke an visuelle Metaphern oder absurde Situationen, die die Kernaussage des Artikels auf humorvolle Weise unterstreichen.
+ * Inhalt: Personen und Text sind im Bild erlaubt, sofern sie die sarkastische/überzogene Darstellung unterstützen und nicht das Hauptaugenmerk sind. **Stelle sicher, dass jeglicher Text im Bild lesbar ist, es sei denn, der Artikelinhalt erfordert explizit unleserlichen oder verzerrten Text für die humoristische/sarkastische Darstellung.** Es gibt keine weiteren Einschränkungen bezüglich spezifischer Objekte, Symbole oder Elemente.
+ * Farbgebung: Die Farbpalette sollte ansprechend und kontrastreich sein, um die "Eye-Catcher"-Qualität zu unterstützen.
+ * Tageszeit/Wetter: Keine spezifischen Vorgaben, wähle, was am besten zur Darstellung passt.
+
+**Antworte AUSSCHLIESSLICH mit dem generierten Bild-Prompt im folgenden englischen Format. Füge KEINE zusätzlichen Erklärungen, Einleitungen oder Abschiedsfloskeln hinzu.**
+
+[MAIN SUBJECT], [ACTION/STATE], [BACKGROUND/ENVIRONMENT], [VISUAL STYLE], [LIGHTING/ATMOSPHERE], [ADDITIONAL DETAILS], [QUALITY KEYWORDS]. --no [NEGATIVE PROMPTS]
+
+**Artikel-Inhalt:**
+{complete_article}
 """
