@@ -49,6 +49,7 @@ def generate_articles(text: str, logger) -> List[SingleArticle]:
             config={
                 "response_mime_type": "application/json",
                 "response_schema": LLMGeneratedArticles,
+                "temperature": 0
             },
         )
 
@@ -69,7 +70,10 @@ def generate_image_prompt(article: SingleArticle, logger) -> str:
             model=config.GENAI_IMAGE_PROMPT_MODEL,
             contents=prompts.GENAI_IMAGE_PROMPT_GENERATOR_PROMPT.format(
                 complete_article=full_article
-            )
+            ),
+            config={
+                "temperature": 0
+            }
         )
         logger.info(f"Successfully generated image prompt for article: '{article.ueberschrift}'")
         return response.text
