@@ -63,12 +63,12 @@ def generate_image_prompt(article: SingleArticle, logger) -> str:
     """Generates an image prompt for an article using a direct Google GenAI API call."""
     logger.info(f"Generating image prompt for article: '{article.ueberschrift}'")
     try:
+        full_article = f"{article.ueberschrift} {article.inhalt}"
         client = genai.Client(api_key=config.load_google_api_key())
         response = client.models.generate_content(
             model=config.GENAI_ARTICLE_GENERATION_MODEL,
             contents=prompts.GENAI_IMAGE_PROMPT_GENERATOR_PROMPT.format(
-                article_title=article.ueberschrift,
-                article_text_snippet=article.inhalt[:500]
+                complete_article=full_article
             )
         )
         logger.info(f"Successfully generated image prompt for article: '{article.ueberschrift}'")
