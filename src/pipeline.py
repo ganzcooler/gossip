@@ -66,7 +66,7 @@ def generate_image_prompt(article: SingleArticle, logger) -> str:
         full_article = f"{article.ueberschrift} {article.inhalt}"
         client = genai.Client(api_key=config.load_google_api_key())
         response = client.models.generate_content(
-            model=config.GENAI_ARTICLE_GENERATION_MODEL,
+            model=config.GENAI_IMAGE_PROMPT_MODEL,
             contents=prompts.GENAI_IMAGE_PROMPT_GENERATOR_PROMPT.format(
                 complete_article=full_article
             )
