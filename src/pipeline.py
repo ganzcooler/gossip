@@ -1,6 +1,7 @@
 import pathlib
 import time
 from google import genai
+from google.genai import types
 from src import config, prompts
 import logging
 import re
