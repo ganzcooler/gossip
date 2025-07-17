@@ -85,6 +85,10 @@ def generate_image(prompt: str, logger) -> bytes:
         response = client.models.generate_images(
             model=config.GENAI_IMAGE_GENERATION_MODEL,
             prompt=prompt,
+            config=types.GenerateImagesConfig(
+                number_of_images=1,
+                aspectRatio="16:9",
+            )
         )
 
         if response.generated_images:
