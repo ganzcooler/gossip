@@ -30,6 +30,7 @@ IMAGES_DIR_NAME = "generated_images"
 
 # --- Model Names ---
 GENAI_ARTICLE_GENERATION_MODEL = "gemini-2.5-pro"
+GENAI_IMAGE_PROMPT_MODEL = "gemini-2.5-flash"
 GENAI_IMAGE_GENERATION_MODEL = "imagen-3.0-generate-002"
 
 # --- API Call Settings ---
