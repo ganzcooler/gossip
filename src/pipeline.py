@@ -55,6 +55,11 @@ def generate_articles(text: str, logger) -> List[SingleArticle]:
         )
 
         articles = response.parsed
+
+        if not isinstance(articles, LLMGeneratedArticles):
+            logger.error(f"The response from the LLM was not in the expected format. Got type: {type(articles)}")
+            return []
+
         logger.info(f"Successfully generated and validated {len(articles.artikel)} articles.")
         return articles.artikel
     except Exception as e:
