@@ -9,7 +9,7 @@ import html
 from typing import List
 import sys
 import fitz  # PyMuPDF
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class SingleArticle(BaseModel):
@@ -40,76 +40,120 @@ def extract_text_from_pdf(pdf_filepath: pathlib.Path, logger) -> str:
         return ""
 
 def generate_articles(text: str, logger) -> List[SingleArticle]:
-    """Generates articles from text using a direct Google GenAI API call."""
+    """Generates articles from text using a direct Google GenAI API call with retries."""
     logger.info("Generating articles...")
-    try:
-        client = genai.Client(api_key=config.load_google_api_key())
-        response = client.models.generate_content(
-            model=config.GENAI_ARTICLE_GENERATION_MODEL,
-            contents=prompts.GENAI_JOURNALISTIC_ARTICLE_PROMPT.replace("{PROTOCOL_TEXT}", text),
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": LLMGeneratedArticles,
-                "temperature": 0
-            },
-        )
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            client = genai.Client(api_key=config.load_google_api_key())
+            response = client.models.generate_content(
+                model=config.GENAI_ARTICLE_GENERATION_MODEL,
+                contents=prompts.GENAI_JOURNALISTIC_ARTICLE_PROMPT.replace("{PROTOCOL_TEXT}", text),
+                config=types.GenerateContentConfig(
+                    temperature=0.2,
+                    response_mime_type='application/json',
+                    response_schema=LLMGeneratedArticles
+                )
+            )
 
-        articles = response.parsed
+            articles = response.parsed
 
-        if not isinstance(articles, LLMGeneratedArticles):
-            logger.error(f"The response from the LLM was not in the expected format. Got type: {type(articles)}")
-            return []
+            if articles and isinstance(articles, LLMGeneratedArticles):
+                logger.info(f"Successfully generated and validated {len(articles.artikel)} articles on attempt {attempt + 1}.")
+                return articles.artikel
 
-        logger.info(f"Successfully generated and validated {len(articles.artikel)} articles.")
-        return articles.artikel
-    except Exception as e:
-        logger.error(f"Error generating articles: {e}", exc_info=True)
-        return []
+            logger.warning(f"Article generation returned empty or invalid data on attempt {attempt + 1}/{max_retries}.")
+
+        except Exception as e:
+            logger.error(f"Error generating articles on attempt {attempt + 1}/{max_retries}: {e}", exc_info=True)
+
+        if attempt < max_retries - 1:
+            time.sleep(config.API_CALL_DELAY_SECONDS) # Wait before next retry
+
+    logger.error("Failed to generate articles after multiple retries.")
+    return []
 
 def generate_image_prompt(article: SingleArticle, logger) -> str:
-    """Generates an image prompt for an article using a direct Google GenAI API call."""
+    """Generates an image prompt for an article using a direct Google GenAI API call with retries."""
     logger.info(f"Generating image prompt for article: '{article.ueberschrift}'")
-    try:
-        full_article = f"{article.ueberschrift} {article.inhalt}"
-        client = genai.Client(api_key=config.load_google_api_key())
-        response = client.models.generate_content(
-            model=config.GENAI_IMAGE_PROMPT_MODEL,
-            contents=prompts.GENAI_IMAGE_PROMPT_GENERATOR_PROMPT.format(
-                complete_article=full_article
-            ),
-            config={
-                "temperature": 0
-            }
-        )
-        logger.info(f"Successfully generated image prompt for article: '{article.ueberschrift}'")
-        return response.text
-    except Exception as e:
-        logger.error(f"Error generating image prompt for article '{article.ueberschrift}': {e}", exc_info=True)
-        return ""
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            full_article = f"{article.ueberschrift} {article.inhalt}"
+            client = genai.Client(api_key=config.load_google_api_key())
+            response = client.models.generate_content(
+                model=config.GENAI_IMAGE_PROMPT_MODEL,
+                contents=prompts.GENAI_IMAGE_PROMPT_GENERATOR_PROMPT.format(
+                    complete_article=full_article
+                ),
+                config={
+                    "temperature": 0.2
+                }
+            )
+
+            if response.text:
+                logger.info(f"Successfully generated image prompt for article: '{article.ueberschrift}' on attempt {attempt + 1}.")
+                return response.text
+
+            logger.warning(f"Image prompt generation returned empty data on attempt {attempt + 1}/{max_retries}.")
+            try:
+                if response.prompt_feedback.block_reason:
+                    logger.error(f"Image prompt generation blocked. Reason: {response.prompt_feedback.block_reason}")
+                    logger.error(f"Safety ratings: {response.prompt_feedback.safety_ratings}")
+                    # If blocked, no point in retrying
+                    break
+            except AttributeError:
+                pass
+
+        except Exception as e:
+            logger.error(f"Error generating image prompt for article '{article.ueberschrift}' on attempt {attempt + 1}/{max_retries}: {e}", exc_info=True)
+
+        if attempt < max_retries - 1:
+            time.sleep(config.API_CALL_DELAY_SECONDS)
+
+    logger.error(f"Failed to generate image prompt for article '{article.ueberschrift}' after multiple retries.")
+    return ""
 
 def generate_image(prompt: str, logger) -> bytes:
-    """Generates an image from a prompt using a direct Google GenAI API call."""
+    """Generates an image from a prompt using a direct Google GenAI API call with retries."""
     logger.info("Generating image...")
-    try:
-        client = genai.Client(api_key=config.load_google_api_key())
-        response = client.models.generate_images(
-            model=config.GENAI_IMAGE_GENERATION_MODEL,
-            prompt=prompt,
-            config=types.GenerateImagesConfig(
-                number_of_images=1,
-                aspectRatio="16:9",
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            client = genai.Client(api_key=config.load_google_api_key())
+            response = client.models.generate_images(
+                model=config.GENAI_IMAGE_GENERATION_MODEL,
+                prompt=prompt,
+                config=types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspectRatio="16:9"
+                )
             )
-        )
 
-        if response.generated_images:
-            # Assuming we only want the first image
-            return response.generated_images[0].image.image_bytes
+            if response.generated_images:
+                # Assuming we only want the first image
+                logger.info(f"Successfully generated image on attempt {attempt + 1}.")
+                return response.generated_images[0].image.image_bytes
 
-        logger.error("No image data found in response.")
-        return b""
-    except Exception as e:
-        logger.error(f"Error generating image: {e}", exc_info=True)
-        return b""
+            logger.warning(f"No image data found in response on attempt {attempt + 1}/{max_retries}.")
+            # Optional: Check for feedback if available
+            try:
+                if response.prompt_feedback.block_reason:
+                    logger.error(f"Image generation blocked. Reason: {response.prompt_feedback.block_reason}")
+                    logger.error(f"Safety ratings: {response.prompt_feedback.safety_ratings}")
+                    # If blocked, no point in retrying
+                    break
+            except AttributeError:
+                pass # No feedback available
+
+        except Exception as e:
+            logger.error(f"Error generating image on attempt {attempt + 1}/{max_retries}: {e}", exc_info=True)
+
+        if attempt < max_retries - 1:
+            time.sleep(config.API_CALL_DELAY_SECONDS) # Wait before next retry
+
+    logger.error("Failed to generate image after multiple retries.")
+    return b""
 
 def save_article(article: SingleArticle, pdf_filename: str, logger):
     """Saves the article as an HTML file."""
