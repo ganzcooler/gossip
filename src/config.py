@@ -26,6 +26,7 @@ def get_log_filename():
 PDF_DIR_NAME = "pdf_files"
 ARTICLES_DIR_NAME = "articles"
 IMAGES_DIR_NAME = "generated_images"
+INSTA_IMAGES_DIR_NAME = "insta_images"
 
 
 # --- Model Names ---
