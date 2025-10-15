@@ -104,7 +104,7 @@ def create_insta_images():
 
                 try:
                     font_path = config.PROJECT_ROOT / "res" / "Oswald-Regular.ttf"
-                    font = ImageFont.truetype(str(font_path), size=60)
+                    font = ImageFont.truetype(str(font_path), size=40)
                 except IOError:
                     logger.warning(f"Oswald font not found at {font_path}. Using default font.")
                     font = ImageFont.load_default()
@@ -139,11 +139,28 @@ def create_insta_images():
                 try:
                     logo_path = config.PROJECT_ROOT / "res" / "logo-gossip.png"
                     with Image.open(logo_path).convert("RGBA") as logo_img:
-                        logo_side = int(cropped_img.height * 0.05)
+                        logo_side = int(cropped_img.height * 0.15)
                         logo_img_resized = logo_img.resize((logo_side, logo_side), Image.Resampling.LANCZOS)
 
-                        logo_x = (cropped_img.width - logo_img_resized.width) // 2
+                        # --- Create Rounded White Background for Logo ---
+                        padding = int(logo_side * 0.05) # Make padding a bit larger
+                        bg_side = logo_side + 2 * padding
+                        radius = int(bg_side * 0.2) # For a rounded square
+
+                        # Calculate position for the background
+                        bg_x = (cropped_img.width - bg_side) // 2
                         top_gradient_center_y = top_gradient_height // 2
+                        bg_y = top_gradient_center_y - (bg_side // 2)
+
+                        # Draw the white background on the overlay
+                        draw.rounded_rectangle(
+                            (bg_x, bg_y, bg_x + bg_side, bg_y + bg_side),
+                            radius=radius,
+                            fill="white"
+                        )
+
+                        # --- Paste Logo on top of the background ---
+                        logo_x = (cropped_img.width - logo_img_resized.width) // 2
                         logo_y = top_gradient_center_y - (logo_img_resized.height // 2)
 
                         overlay.paste(logo_img_resized, (logo_x, logo_y), logo_img_resized)
