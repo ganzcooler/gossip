@@ -118,6 +118,7 @@ articles/
 generated_images/
 logs/
 extracted_texts/
+insta_images/
 
 # Obsolete directories (if any remnants)
 # chroma_db/ # ChromaDB has been removed

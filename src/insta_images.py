@@ -43,9 +43,9 @@ def create_insta_images():
 
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    image_files = list(source_dir.glob('*.png'))
+    image_files = list(source_dir.glob('*.jpg'))
     if not image_files:
-        logger.warning(f"No PNG images found in {source_dir}")
+        logger.warning(f"No JPG images found in {source_dir}")
         return
 
     for image_path in image_files:
@@ -76,9 +76,10 @@ def create_insta_images():
                 stroke_width = 2
 
                 try:
-                    font = ImageFont.truetype("Oswald-Regular.ttf", size=40)
+                    font_path = config.PROJECT_ROOT / "res" / "Oswald-Regular.ttf"
+                    font = ImageFont.truetype(str(font_path), size=40)
                 except IOError:
-                    logger.warning("Oswald font not found. Using default font.")
+                    logger.warning(f"Oswald font not found at {font_path}. Using default font.")
                     font = ImageFont.load_default()
 
                 # --- Text Wrapping ---
