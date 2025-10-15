@@ -90,13 +90,13 @@ def create_insta_images():
                 # Bottom gradient (30%)
                 bottom_gradient_height = int(gradient_height * 0.3)
                 for y in range(bottom_gradient_height):
-                    alpha = int(255 * (y / bottom_gradient_height))
+                    alpha = int(200 * (y / bottom_gradient_height))
                     draw.line([(0, gradient_height - bottom_gradient_height + y), (gradient_width, gradient_height - bottom_gradient_height + y)], fill=(0, 0, 0, alpha))
 
                 # Top gradient (20%)
                 top_gradient_height = int(gradient_height * 0.2)
                 for y in range(top_gradient_height):
-                    alpha = int(255 * (1 - (y / top_gradient_height)))
+                    alpha = int(200 * (1 - (y / top_gradient_height)))
                     draw.line([(0, y), (gradient_width, y)], fill=(0, 0, 0, alpha))
 
                 # --- Text Styling ---
