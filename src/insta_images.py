@@ -110,7 +110,7 @@ def create_insta_images():
                     font = ImageFont.load_default()
 
                 # --- Text Wrapping ---
-                avg_char_width = font.getbbox("x")[2]
+                avg_char_width = font.getbbox("x")[2] if hasattr(font, 'getbbox') else font.getsize("x")[0]
                 max_chars_per_line = int((cropped_img.width * 0.9) / avg_char_width)
                 wrapped_text = "\n".join(textwrap.wrap(text, width=max_chars_per_line))
 
@@ -134,6 +134,21 @@ def create_insta_images():
                     fill=font_color,
                     align="center"
                 )
+
+                # --- Load, Scale, and Paste Logo ---
+                try:
+                    logo_path = config.PROJECT_ROOT / "res" / "logo-gossip.png"
+                    with Image.open(logo_path).convert("RGBA") as logo_img:
+                        logo_side = int(cropped_img.height * 0.05)
+                        logo_img_resized = logo_img.resize((logo_side, logo_side), Image.Resampling.LANCZOS)
+
+                        logo_x = (cropped_img.width - logo_img_resized.width) // 2
+                        top_gradient_center_y = top_gradient_height // 2
+                        logo_y = top_gradient_center_y - (logo_img_resized.height // 2)
+
+                        overlay.paste(logo_img_resized, (logo_x, logo_y), logo_img_resized)
+                except FileNotFoundError:
+                    logger.warning(f"Logo file not found at {logo_path}, skipping logo.")
 
                 # --- Combine and Save ---
                 final_img = Image.alpha_composite(cropped_img.convert('RGBA'), overlay)
