@@ -2,17 +2,40 @@ import pathlib
 from PIL import Image, ImageDraw, ImageFont
 from src import config
 import logging
+from bs4 import BeautifulSoup
+import textwrap
 
 # --- Logging Configuration ---
 logger = logging.getLogger(__name__)
 
+def get_headline_from_article(article_path: pathlib.Path) -> str:
+    """Extracts the H1 headline from an HTML article file."""
+    if not article_path.is_file():
+        logger.warning(f"Article file not found: {article_path}")
+        return None
+
+    try:
+        with open(article_path, "r", encoding="utf-8") as f:
+            soup = BeautifulSoup(f, "html.parser")
+
+        h1_tag = soup.find("h1")
+        if not h1_tag:
+            logger.warning(f"No h1 tag found in: {article_path}")
+            return None
+
+        return h1_tag.get_text(strip=True)
+    except Exception as e:
+        logger.error(f"Error reading or parsing article file {article_path}: {e}", exc_info=True)
+        return None
+
 def create_insta_images():
     """
-    Iterates through images in the source directory, crops them to a 1:1 aspect ratio,
-    adds a gradient and a text overlay, and saves them to the destination directory.
+    Iterates through images, crops them, adds a text overlay with the headline
+    from the corresponding article, and saves them.
     """
     source_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
     dest_dir = config.PROJECT_ROOT / config.INSTA_IMAGES_DIR_NAME
+    articles_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
 
     if not source_dir.is_dir():
         logger.error(f"Source directory not found: {source_dir}")
@@ -26,6 +49,13 @@ def create_insta_images():
         return
 
     for image_path in image_files:
+        # --- Get Headline ---
+        article_path = articles_dir / f"{image_path.stem}.html"
+        text = get_headline_from_article(article_path)
+        if not text:
+            # Warning is logged in the helper function, just skip the image
+            continue
+
         try:
             with Image.open(image_path) as img:
                 # --- Crop to 1:1 ---
@@ -37,15 +67,13 @@ def create_insta_images():
                 bottom = (height + short_side) / 2
                 cropped_img = img.crop((left, top, right, bottom))
 
-                # --- Create a transparent overlay for the text ---
                 overlay = Image.new('RGBA', cropped_img.size, (0, 0, 0, 0))
                 draw = ImageDraw.Draw(overlay)
 
-                # --- Add Text ---
-                text = "Hier steht eine Überschrift"
+                # --- Text Styling ---
                 font_color = "#0284c7"
                 stroke_color = "white"
-                stroke_width = 2  # A thin stroke
+                stroke_width = 2
 
                 try:
                     font = ImageFont.truetype("Oswald-Regular.ttf", size=40)
@@ -53,32 +81,33 @@ def create_insta_images():
                     logger.warning("Oswald font not found. Using default font.")
                     font = ImageFont.load_default()
 
-                # Calculate text size including the stroke
-                text_bbox = draw.textbbox((0, 0), text, font=font, stroke_width=stroke_width)
+                # --- Text Wrapping ---
+                avg_char_width = font.getbbox("x")[2]
+                max_chars_per_line = int((cropped_img.width * 0.9) / avg_char_width)
+                wrapped_text = "\n".join(textwrap.wrap(text, width=max_chars_per_line))
+
+                # --- Text Positioning and Drawing ---
+                text_bbox = draw.multiline_textbbox(
+                    (0, 0), wrapped_text, font=font, stroke_width=stroke_width, align="center"
+                )
                 text_width = text_bbox[2] - text_bbox[0]
                 text_height = text_bbox[3] - text_bbox[1]
 
-                # Center the text horizontally
-                text_x = (cropped_img.width - text_width) / 2
+                x = (cropped_img.width - text_width) / 2
+                y = cropped_img.height - text_height - 20 # 20px margin from bottom
 
-                # Position the text at the bottom with a margin
-                margin = 20
-                text_y = cropped_img.height - text_height - margin
-
-                # Draw the text with an outline
-                draw.text(
-                    (text_x, text_y),
-                    text,
+                draw.multiline_text(
+                    (x, y),
+                    wrapped_text,
                     font=font,
                     fill=font_color,
                     stroke_width=stroke_width,
-                    stroke_fill=stroke_color
+                    stroke_fill=stroke_color,
+                    align="center"
                 )
 
-                # --- Combine Image and Overlay ---
+                # --- Combine and Save ---
                 final_img = Image.alpha_composite(cropped_img.convert('RGBA'), overlay)
-
-                # --- Save as JPG ---
                 dest_path = dest_dir / f"{image_path.stem}.jpg"
                 final_img.convert('RGB').save(dest_path, 'jpeg', quality=95)
                 logger.info(f"Successfully processed and saved: {dest_path}")
