@@ -37,33 +37,43 @@ def create_insta_images():
                 bottom = (height + short_side) / 2
                 cropped_img = img.crop((left, top, right, bottom))
 
-                # --- Create a transparent overlay for gradient and text ---
+                # --- Create a transparent overlay for the text ---
                 overlay = Image.new('RGBA', cropped_img.size, (0, 0, 0, 0))
                 draw = ImageDraw.Draw(overlay)
 
-                # --- Draw Gradient ---
-                gradient_height = int(cropped_img.height * 0.20)
-                start_y = cropped_img.height - gradient_height
-                for y in range(start_y, cropped_img.height):
-                    alpha = int(255 * ((y - start_y) / gradient_height))
-                    draw.line([(0, y), (cropped_img.width, y)], fill=(0, 0, 0, alpha))
-
                 # --- Add Text ---
                 text = "Hier steht eine Überschrift"
+                font_color = "#0284c7"
+                stroke_color = "white"
+                stroke_width = 2  # A thin stroke
+
                 try:
                     font = ImageFont.truetype("Oswald-Regular.ttf", size=40)
                 except IOError:
                     logger.warning("Oswald font not found. Using default font.")
                     font = ImageFont.load_default()
 
-                text_bbox = draw.textbbox((0, 0), text, font=font)
+                # Calculate text size including the stroke
+                text_bbox = draw.textbbox((0, 0), text, font=font, stroke_width=stroke_width)
                 text_width = text_bbox[2] - text_bbox[0]
                 text_height = text_bbox[3] - text_bbox[1]
 
+                # Center the text horizontally
                 text_x = (cropped_img.width - text_width) / 2
-                text_y = cropped_img.height - (gradient_height / 2) - (text_height / 2)
 
-                draw.text((text_x, text_y), text, font=font, fill="white")
+                # Position the text at the bottom with a margin
+                margin = 20
+                text_y = cropped_img.height - text_height - margin
+
+                # Draw the text with an outline
+                draw.text(
+                    (text_x, text_y),
+                    text,
+                    font=font,
+                    fill=font_color,
+                    stroke_width=stroke_width,
+                    stroke_fill=stroke_color
+                )
 
                 # --- Combine Image and Overlay ---
                 final_img = Image.alpha_composite(cropped_img.convert('RGBA'), overlay)
