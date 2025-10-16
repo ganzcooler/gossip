@@ -43,9 +43,11 @@ def create_insta_images():
 
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    image_files = list(source_dir.glob('*.jpg'))
+    jpg_files = list(source_dir.glob('*.jpg'))
+    png_files = list(source_dir.glob('*.png'))
+    image_files = jpg_files + png_files
     if not image_files:
-        logger.warning(f"No JPG images found in {source_dir}")
+        logger.warning(f"No JPG or PNG images found in {source_dir}")
         return
 
     for image_path in image_files:
@@ -87,24 +89,24 @@ def create_insta_images():
                 # --- Add Gradients ---
                 gradient_width, gradient_height = cropped_img.size
 
-                # Bottom gradient (30%)
-                bottom_gradient_height = int(gradient_height * 0.3)
+                # Bottom gradient
+                bottom_gradient_height = int(gradient_height * 0.4)
                 for y in range(bottom_gradient_height):
-                    alpha = int(200 * (y / bottom_gradient_height))
+                    alpha = int(220 * (y / bottom_gradient_height))
                     draw.line([(0, gradient_height - bottom_gradient_height + y), (gradient_width, gradient_height - bottom_gradient_height + y)], fill=(0, 0, 0, alpha))
 
-                # Top gradient (20%)
+                # Top gradient
                 top_gradient_height = int(gradient_height * 0.2)
                 for y in range(top_gradient_height):
-                    alpha = int(200 * (1 - (y / top_gradient_height)))
+                    alpha = int(50 * (1 - (y / top_gradient_height)))
                     draw.line([(0, y), (gradient_width, y)], fill=(0, 0, 0, alpha))
 
                 # --- Text Styling ---
                 font_color = "white"
 
                 try:
-                    font_path = config.PROJECT_ROOT / "res" / "BBHSansBogle-Regular.ttf"
-                    font_size = int(cropped_img.height * 0.1)  # 10% of image height
+                    font_path = config.PROJECT_ROOT / "res" / "Oswald-Bold.ttf"
+                    font_size = int(cropped_img.height * 0.05)  # relative to image height
                     font = ImageFont.truetype(str(font_path), size=font_size)
                 except IOError:
                     logger.warning(f"Desired font not found at {font_path}. Using default font.")
@@ -113,7 +115,7 @@ def create_insta_images():
                 # --- Text Wrapping ---
                 avg_char_width = font.getbbox("x")[2] if hasattr(font, 'getbbox') else font.getsize("x")[0]
                 max_chars_per_line = int((cropped_img.width * 0.9) / avg_char_width)
-                wrapped_text = "\n".join(textwrap.wrap(text, width=max_chars_per_line))
+                wrapped_text = "\n".join(textwrap.wrap(text.upper(), width=max_chars_per_line))
 
                 # --- Text Positioning and Drawing ---
                 text_bbox = draw.multiline_textbbox(
@@ -123,9 +125,9 @@ def create_insta_images():
                 text_height = text_bbox[3] - text_bbox[1]
 
                 x = (cropped_img.width - text_width) / 2
-                # Center text in the bottom gradient
-                bottom_gradient_center_y = cropped_img.height - (bottom_gradient_height / 2)
-                y = bottom_gradient_center_y - (text_height / 2)
+
+                # Position text from bottom of image
+                y = cropped_img.height - (cropped_img.height * 0.05) - text_height
 
 
                 draw.multiline_text(
@@ -140,7 +142,7 @@ def create_insta_images():
                 try:
                     logo_path = config.PROJECT_ROOT / "res" / "logo-gossip.png"
                     with Image.open(logo_path).convert("RGBA") as logo_img:
-                        logo_side = int(cropped_img.height * 0.15)
+                        logo_side = int(cropped_img.height * 0.13)
                         logo_img_resized = logo_img.resize((logo_side, logo_side), Image.Resampling.LANCZOS)
 
                         # --- Create Rounded White Background for Logo ---
