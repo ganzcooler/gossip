@@ -103,10 +103,11 @@ def create_insta_images():
                 font_color = "white"
 
                 try:
-                    font_path = config.PROJECT_ROOT / "res" / "Oswald-Regular.ttf"
-                    font = ImageFont.truetype(str(font_path), size=40)
+                    font_path = config.PROJECT_ROOT / "res" / "BBHSansBogle-Regular.ttf"
+                    font_size = int(cropped_img.height * 0.1)  # 10% of image height
+                    font = ImageFont.truetype(str(font_path), size=font_size)
                 except IOError:
-                    logger.warning(f"Oswald font not found at {font_path}. Using default font.")
+                    logger.warning(f"Desired font not found at {font_path}. Using default font.")
                     font = ImageFont.load_default()
 
                 # --- Text Wrapping ---
