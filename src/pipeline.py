@@ -10,6 +10,7 @@ from typing import List
 import sys
 import fitz  # PyMuPDF
 from pydantic import BaseModel
+from src.insta_images import create_insta_images
 
 
 class SingleArticle(BaseModel):
@@ -301,5 +302,10 @@ def run_pipeline():
                 time.sleep(config.API_CALL_DELAY_SECONDS)
 
             logger.info(f"--- Finished pipeline for {pdf_filepath.name} ---")
+
+        # After processing all PDFs, create Instagram images
+        logger.info("--- Starting Instagram image generation ---")
+        create_insta_images()
+        logger.info("--- Finished Instagram image generation ---")
     except Exception as e:
         logger.error(f"An unexpected error occurred in the pipeline: {e}", exc_info=True)
