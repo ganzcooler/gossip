@@ -211,7 +211,7 @@ def save_image(image_bytes: bytes, article: SingleArticle, pdf_filename: str, lo
     except IOError as e:
         logger.error(f"Error saving image to {image_filepath}: {e}", exc_info=True)
 
-def run_pipeline():
+def run_pipeline(insta_only=False):
     """The main pipeline function."""
     log_dir = config.PROJECT_ROOT / config.LOG_DIR_NAME
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -234,6 +234,12 @@ def run_pipeline():
     sh = logging.StreamHandler(sys.stdout)
     sh.setFormatter(logging.Formatter(config.LOG_FORMAT))
     logger.addHandler(sh)
+
+    if insta_only:
+        logger.info("--- Starting Instagram image generation only ---")
+        create_insta_images()
+        logger.info("--- Finished Instagram image generation ---")
+        return
 
     try:
         pdf_dir = config.PROJECT_ROOT / config.PDF_DIR_NAME
