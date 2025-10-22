@@ -51,6 +51,12 @@ def create_insta_images():
         return
 
     for image_path in image_files:
+        # --- Check if image already exists ---
+        dest_path = dest_dir / f"{image_path.stem}.jpg"
+        if dest_path.exists():
+            logger.info(f"Image already exists, skipping: {dest_path}")
+            continue
+
         # --- Get Headline ---
         article_path = articles_dir / f"{image_path.stem}.html"
         text = get_headline_from_article(article_path)
@@ -172,7 +178,6 @@ def create_insta_images():
 
                 # --- Combine and Save ---
                 final_img = Image.alpha_composite(cropped_img.convert('RGBA'), overlay)
-                dest_path = dest_dir / f"{image_path.stem}.jpg"
                 final_img.convert('RGB').save(dest_path, 'jpeg', quality=90)
                 logger.info(f"Successfully processed and saved: {dest_path}")
 
