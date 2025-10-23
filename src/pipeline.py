@@ -87,9 +87,10 @@ def generate_image_prompt(article: SingleArticle, logger) -> str:
                 contents=prompts.GENAI_IMAGE_PROMPT_GENERATOR_PROMPT.format(
                     complete_article=full_article
                 ),
-                config={
-                    "temperature": 0.2
-                }
+                config=types.GenerateContentConfig(
+                    temperature=0.2,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0) # Disables thinking
+                )
             )
 
             if response.text:

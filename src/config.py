@@ -35,7 +35,7 @@ GENAI_IMAGE_PROMPT_MODEL = "gemini-2.5-flash"
 GENAI_IMAGE_GENERATION_MODEL = "imagen-3.0-generate-002"
 
 # --- API Call Settings ---
-API_CALL_DELAY_SECONDS = 5
+API_CALL_DELAY_SECONDS = 1
 
 # --- Article Tags ---
 CATEGORY_TAGS = tags.CATEGORY_TAGS
