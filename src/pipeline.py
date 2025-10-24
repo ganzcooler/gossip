@@ -94,6 +94,7 @@ def generate_image_prompt(article: SingleArticle, logger) -> str:
 
             if response.text:
                 logger.info(f"Successfully generated image prompt for article: '{article.ueberschrift}' on attempt {attempt + 1}.")
+                logger.info(f"Image Prompt: {response.text}")
                 return response.text
 
             logger.warning(f"Image prompt generation returned empty data on attempt {attempt + 1}/{max_retries}.")
