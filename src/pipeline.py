@@ -16,7 +16,6 @@ from src.insta_images import create_insta_images
 class SingleArticle(BaseModel):
     ueberschrift: str
     inhalt: str
-    tags: List[str] = []
 
 class LLMGeneratedArticles(BaseModel):
     artikel: List[SingleArticle]
