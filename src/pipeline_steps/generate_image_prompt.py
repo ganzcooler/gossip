@@ -30,14 +30,6 @@ def generate_image_prompt(article: SingleArticle, logger: logging.Logger) -> str
                 return response.text
 
             logger.warning(f"Image prompt generation returned empty data on attempt {attempt + 1}/{max_retries}.")
-            try:
-                if response.prompt_feedback.block_reason:
-                    logger.error(f"Image prompt generation blocked. Reason: {response.prompt_feedback.block_reason}")
-                    logger.error(f"Safety ratings: {response.prompt_feedback.safety_ratings}")
-                    # If blocked, no point in retrying
-                    break
-            except AttributeError:
-                pass
 
         except Exception as e:
             logger.error(f"Error generating image prompt for article '{article.ueberschrift}' on attempt {attempt + 1}/{max_retries}: {e}", exc_info=True)

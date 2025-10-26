@@ -26,15 +26,6 @@ def generate_image(prompt: str, logger: logging.Logger) -> bytes:
                 return response.generated_images[0].image.image_bytes
 
             logger.warning(f"No image data found in response on attempt {attempt + 1}/{max_retries}.")
-            # Optional: Check for feedback if available
-            try:
-                if response.prompt_feedback.block_reason:
-                    logger.error(f"Image generation blocked. Reason: {response.prompt_feedback.block_reason}")
-                    logger.error(f"Safety ratings: {response.prompt_feedback.safety_ratings}")
-                    # If blocked, no point in retrying
-                    break
-            except AttributeError:
-                pass # No feedback available
 
         except Exception as e:
             logger.error(f"Error generating image on attempt {attempt + 1}/{max_retries}: {e}", exc_info=True)
