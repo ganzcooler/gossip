@@ -3,7 +3,6 @@ import pathlib
 import logging
 import sys
 from src import prompts
-from src import tags
 from datetime import datetime
 
 # Project root directory - assuming config.ini is in the parent directory of src/
@@ -36,10 +35,6 @@ GENAI_IMAGE_GENERATION_MODEL = "imagen-3.0-generate-002"
 
 # --- API Call Settings ---
 API_CALL_DELAY_SECONDS = 1
-
-# --- Article Tags ---
-CATEGORY_TAGS = tags.CATEGORY_TAGS
-LOCATION_TAGS = tags.LOCATION_TAGS
 
 # --- API Key Loading ---
 def load_google_api_key():
