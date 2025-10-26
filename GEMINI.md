@@ -20,7 +20,7 @@ The generated content is saved in the `articles/` (HTML), `generated_images/` (r
 - **AI:** Google GenAI (Gemini & Imagen)
 - **PDF Processing:** PyMuPDF
 - **Image Manipulation:** Pillow
-- **Dependencies:** `requirements.txt` (google-genai, python-dotenv, beautifulsoup4, PyMuPDF, pydantic, pypdf, Pillow)
+- **Dependencies:** `requirements.txt` (google-genai, python-dotenv, beautifulsoup4, PyMuPDF, pydantic, Pillow)
 
 ## Building and Running
 
