@@ -1,13 +1,16 @@
-import configparser
+import os
 import pathlib
 import logging
 import sys
+from dotenv import load_dotenv
 from src import prompts
-from src import tags
 from datetime import datetime
 
-# Project root directory - assuming config.ini is in the parent directory of src/
+# Project root directory
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file
+load_dotenv(PROJECT_ROOT / ".env")
 
 # Get prompt variables from src.prompts
 GENAI_JOURNALISTIC_ARTICLE_PROMPT = prompts.GENAI_JOURNALISTIC_ARTICLE_PROMPT
@@ -37,21 +40,10 @@ GENAI_IMAGE_GENERATION_MODEL = "imagen-3.0-generate-002"
 # --- API Call Settings ---
 API_CALL_DELAY_SECONDS = 1
 
-# --- Article Tags ---
-CATEGORY_TAGS = tags.CATEGORY_TAGS
-LOCATION_TAGS = tags.LOCATION_TAGS
-
 # --- API Key Loading ---
 def load_google_api_key():
-    """Loads Google API Key from config.ini located in the project root."""
-    config_file_path = PROJECT_ROOT / "config.ini"
-    if not config_file_path.exists():
-        raise FileNotFoundError(f"Konfigurationsdatei nicht gefunden: {config_file_path}")
-
-    config = configparser.ConfigParser()
-    config.read(config_file_path)
-
-    api_key = config.get("genai", "GOOGLE_API_KEY", fallback=None)
+    """Loads the Google API Key from the .env file in the project root."""
+    api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        raise ValueError(f"GOOGLE_API_KEY fehlt in der Konfigurationsdatei! (Pfad: {config_file_path})")
+        raise ValueError("GOOGLE_API_KEY not found in .env file or environment variables.")
     return api_key
