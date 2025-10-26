@@ -12,15 +12,9 @@ from src.pipeline_steps.generate_image import generate_image
 from src.pipeline_steps.save_image import save_image
 from src import config
 
-def run_pipeline(insta_only=False):
+def run_pipeline():
     """The main pipeline function."""
     logger = setup_logger()
-
-    if insta_only:
-        logger.info("--- Starting Instagram image generation only ---")
-        create_insta_images()
-        logger.info("--- Finished Instagram image generation ---")
-        return
 
     try:
         pdf_files = find_pdf_files(logger)
