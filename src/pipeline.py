@@ -12,17 +12,23 @@ from src.pipeline_steps.generate_image import generate_image
 from src.pipeline_steps.save_image import save_image
 from src import config
 
-def run_pipeline(selected_steps=None):
+def run_pipeline(selected_steps: list[str] | None = None):
     """The main pipeline function."""
     logger = setup_logger()
 
     run_all = selected_steps is None
-
-    # Determine which parts of the main pipeline to run based on selection
-    run_generate_articles = run_all or any(s in selected_steps for s in ["Generate articles", "Generate image prompt", "Generate image"])
-    run_generate_image_prompt = run_all or any(s in selected_steps for s in ["Generate image prompt", "Generate image"])
-    run_generate_image = run_all or "Generate image" in selected_steps
-    run_create_insta_images = run_all or "Create Instagram images" in selected_steps
+    if run_all:
+        run_generate_articles = True
+        run_generate_image_prompt = True
+        run_generate_image = True
+        run_create_insta_images = True
+    else:
+        assert selected_steps is not None
+        # Determine which parts of the main pipeline to run based on selection
+        run_generate_articles = any(s in selected_steps for s in ["Generate articles", "Generate image prompt", "Generate image"])
+        run_generate_image_prompt = any(s in selected_steps for s in ["Generate image prompt", "Generate image"])
+        run_generate_image = "Generate image" in selected_steps
+        run_create_insta_images = "Create Instagram images" in selected_steps
 
     try:
         if run_generate_articles:
