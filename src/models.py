@@ -7,3 +7,11 @@ class SingleArticle(BaseModel):
 
 class LLMGeneratedArticles(BaseModel):
     artikel: List[SingleArticle]
+
+class H2Section(BaseModel):
+    headline: str
+    paragraphs: List[str]
+
+class ArticleContent(BaseModel):
+    h1: str | None
+    h2_sections: List[H2Section]
