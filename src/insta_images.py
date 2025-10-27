@@ -7,7 +7,7 @@ import textwrap
 from src.models import ArticleContent, H2Section
 
 # --- Logging Configuration ---
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("pipeline")
 
 
 def extract_article_content(article_path: pathlib.Path) -> ArticleContent | None:
