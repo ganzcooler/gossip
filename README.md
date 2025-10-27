@@ -1,47 +1,50 @@
-# PDF to Article and Image Pipeline
+# Gossip Project
 
-This project automates the process of converting PDF documents into a series of articles, accompanying images, and Instagram-ready posts. It extracts text from PDFs, uses a generative AI to write multiple articles, generates a unique image for each article, and finally formats those images with text overlays for social media.
+This project is a Python-based pipeline designed to automate the creation of journalistic-style blog posts and associated images from PDF documents. It appears to be tailored for generating local news content from official documents like city council meeting minutes.
 
-## Setup and Configuration
+The core workflow is as follows:
+1.  **PDF Ingestion:** It processes PDF files from the `pdf_files/` directory.
+2.  **Text Extraction:** Text is extracted from the PDFs using the `PyMuPDF` library.
+3.  **AI Article Generation:** The extracted text is fed to a Google GenAI model (`gemini-2.5-pro`) using a detailed German prompt (from `src/prompts.py`) to generate multiple, slightly ironic, journalistic articles in HTML format.
+4.  **AI Image Generation:** For each article, a separate AI prompt is generated (`gemini-2.5-flash`) and then used to create a hero image with a text-to-image model (`imagen-3.0-generate-002`).
+5.  **Instagram Formatting:** A final step processes the generated images and articles, cropping the images to a 4:5 aspect ratio and overlaying them with the article headline and a logo (`res/logo-gossip.png`) to create Instagram-ready posts.
 
-1.  **Dependencies:** Install the required Python libraries:
-    ```bash
-    pip install -r requirements.txt
-    ```
+The generated content is saved in the `articles/` (HTML), `generated_images/` (raw generated images), and `insta_images/` (Instagram-formatted images) directories.
 
-2.  **API Key (`.env` file):**
-    *   This project requires a Google API key for the generative AI models.
-    *   Create a file named `.env` in the root directory. The application will not start if this file is missing.
-    *   Add your Google API key to the `.env` file:
-        ```
-        GOOGLE_API_KEY="your_api_key_here"
-        ```
+## Key Technologies
+- **Backend:** Python
+- **AI:** Google GenAI (Gemini & Imagen)
+- **PDF Processing:** PyMuPDF
+- **Image Manipulation:** Pillow
+- **Dependencies:** `requirements.txt` (google-genai, python-dotenv, beautifulsoup4, PyMuPDF, pydantic, Pillow)
 
-3.  **Input PDF Files:**
-    *   Place the PDF files you want to process into the `pdf_files/` directory.
+## Building and Running
 
-## Running the Pipeline
-
-To generate articles and images from the PDFs in the `pdf_files/` directory, run the main script:
-
+### 1. Installation
+Install the required Python packages:
 ```bash
-python main.py
+pip install -r requirements.txt
 ```
 
-The script will perform all steps automatically:
-1.  Extract text from each PDF.
-2.  Generate a set of articles for each PDF.
-3.  Save the articles as HTML files in the `articles/` directory.
-4.  Generate a corresponding image for each article and save it in the `generated_images/` directory.
-5.  Create Instagram-formatted posts from the articles and images, saving them in the `insta_images/` directory.
+### 2. Configuration
+The application requires a Google API key. Create a `.env` file in the project root directory with the following structure:
 
-The pipeline is idempotent, meaning it will automatically skip PDFs for which all articles and images have already been successfully generated. Log files for each run are stored in the `logs/` directory.
+```
+GOOGLE_API_KEY="your_api_key_here"
+```
 
-## How it Works
+### 3. Execution
+The main entry point is `main.py`.
 
-The pipeline is designed as a series of modular steps orchestrated by `src/pipeline.py`:
+- **To run the full pipeline (PDF -> Articles -> Images -> Instagram Posts):**
+  Place your PDF files in the `pdf_files/` directory and run:
+  ```bash
+  python main.py
+  ```
 
-1.  **Text Extraction:** The script iterates through all PDF files in the `pdf_files/` directory and extracts the complete text content.
-2.  **Article Generation:** The extracted text is passed to a generative AI model, which creates a series of journalistic articles based on the detailed prompts in `src/prompts.py`.
-3.  **Image Generation:** For each generated article, a new prompt is created to generate a relevant hero image.
-4.  **Instagram Formatting:** After all articles and images are generated, the script processes them into a format suitable for Instagram, overlaying the article headline and a logo onto a cropped version of the image.
+- **To run only specific steps of the pipeline:**
+  This assumes that articles and images have already been generated.
+  ```bash
+  python main.py --steps
+  ```
+  You will then be prompted to select which steps to run.
