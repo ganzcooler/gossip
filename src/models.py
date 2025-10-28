@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 class SingleArticle(BaseModel):
     ueberschrift: str
@@ -8,10 +8,10 @@ class SingleArticle(BaseModel):
 class LLMGeneratedArticles(BaseModel):
     artikel: List[SingleArticle]
 
-class H2Section(BaseModel):
-    headline: str
-    paragraphs: List[str]
+class ContentBlock(BaseModel):
+    headline: Optional[str] = None
+    paragraph: Optional[str] = None
 
 class ArticleContent(BaseModel):
     h1: str | None
-    h2_sections: List[H2Section]
+    content_blocks: List[ContentBlock]

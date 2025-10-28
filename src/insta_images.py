@@ -2,16 +2,16 @@ import pathlib
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from src import config
 import logging
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 import textwrap
-from src.models import ArticleContent, H2Section
+from src.models import ArticleContent, ContentBlock
 
 # --- Logging Configuration ---
 logger = logging.getLogger("pipeline")
 
 
 def extract_article_content(article_path: pathlib.Path) -> ArticleContent | None:
-    """Extracts H1 and H2 sections from an HTML article file."""
+    """Extracts H1 and content blocks (H2/P combinations) from an HTML article file."""
     if not article_path.is_file():
         logger.warning(f"Article file not found: {article_path}")
         return None
@@ -23,19 +23,44 @@ def extract_article_content(article_path: pathlib.Path) -> ArticleContent | None
         h1_tag = soup.find("h1")
         h1_text = h1_tag.get_text(strip=True) if h1_tag else None
 
-        h2_sections = []
-        for h2_tag in soup.find_all("h2"):
-            paragraphs = []
-            for sibling in h2_tag.find_next_siblings():
-                if sibling.name == "h2":
-                    break
-                if sibling.name == "p":
-                    paragraphs.append(sibling.get_text(strip=True))
+        content_blocks = []
+        if h1_tag:
+            # Get all direct siblings after h1 that are tags
+            siblings = [tag for tag in h1_tag.find_next_siblings() if isinstance(tag, Tag)]
             
-            if paragraphs:
-                h2_sections.append(H2Section(headline=h2_tag.get_text(strip=True), paragraphs=paragraphs))
+            i = 0
+            while i < len(siblings):
+                element = siblings[i]
 
-        return ArticleContent(h1=h1_text, h2_sections=h2_sections)
+                # Rule: h2 is directly followed by p
+                if element.name == 'h2' and (i + 1) < len(siblings) and siblings[i+1].name == 'p':
+                    h2_tag = element
+                    p_tag = siblings[i+1]
+                    content_blocks.append(ContentBlock(
+                        headline=h2_tag.get_text(strip=True),
+                        paragraph=p_tag.get_text(strip=True)
+                    ))
+                    i += 2 # Move past both h2 and p
+                
+                # Rule: Standalone p
+                elif element.name == 'p':
+                    content_blocks.append(ContentBlock(
+                        paragraph=element.get_text(strip=True)
+                    ))
+                    i += 1
+                
+                # Rule: Standalone h2 (without a directly following p)
+                elif element.name == 'h2':
+                    content_blocks.append(ContentBlock(
+                        headline=element.get_text(strip=True)
+                    ))
+                    i += 1
+                
+                # Ignore other tags
+                else:
+                    i += 1
+
+        return ArticleContent(h1=h1_text, content_blocks=content_blocks)
 
     except Exception as e:
         logger.error(f"Error reading or parsing article file {article_path}: {e}", exc_info=True)
@@ -45,7 +70,7 @@ def extract_article_content(article_path: pathlib.Path) -> ArticleContent | None
 def create_insta_images():
     """
     Iterates through images, creates a primary image with headline, and then
-    creates additional blurred images for each H2 section in the article.
+    creates additional blurred images for each content block in the article.
     """
     source_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
     dest_dir = config.PROJECT_ROOT / config.INSTA_IMAGES_DIR_NAME
@@ -86,8 +111,8 @@ def create_insta_images():
                 logger.error(f"Failed to create main image for {image_path.name}: {e}", exc_info=True)
                 continue
 
-        # --- Create Additional Images for H2 Sections ---
-        for i, section in enumerate(article_content.h2_sections):
+        # --- Create Additional Images for Content Blocks ---
+        for i, block in enumerate(article_content.content_blocks):
             part_dest_path = dest_dir / f"{image_path.stem}_part{i+1}.jpg"
             if part_dest_path.exists():
                 logger.info(f"Part image already exists, skipping: {part_dest_path}")
@@ -99,8 +124,8 @@ def create_insta_images():
                     with Image.open(image_path) as img:
                         cropped_img = crop_image_to_aspect(img, 4 / 5)
 
-                blurred_img = cropped_img.filter(ImageFilter.GaussianBlur(radius=20))
-                final_part_img = create_part_image(blurred_img, section)
+                blurred_img = cropped_img.filter(ImageFilter.GaussianBlur(radius=2))
+                final_part_img = create_content_image(blurred_img, block)
                 final_part_img.convert('RGB').save(part_dest_path, 'jpeg', quality=90)
                 logger.info(f"Successfully processed and saved part image: {part_dest_path}")
             except Exception as e:
@@ -166,57 +191,77 @@ def create_main_image(base_img: Image.Image, text: str) -> Image.Image:
     return Image.alpha_composite(base_img.convert('RGBA'), overlay)
 
 
-def create_part_image(base_img: Image.Image, section: H2Section) -> Image.Image:
-    """Creates a blurred part image with a smaller logo and H2 section text."""
+def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Image:
+    """Creates a blurred content image with a smaller logo and text from a ContentBlock."""
     overlay = Image.new('RGBA', base_img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
+    img_width, img_height = base_img.size
 
     # --- Logo (smaller) ---
-    top_gradient_height = int(base_img.height * 0.2) # Estimate for positioning
-    draw_logo(overlay, base_img.height, base_img.width, top_gradient_height, scale=0.5)
+    top_gradient_height = int(img_height * 0.2) # Estimate for positioning
+    draw_logo(overlay, img_height, img_width, top_gradient_height, scale=0.5)
 
-    # --- Text (H2 + paragraphs) ---
+    # --- Fonts ---
     try:
         font_path_bold = str(config.PROJECT_ROOT / "res" / "Oswald-Bold.ttf")
-        h2_font = ImageFont.truetype(font_path_bold, size=18)
-        p_font = ImageFont.truetype(font_path_bold, size=14) # Fallback to bold
+        h2_font_size = int(img_height * 0.04)
+        p_font_size = int(img_height * 0.03)
+        h2_font = ImageFont.truetype(font_path_bold, size=h2_font_size)
+        p_font = ImageFont.truetype(font_path_bold, size=p_font_size)
     except IOError:
-        logger.warning("Oswald-Bold.ttf not found for part image. Using default font.")
+        logger.warning("Oswald-Bold.ttf not found for content image. Using default font.")
         h2_font = ImageFont.load_default()
         p_font = ImageFont.load_default()
 
     # --- Text Wrapping ---
-    avg_char_width_p = p_font.getlength("x") if hasattr(p_font, 'getlength') else p_font.getsize("x")[0] # type: ignore
-    max_chars_per_line = int((base_img.width * 0.85) / avg_char_width_p) if avg_char_width_p > 0 else 30
+    padding_x = img_width * 0.05
+    available_text_width = img_width - (2 * padding_x)
+    
+    # Heuristic for character wrapping based on available width and font size
+    h2_chars_per_line = int((img_width * 0.9) / (h2_font_size * 0.6)) if h2_font_size > 0 else 30 # h2 is centered, so it can use more width
+    p_chars_per_line = int(available_text_width / (p_font_size * 0.6)) if p_font_size > 0 else 40
 
-    wrapped_h2 = "\n".join(textwrap.wrap(section.headline.upper(), width=max_chars_per_line))
-    wrapped_paragraphs = "\n".join(
-        ["\n".join(textwrap.wrap(p, width=max_chars_per_line)) for p in section.paragraphs]
-    )
+    wrapped_h2 = ""
+    if block.headline:
+        wrapped_h2 = "\n".join(textwrap.wrap(block.headline.upper(), width=h2_chars_per_line))
+
+    wrapped_p = ""
+    if block.paragraph:
+        wrapped_p = "\n".join(textwrap.wrap(block.paragraph, width=p_chars_per_line))
 
     # --- Calculate total text block height ---
-    h2_bbox = draw.multiline_textbbox((0, 0), wrapped_h2, font=h2_font, align="center")
-    p_bbox = draw.multiline_textbbox((0, 0), wrapped_paragraphs, font=p_font, align="center")
-    
-    h2_height = h2_bbox[3] - h2_bbox[1]
-    p_height = p_bbox[3] - p_bbox[1]
-    line_spacing = 10 # pixels
-    total_height = h2_height + line_spacing + p_height
+    total_height = 0
+    h2_height = 0
+    p_height = 0
+    line_spacing = int(img_height * 0.02) # Dynamic spacing
+
+    if wrapped_h2:
+        h2_bbox = draw.multiline_textbbox((0, 0), wrapped_h2, font=h2_font, align="center")
+        h2_height = h2_bbox[3] - h2_bbox[1]
+        total_height += h2_height
+
+    if wrapped_p:
+        p_bbox = draw.multiline_textbbox((0, 0), wrapped_p, font=p_font, align="left")
+        p_height = p_bbox[3] - p_bbox[1]
+        total_height += p_height
+
+    if wrapped_h2 and wrapped_p:
+        total_height += line_spacing
 
     # --- Positioning and Drawing ---
-    current_y = (base_img.height - total_height) / 2
+    current_y = (img_height - total_height) / 2
 
-    # Draw H2
-    h2_width = h2_bbox[2] - h2_bbox[0]
-    h2_x = (base_img.width - h2_width) / 2
-    draw.multiline_text((h2_x, current_y), wrapped_h2, font=h2_font, fill="white", align="center")
+    # Draw H2 (centered)
+    if wrapped_h2:
+        h2_bbox = draw.multiline_textbbox((0, 0), wrapped_h2, font=h2_font, align="center")
+        h2_width = h2_bbox[2] - h2_bbox[0]
+        h2_x = (img_width - h2_width) / 2
+        draw.multiline_text((h2_x, current_y), wrapped_h2, font=h2_font, fill="white", align="center")
+        current_y += h2_height + line_spacing
 
-    current_y += h2_height + line_spacing
-
-    # Draw Paragraphs
-    p_width = p_bbox[2] - p_bbox[0]
-    p_x = (base_img.width - p_width) / 2
-    draw.multiline_text((p_x, current_y), wrapped_paragraphs, font=p_font, fill="white", align="center")
+    # Draw Paragraph (left-aligned)
+    if wrapped_p:
+        draw.multiline_text((padding_x, current_y), wrapped_p, font=p_font, fill="white", align="left")
 
     return Image.alpha_composite(base_img.convert('RGBA'), overlay)
 
@@ -235,7 +280,13 @@ def draw_logo(overlay: Image.Image, img_height: int, img_width: int, top_gradien
             radius = int(bg_side * 0.2)
 
             bg_x = (img_width - bg_side) // 2
-            top_gradient_center_y = top_gradient_height // 2
+
+            # For content images (smaller scale), position the logo slightly higher.
+            if scale < 1.0:
+                top_gradient_center_y = int(top_gradient_height * 0.4)
+            else:
+                top_gradient_center_y = top_gradient_height // 2
+
             bg_y = top_gradient_center_y - (bg_side // 2)
 
             draw = ImageDraw.Draw(overlay)
