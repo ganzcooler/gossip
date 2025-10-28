@@ -218,7 +218,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
     available_text_width = img_width - (2 * padding_x)
     
     # Heuristic for character wrapping based on available width and font size
-    h2_chars_per_line = int((img_width * 0.9) / (h2_font_size * 0.6)) if h2_font_size > 0 else 30 # h2 is centered, so it can use more width
+    h2_chars_per_line = int(available_text_width / (h2_font_size * 0.6)) if h2_font_size > 0 else 30
     p_chars_per_line = int(available_text_width / (p_font_size * 0.6)) if p_font_size > 0 else 40
 
     wrapped_h2 = ""
@@ -230,38 +230,47 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
         wrapped_p = "\n".join(textwrap.wrap(block.paragraph, width=p_chars_per_line))
 
     # --- Calculate total text block height ---
-    total_height = 0
     h2_height = 0
     p_height = 0
-    line_spacing = int(img_height * 0.02) # Dynamic spacing
+    fixed_h2_p_spacing = int(img_height * 0.04) # Fixed distance between h2 and p
 
     if wrapped_h2:
-        h2_bbox = draw.multiline_textbbox((0, 0), wrapped_h2, font=h2_font, align="center")
+        h2_bbox = draw.multiline_textbbox((0, 0), wrapped_h2, font=h2_font, align="left")
         h2_height = h2_bbox[3] - h2_bbox[1]
-        total_height += h2_height
 
     if wrapped_p:
         p_bbox = draw.multiline_textbbox((0, 0), wrapped_p, font=p_font, align="left")
         p_height = p_bbox[3] - p_bbox[1]
-        total_height += p_height
 
+    # Calculate total height of the combined block (h2 + spacing + p)
+    total_combined_block_height = 0
     if wrapped_h2 and wrapped_p:
-        total_height += line_spacing
+        total_combined_block_height = h2_height + fixed_h2_p_spacing + p_height
+    elif wrapped_h2: # Only h2
+        total_combined_block_height = h2_height
+    elif wrapped_p: # Only p
+        total_combined_block_height = p_height
 
     # --- Positioning and Drawing ---
-    current_y = (img_height - total_height) / 2
+    if wrapped_h2 and wrapped_p:
+        # Both h2 and p are present, treat as one block and center it.
+        current_y_start_of_block = (img_height - total_combined_block_height) / 2
+        
+        # Position h2 at the top of this block
+        current_y_h2 = current_y_start_of_block
+        draw.multiline_text((padding_x, current_y_h2), wrapped_h2, font=h2_font, fill="white", align="left")
+        
+        # Position p below h2 with fixed spacing
+        current_y_p = current_y_h2 + h2_height + fixed_h2_p_spacing
+        draw.multiline_text((padding_x, current_y_p), wrapped_p, font=p_font, fill="white", align="left")
 
-    # Draw H2 (centered)
-    if wrapped_h2:
-        h2_bbox = draw.multiline_textbbox((0, 0), wrapped_h2, font=h2_font, align="center")
-        h2_width = h2_bbox[2] - h2_bbox[0]
-        h2_x = (img_width - h2_width) / 2
-        draw.multiline_text((h2_x, current_y), wrapped_h2, font=h2_font, fill="white", align="center")
-        current_y += h2_height + line_spacing
+    elif wrapped_h2: # Only h2 is present, center it vertically
+        current_y_h2 = (img_height - h2_height) / 2
+        draw.multiline_text((padding_x, current_y_h2), wrapped_h2, font=h2_font, fill="white", align="left")
 
-    # Draw Paragraph (left-aligned)
-    if wrapped_p:
-        draw.multiline_text((padding_x, current_y), wrapped_p, font=p_font, fill="white", align="left")
+    elif wrapped_p: # Only p is present, center it vertically
+        current_y_p = (img_height - p_height) / 2
+        draw.multiline_text((padding_x, current_y_p), wrapped_p, font=p_font, fill="white", align="left")
 
     return Image.alpha_composite(base_img.convert('RGBA'), overlay)
 
@@ -281,13 +290,13 @@ def draw_logo(overlay: Image.Image, img_height: int, img_width: int, top_gradien
 
             bg_x = (img_width - bg_side) // 2
 
-            # For content images (smaller scale), position the logo slightly higher.
-            if scale < 1.0:
-                top_gradient_center_y = int(top_gradient_height * 0.4)
-            else:
+            # For content images (smaller scale), position the logo at 2% from the top.
+            if scale < 1.0: # This condition identifies content images
+                bg_y = int(img_height * 0.03) # Fixed realtive from top
+                top_gradient_center_y = bg_y + (bg_side // 2) # Calculate center_y from bg_y
+            else: # Main image, use existing logic
                 top_gradient_center_y = top_gradient_height // 2
-
-            bg_y = top_gradient_center_y - (bg_side // 2)
+                bg_y = top_gradient_center_y - (bg_side // 2)
 
             draw = ImageDraw.Draw(overlay)
             draw.rounded_rectangle(
