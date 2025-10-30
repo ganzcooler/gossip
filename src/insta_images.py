@@ -5,9 +5,44 @@ import logging
 from bs4 import BeautifulSoup, Tag
 import textwrap
 from src.models import ArticleContent, ContentBlock
+import re
 
 # --- Logging Configuration ---
 logger = logging.getLogger("pipeline")
+
+
+def split_text_into_chunks(text: str, max_length: int) -> list[str]:
+    """Splits a text into chunks of a maximum length, trying to split at sentence endings."""
+    if not text:
+        return []
+
+    chunks = []
+    text = text.strip()
+    
+    while len(text) > max_length:
+        split_pos = -1
+        # Try to find the last sentence ending before max_length
+        for delimiter in ['.', '?', '!']:
+            pos = text.rfind(delimiter, 0, max_length)
+            if pos > split_pos:
+                split_pos = pos
+        
+        # If no sentence ending is found, try to find the last space
+        if split_pos == -1:
+            split_pos = text.rfind(' ', 0, max_length)
+        
+        # If no space is found, just split at max_length
+        if split_pos == -1:
+            split_pos = max_length - 1
+        
+        chunk = text[:split_pos+1].strip()
+        chunks.append(chunk)
+        text = text[split_pos+1:].strip()
+
+    if text:
+        chunks.append(text)
+        
+    return chunks
 
 
 def extract_article_content(article_path: pathlib.Path) -> ArticleContent | None:
@@ -71,6 +106,7 @@ def create_insta_images():
     """
     Iterates through images, creates a primary image with headline, and then
     creates additional blurred images for each content block in the article.
+    Long paragraphs are split into multiple images.
     """
     source_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
     dest_dir = config.PROJECT_ROOT / config.INSTA_IMAGES_DIR_NAME
@@ -112,7 +148,23 @@ def create_insta_images():
                 continue
 
         # --- Create Additional Images for Content Blocks ---
-        for i, block in enumerate(article_content.content_blocks):
+        processed_blocks = []
+        for block in article_content.content_blocks:
+            if block.paragraph and len(block.paragraph) > 440:
+                chunks = split_text_into_chunks(block.paragraph, 440)
+                
+                # First chunk with headline
+                first_chunk_block = ContentBlock(headline=block.headline, paragraph=chunks[0])
+                processed_blocks.append(first_chunk_block)
+                
+                # Subsequent chunks without headline
+                for chunk in chunks[1:]:
+                    processed_blocks.append(ContentBlock(paragraph=chunk))
+            else:
+                # Keep block as is
+                processed_blocks.append(block)
+
+        for i, block_to_render in enumerate(processed_blocks):
             part_dest_path = dest_dir / f"{image_path.stem}_part{i+1}.jpg"
             if part_dest_path.exists():
                 logger.info(f"Part image already exists, skipping: {part_dest_path}")
@@ -125,7 +177,7 @@ def create_insta_images():
                         cropped_img = crop_image_to_aspect(img, 4 / 5)
 
                 blurred_img = cropped_img.filter(ImageFilter.GaussianBlur(radius=3))
-                final_part_img = create_content_image(blurred_img, block)
+                final_part_img = create_content_image(blurred_img, block_to_render)
                 final_part_img.convert('RGB').save(part_dest_path, 'jpeg', quality=90)
                 logger.info(f"Successfully processed and saved part image: {part_dest_path}")
             except Exception as e:
