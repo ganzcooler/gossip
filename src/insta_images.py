@@ -19,19 +19,17 @@ def split_text_into_chunks(text: str, max_length: int) -> list[str]:
     chunks = []
     text = text.strip()
     
+    # Initial chunking logic
     while len(text) > max_length:
         split_pos = -1
-        # Try to find the last sentence ending before max_length
         for delimiter in ['.', '?', '!']:
             pos = text.rfind(delimiter, 0, max_length)
             if pos > split_pos:
                 split_pos = pos
         
-        # If no sentence ending is found, try to find the last space
         if split_pos == -1:
             split_pos = text.rfind(' ', 0, max_length)
         
-        # If no space is found, just split at max_length
         if split_pos == -1:
             split_pos = max_length - 1
         
@@ -42,6 +40,32 @@ def split_text_into_chunks(text: str, max_length: int) -> list[str]:
     if text:
         chunks.append(text)
         
+    # Post-processing to avoid widows
+    if len(chunks) > 1:
+        while len(chunks[-1]) < 150 and len(chunks) > 1:
+            # Take the previous chunk
+            previous_chunk = chunks[-2]
+            
+            # Split previous chunk into sentences
+            sentences = re.split(r'(?<=[.!?])\s+', previous_chunk)
+            
+            # Filter out empty strings that can result from re.split
+            sentences = [s for s in sentences if s]
+
+            if len(sentences) > 1:
+                # Move the last sentence
+                last_sentence = sentences.pop(-1)
+                
+                # Re-assemble the previous chunk
+                chunks[-2] = " ".join(sentences)
+                
+                # Prepend sentence to the last chunk
+                chunks[-1] = last_sentence + " " + chunks[-1]
+            else:
+                # The previous chunk has only one sentence or cannot be split.
+                # Stop to avoid moving the whole chunk.
+                break
+    
     return chunks
 
 
