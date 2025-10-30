@@ -124,7 +124,7 @@ def create_insta_images():
                     with Image.open(image_path) as img:
                         cropped_img = crop_image_to_aspect(img, 4 / 5)
 
-                blurred_img = cropped_img.filter(ImageFilter.GaussianBlur(radius=2))
+                blurred_img = cropped_img.filter(ImageFilter.GaussianBlur(radius=3))
                 final_part_img = create_content_image(blurred_img, block)
                 final_part_img.convert('RGB').save(part_dest_path, 'jpeg', quality=90)
                 logger.info(f"Successfully processed and saved part image: {part_dest_path}")
@@ -204,12 +204,13 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
     # --- Fonts ---
     try:
         font_path_bold = str(config.PROJECT_ROOT / "res" / "Oswald-Bold.ttf")
+        font_path_regular = str(config.PROJECT_ROOT / "res" / "RobotoCondensed-Regular.ttf")
         h2_font_size = int(img_height * 0.04)
-        p_font_size = int(img_height * 0.03)
+        p_font_size = int(img_height * 0.04)
         h2_font = ImageFont.truetype(font_path_bold, size=h2_font_size)
-        p_font = ImageFont.truetype(font_path_bold, size=p_font_size)
+        p_font = ImageFont.truetype(font_path_regular, size=p_font_size)
     except IOError:
-        logger.warning("Oswald-Bold.ttf not found for content image. Using default font.")
+        logger.warning("A font file was not found for the content image, using default font.")
         h2_font = ImageFont.load_default()
         p_font = ImageFont.load_default()
 
