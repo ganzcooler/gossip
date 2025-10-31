@@ -306,48 +306,79 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
     if block.paragraph:
         wrapped_p = "\n".join(textwrap.wrap(block.paragraph, width=p_chars_per_line))
 
-    # --- Calculate total text block height ---
-    h2_height = 0
-    p_height = 0
-    fixed_h2_p_spacing = int(img_height * 0.04) # Fixed distance between h2 and p
+    # --- Calculate total text block height and width ---
+    h2_height, p_height = 0, 0
+    h2_width, p_width = 0, 0
+    fixed_h2_p_spacing = int(img_height * 0.04)
 
     if wrapped_h2:
         h2_bbox = draw.multiline_textbbox((0, 0), wrapped_h2, font=h2_font, align="left")
+        h2_width = h2_bbox[2] - h2_bbox[0]
         h2_height = h2_bbox[3] - h2_bbox[1]
 
     if wrapped_p:
         p_bbox = draw.multiline_textbbox((0, 0), wrapped_p, font=p_font, align="left")
+        p_width = p_bbox[2] - p_bbox[0]
         p_height = p_bbox[3] - p_bbox[1]
 
-    # Calculate total height of the combined block (h2 + spacing + p)
+    max_text_width = max(h2_width, p_width)
+
+    # Calculate total height of the combined block
     total_combined_block_height = 0
     if wrapped_h2 and wrapped_p:
         total_combined_block_height = h2_height + fixed_h2_p_spacing + p_height
-    elif wrapped_h2: # Only h2
+    elif wrapped_h2:
         total_combined_block_height = h2_height
-    elif wrapped_p: # Only p
+    elif wrapped_p:
         total_combined_block_height = p_height
 
     # --- Positioning and Drawing ---
+    block_y_start = (img_height - total_combined_block_height) / 2
+    block_x_start = (img_width - max_text_width) / 2
+
+    # Draw a blurred, transparent background rectangle for the text
+    if wrapped_h2 or wrapped_p:
+        rect_padding_y = int(img_height * 0.04)
+        rect_padding_x = int(img_width * 0.04)
+
+        rect_x0 = block_x_start - rect_padding_x
+        rect_y0 = block_y_start - rect_padding_y
+        rect_x1 = block_x_start + max_text_width + rect_padding_x
+        rect_y1 = block_y_start + total_combined_block_height + rect_padding_y
+
+        # Create a new layer for the rectangle
+        rect_layer = Image.new('RGBA', base_img.size, (0, 0, 0, 0))
+        rect_draw = ImageDraw.Draw(rect_layer)
+
+        # Draw the rectangle with transparency
+        rect_color = (19, 123, 181, 100)  # #137bb5 with opacity
+        rect_draw.rectangle(
+            [(rect_x0, rect_y0), (rect_x1, rect_y1)],
+            fill=rect_color
+        )
+
+        # Blur the rectangle layer
+        blurred_rect_layer = rect_layer.filter(ImageFilter.GaussianBlur(radius=30))
+
+        # Composite the blurred rectangle onto the main overlay
+        overlay = Image.alpha_composite(overlay, blurred_rect_layer)
+        draw = ImageDraw.Draw(overlay)  # Update draw object for the new overlay
+
+    # Position and draw the text itself, left-aligned within the centered block
     if wrapped_h2 and wrapped_p:
-        # Both h2 and p are present, treat as one block and center it.
-        current_y_start_of_block = (img_height - total_combined_block_height) / 2
+        # Both h2 and p are present
+        draw.multiline_text((block_x_start, block_y_start), wrapped_h2, font=h2_font, fill="white", align="left")
         
-        # Position h2 at the top of this block
-        current_y_h2 = current_y_start_of_block
-        draw.multiline_text((padding_x, current_y_h2), wrapped_h2, font=h2_font, fill="white", align="left")
-        
-        # Position p below h2 with fixed spacing
-        current_y_p = current_y_h2 + h2_height + fixed_h2_p_spacing
-        draw.multiline_text((padding_x, current_y_p), wrapped_p, font=p_font, fill="white", align="left")
+        p_y = block_y_start + h2_height + fixed_h2_p_spacing
+        draw.multiline_text((block_x_start, p_y), wrapped_p, font=p_font, fill="white", align="left")
 
-    elif wrapped_h2: # Only h2 is present, center it vertically
-        current_y_h2 = (img_height - h2_height) / 2
-        draw.multiline_text((padding_x, current_y_h2), wrapped_h2, font=h2_font, fill="white", align="left")
+    elif wrapped_h2:
+        # Only h2 is present
+        draw.multiline_text((block_x_start, block_y_start), wrapped_h2, font=h2_font, fill="white", align="left")
 
-    elif wrapped_p: # Only p is present, center it vertically
-        current_y_p = (img_height - p_height) / 2
-        draw.multiline_text((padding_x, current_y_p), wrapped_p, font=p_font, fill="white", align="left")
+    elif wrapped_p:
+        # Only p is present
+        draw.multiline_text((block_x_start, block_y_start), wrapped_p, font=p_font, fill="white", align="left")
 
     return Image.alpha_composite(base_img.convert('RGBA'), overlay)
 
