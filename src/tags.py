@@ -1,0 +1,19 @@
+TAGS = {
+    "ausschuss_bau_umwelt" : "Bau, Umwelt, Verkehr",
+    "feuerwehrausschuss" : "Feuerwehr",
+    "jugendausschuss" : "Jugend",
+    "ausschuss_fuer_schule" : "Schule, Bildung",
+    "ausschuss_sport" : "Sport, Kultur, Soziales",
+    "gemeinderat" : "Gemeinderat",
+    "ausschuss_wirtschaft" : "Wirtschaft, Digitalisierung",
+    "ortsrat_atzenhausen" : "Atzenhausen",
+    "ortsrat_dahlenrode" : "Dahlenrode",
+    "ortsrat_dramfeld" : "Dramfeld",
+    "ortsrat_wiershausen" : "Klein Wiershausen",
+    "ortsrat_mengershausen" : "Mengershausen",
+    "ortsrat_obernjesa" : "Obernjesa",
+    "ortsrat_rosdorf" : "Rosdorf",
+    "ortsrat_sieboldshausen" : "Sieboldshausen",
+    "ortsrat_settmarshausen" : "Settmarshausen",
+    "ortsrat_volkerode" : "Volkerode"
+}

@@ -6,9 +6,19 @@ from bs4 import BeautifulSoup, Tag
 import textwrap
 from src.models import ArticleContent, ContentBlock
 import re
+from src.tags import TAGS
 
 # --- Logging Configuration ---
 logger = logging.getLogger("pipeline")
+
+
+def find_tag(article_stem: str) -> str | None:
+    """Finds a tag for the article based on its filename."""
+    lower_stem = article_stem.lower()
+    for key, value in TAGS.items():
+        if key.lower() in lower_stem:
+            return value.upper()
+    return None
 
 
 def split_text_into_chunks(text: str, max_length: int) -> list[str]:
@@ -42,7 +52,7 @@ def split_text_into_chunks(text: str, max_length: int) -> list[str]:
         
     # Post-processing to avoid widows
     if len(chunks) > 1:
-        while len(chunks[-1]) < 200 and len(chunks) > 1:
+        while len(chunks[-1]) < 160 and len(chunks) > 1:
             # Take the previous chunk
             previous_chunk = chunks[-2]
             
@@ -164,7 +174,7 @@ def create_insta_images():
             try:
                 with Image.open(image_path) as img:
                     cropped_img = crop_image_to_aspect(img, 4 / 5)
-                    final_img = create_main_image(cropped_img, article_content.h1)
+                    final_img = create_main_image(cropped_img, article_content.h1, image_path.stem)
                     final_img.convert('RGB').save(main_dest_path, 'jpeg', quality=90)
                     logger.info(f"Successfully processed and saved main image: {main_dest_path}")
             except Exception as e:
@@ -174,8 +184,8 @@ def create_insta_images():
         # --- Create Additional Images for Content Blocks ---
         processed_blocks = []
         for block in article_content.content_blocks:
-            if block.paragraph and len(block.paragraph) > 500:
-                chunks = split_text_into_chunks(block.paragraph, 500)
+            if block.paragraph and len(block.paragraph) > 450:
+                chunks = split_text_into_chunks(block.paragraph, 450)
                 
                 # First chunk with headline
                 first_chunk_block = ContentBlock(headline=block.headline, paragraph=chunks[0])
@@ -223,7 +233,7 @@ def crop_image_to_aspect(img: Image.Image, target_aspect: float) -> Image.Image:
         return img.crop((0, top, width, bottom))
 
 
-def create_main_image(base_img: Image.Image, text: str) -> Image.Image:
+def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Image.Image:
     """Creates the main, non-blurred image with gradients, logo, and headline."""
     overlay = Image.new('RGBA', base_img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -240,6 +250,52 @@ def create_main_image(base_img: Image.Image, text: str) -> Image.Image:
     for y in range(top_gradient_height):
         alpha = int(50 * (1 - (y / top_gradient_height)))
         draw.line([(0, y), (gradient_width, y)], fill=(0, 0, 0, alpha))
+
+    # --- Logo ---
+    draw_logo(overlay, base_img.height, base_img.width, top_gradient_height, scale=1.0)
+
+    # --- Tag ---
+    tag_text = find_tag(article_stem)
+    if tag_text:
+        try:
+            tag_font_path = str(config.PROJECT_ROOT / "res" / "Oswald-Bold.ttf")
+            tag_font_size = int(base_img.height * 0.03)
+            tag_font = ImageFont.truetype(tag_font_path, size=tag_font_size)
+        except IOError:
+            logger.warning("Oswald-Bold.ttf not found for tag. Using default font.")
+            tag_font = ImageFont.load_default()
+
+        tag_text_bbox = draw.textbbox((0, 0), tag_text, font=tag_font)
+        tag_text_width = tag_text_bbox[2] - tag_text_bbox[0]
+        tag_text_height = tag_text_bbox[3] - tag_text_bbox[1]
+
+        rect_padding_x = int(tag_font_size * 0.8)
+        rect_padding_y = int(tag_font_size * 0.4)
+        
+        rect_width = tag_text_width + 2 * rect_padding_x
+        rect_height = tag_text_height + 2 * rect_padding_y
+
+        # Position below logo
+        logo_side = int(base_img.height * 0.13 * 1.0)
+        logo_bg_padding = int(logo_side * 0.05)
+        logo_bg_side = logo_side + 2 * logo_bg_padding
+        top_gradient_center_y = top_gradient_height // 2
+        logo_bg_y = top_gradient_center_y - (logo_bg_side // 2)
+        logo_bottom_y = logo_bg_y + logo_bg_side
+        
+        tag_margin_top = int(base_img.height * 0.02)
+
+        rect_x0 = (base_img.width - rect_width) / 2
+        rect_y0 = logo_bottom_y + tag_margin_top
+        rect_x1 = rect_x0 + rect_width
+        rect_y1 = rect_y0 + rect_height
+
+        radius = int(rect_height * 0.2)
+        draw.rounded_rectangle([(rect_x0, rect_y0), (rect_x1, rect_y1)], radius=radius, fill="#137bb5")
+
+        text_anchor_x = rect_x0 + (rect_width / 2)
+        text_anchor_y = rect_y0 + (rect_height / 2)
+        draw.text((text_anchor_x, text_anchor_y), tag_text, font=tag_font, fill="white", anchor="mm")
 
     # --- Text ---
     try:
@@ -260,9 +316,6 @@ def create_main_image(base_img: Image.Image, text: str) -> Image.Image:
     x = (base_img.width - text_width) / 2
     y = base_img.height - (base_img.height * 0.05) - text_height
     draw.multiline_text((x, y), wrapped_text, font=font, fill="white", align="center")
-
-    # --- Logo ---
-    draw_logo(overlay, base_img.height, base_img.width, top_gradient_height, scale=1.0)
 
     return Image.alpha_composite(base_img.convert('RGBA'), overlay)
 
