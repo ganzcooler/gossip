@@ -259,7 +259,7 @@ def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Im
     if tag_text:
         try:
             tag_font_path = str(config.PROJECT_ROOT / "res" / "Oswald-Bold.ttf")
-            tag_font_size = int(base_img.height * 0.025)
+            tag_font_size = int(base_img.height * 0.03)
             tag_font = ImageFont.truetype(tag_font_path, size=tag_font_size)
         except IOError:
             logger.warning("Oswald-Bold.ttf not found for tag. Using default font.")
@@ -292,9 +292,9 @@ def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Im
 
         draw.rectangle([(rect_x0, rect_y0), (rect_x1, rect_y1)], fill="#137bb5")
 
-        text_x = (base_img.width - tag_text_width) / 2
-        text_y = rect_y0 + rect_padding_y
-        draw.text((text_x, text_y), tag_text, font=tag_font, fill="white")
+        text_anchor_x = rect_x0 + (rect_width / 2)
+        text_anchor_y = rect_y0 + (rect_height / 2)
+        draw.text((text_anchor_x, text_anchor_y), tag_text, font=tag_font, fill="white", anchor="mm")
 
     # --- Text ---
     try:
