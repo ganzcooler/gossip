@@ -52,7 +52,7 @@ def split_text_into_chunks(text: str, max_length: int) -> list[str]:
         
     # Post-processing to avoid widows
     if len(chunks) > 1:
-        while len(chunks[-1]) < 200 and len(chunks) > 1:
+        while len(chunks[-1]) < 160 and len(chunks) > 1:
             # Take the previous chunk
             previous_chunk = chunks[-2]
             
@@ -184,8 +184,8 @@ def create_insta_images():
         # --- Create Additional Images for Content Blocks ---
         processed_blocks = []
         for block in article_content.content_blocks:
-            if block.paragraph and len(block.paragraph) > 500:
-                chunks = split_text_into_chunks(block.paragraph, 500)
+            if block.paragraph and len(block.paragraph) > 450:
+                chunks = split_text_into_chunks(block.paragraph, 450)
                 
                 # First chunk with headline
                 first_chunk_block = ContentBlock(headline=block.headline, paragraph=chunks[0])
@@ -290,7 +290,8 @@ def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Im
         rect_x1 = rect_x0 + rect_width
         rect_y1 = rect_y0 + rect_height
 
-        draw.rectangle([(rect_x0, rect_y0), (rect_x1, rect_y1)], fill="#137bb5")
+        radius = int(rect_height * 0.2)
+        draw.rounded_rectangle([(rect_x0, rect_y0), (rect_x1, rect_y1)], radius=radius, fill="#137bb5")
 
         text_anchor_x = rect_x0 + (rect_width / 2)
         text_anchor_y = rect_y0 + (rect_height / 2)
