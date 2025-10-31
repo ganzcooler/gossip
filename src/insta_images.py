@@ -8,6 +8,8 @@ from src.models import ArticleContent, ContentBlock
 import re
 from src.tags import TAGS
 
+MAX_PARAGRAPH_LENGTH = 450
+
 # --- Logging Configuration ---
 logger = logging.getLogger("pipeline")
 
@@ -182,21 +184,48 @@ def create_insta_images():
                 continue
 
         # --- Create Additional Images for Content Blocks ---
+        raw_blocks = article_content.content_blocks
         processed_blocks = []
-        for block in article_content.content_blocks:
-            if block.paragraph and len(block.paragraph) > 450:
-                chunks = split_text_into_chunks(block.paragraph, 450)
+        i = 0
+        while i < len(raw_blocks):
+            current_block = raw_blocks[i]
+            next_block = raw_blocks[i+1] if (i + 1) < len(raw_blocks) else None
+
+            # --- MERGE 1: H2+P followed by P ---
+            if (current_block.headline is not None and current_block.paragraph is not None and
+                next_block and next_block.headline is None and next_block.paragraph is not None and
+                len(current_block.paragraph) + len(next_block.paragraph) <= MAX_PARAGRAPH_LENGTH):
+
+                merged_paragraph = current_block.paragraph + "\n\n" + next_block.paragraph
+                merged_block = ContentBlock(headline=current_block.headline, paragraph=merged_paragraph)
+                processed_blocks.append(merged_block)
+                i += 2
+
+            # --- MERGE 2: Two consecutive P's ---
+            elif (current_block.headline is None and current_block.paragraph is not None and
+                  next_block and next_block.headline is None and next_block.paragraph is not None and
+                  len(current_block.paragraph) + len(next_block.paragraph) <= MAX_PARAGRAPH_LENGTH):
+
+                merged_paragraph = current_block.paragraph + "\n\n" + next_block.paragraph
+                merged_block = ContentBlock(paragraph=merged_paragraph)
+                processed_blocks.append(merged_block)
+                i += 2
+
+            # --- SPLIT: Handle splitting long paragraphs ---
+            elif current_block.paragraph is not None and len(current_block.paragraph) > MAX_PARAGRAPH_LENGTH:
+                chunks = split_text_into_chunks(current_block.paragraph, MAX_PARAGRAPH_LENGTH)
                 
-                # First chunk with headline
-                first_chunk_block = ContentBlock(headline=block.headline, paragraph=chunks[0])
+                first_chunk_block = ContentBlock(headline=current_block.headline, paragraph=chunks[0])
                 processed_blocks.append(first_chunk_block)
                 
-                # Subsequent chunks without headline
                 for chunk in chunks[1:]:
                     processed_blocks.append(ContentBlock(paragraph=chunk))
+                i += 1
+            
+            # --- DEFAULT: Keep block as is ---
             else:
-                # Keep block as is
-                processed_blocks.append(block)
+                processed_blocks.append(current_block)
+                i += 1
 
         for i, block_to_render in enumerate(processed_blocks):
             part_dest_path = dest_dir / f"{image_path.stem}_part{i+1}.jpg"
@@ -357,7 +386,12 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
 
     wrapped_p = ""
     if block.paragraph:
-        wrapped_p = "\n".join(textwrap.wrap(block.paragraph, width=p_chars_per_line))
+        # Handle potentially merged paragraphs
+        sub_paragraphs = block.paragraph.split('\n\n')
+        wrapped_parts = []
+        for sub_p in sub_paragraphs:
+            wrapped_parts.append("\n".join(textwrap.wrap(sub_p, width=p_chars_per_line)))
+        wrapped_p = "\n\n".join(wrapped_parts)
 
     # --- Calculate total text block height and width ---
     h2_height, p_height = 0, 0
