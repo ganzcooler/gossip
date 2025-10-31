@@ -42,7 +42,7 @@ def split_text_into_chunks(text: str, max_length: int) -> list[str]:
         
     # Post-processing to avoid widows
     if len(chunks) > 1:
-        while len(chunks[-1]) < 150 and len(chunks) > 1:
+        while len(chunks[-1]) < 200 and len(chunks) > 1:
             # Take the previous chunk
             previous_chunk = chunks[-2]
             
@@ -174,8 +174,8 @@ def create_insta_images():
         # --- Create Additional Images for Content Blocks ---
         processed_blocks = []
         for block in article_content.content_blocks:
-            if block.paragraph and len(block.paragraph) > 440:
-                chunks = split_text_into_chunks(block.paragraph, 440)
+            if block.paragraph and len(block.paragraph) > 500:
+                chunks = split_text_into_chunks(block.paragraph, 500)
                 
                 # First chunk with headline
                 first_chunk_block = ContentBlock(headline=block.headline, paragraph=chunks[0])
@@ -296,7 +296,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
     
     # Heuristic for character wrapping based on available width and font size
     h2_chars_per_line = int(available_text_width / (h2_font_size * 0.6)) if h2_font_size > 0 else 30
-    p_chars_per_line = int(available_text_width / (p_font_size * 0.6)) if p_font_size > 0 else 40
+    p_chars_per_line = int(available_text_width / (p_font_size * 0.5)) if p_font_size > 0 else 40
 
     wrapped_h2 = ""
     if block.headline:
@@ -334,7 +334,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
 
     # --- Positioning and Drawing ---
     block_y_start = (img_height - total_combined_block_height) / 2
-    block_x_start = (img_width - max_text_width) / 2
+    block_x_start = padding_x # Align to the left with padding
 
     # Draw a blurred, transparent background rectangle for the text
     if wrapped_h2 or wrapped_p:
@@ -343,7 +343,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
 
         rect_x0 = block_x_start - rect_padding_x
         rect_y0 = block_y_start - rect_padding_y
-        rect_x1 = block_x_start + max_text_width + rect_padding_x
+        rect_x1 = block_x_start + max_text_width + rect_padding_x # Adjust rect_x1 to align with left-aligned text
         rect_y1 = block_y_start + total_combined_block_height + rect_padding_y
 
         # Create a new layer for the rectangle
@@ -351,7 +351,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
         rect_draw = ImageDraw.Draw(rect_layer)
 
         # Draw the rectangle with transparency
-        rect_color = (19, 123, 181, 100)  # #137bb5 with opacity
+        rect_color = (0, 0, 0, 100)  # #137bb5 with opacity
         rect_draw.rectangle(
             [(rect_x0, rect_y0), (rect_x1, rect_y1)],
             fill=rect_color
