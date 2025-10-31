@@ -8,6 +8,8 @@ from src.models import ArticleContent, ContentBlock
 import re
 from src.tags import TAGS
 
+MAX_PARAGRAPH_LENGTH = 450
+
 # --- Logging Configuration ---
 logger = logging.getLogger("pipeline")
 
@@ -184,8 +186,8 @@ def create_insta_images():
         # --- Create Additional Images for Content Blocks ---
         processed_blocks = []
         for block in article_content.content_blocks:
-            if block.paragraph and len(block.paragraph) > 450:
-                chunks = split_text_into_chunks(block.paragraph, 450)
+            if block.paragraph and len(block.paragraph) > MAX_PARAGRAPH_LENGTH:
+                chunks = split_text_into_chunks(block.paragraph, MAX_PARAGRAPH_LENGTH)
                 
                 # First chunk with headline
                 first_chunk_block = ContentBlock(headline=block.headline, paragraph=chunks[0])
