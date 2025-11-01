@@ -8,7 +8,8 @@ def get_pipeline_steps():
         "Generate articles",
         "Generate image prompt",
         "Generate image",
-        "Create Instagram images"
+        "Create Instagram images",
+        "Generate Instagram captions"
     ]
 
 def main():
