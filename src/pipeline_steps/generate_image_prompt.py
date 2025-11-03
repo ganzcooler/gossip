@@ -19,8 +19,7 @@ def generate_image_prompt(article: SingleArticle, logger: logging.Logger) -> str
                     complete_article=full_article
                 ),
                 config=types.GenerateContentConfig(
-                    temperature=0.2,
-                    thinking_config=types.ThinkingConfig(thinking_budget=0) # Disables thinking
+                    temperature=0.2
                 )
             )
 

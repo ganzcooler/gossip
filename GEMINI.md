@@ -12,8 +12,9 @@ The core workflow is as follows:
 3.  **AI Article Generation:** The extracted text is fed to a Google GenAI model (`gemini-2.5-pro`) using a detailed German prompt (from `src/prompts.py`) to generate multiple, slightly ironic, journalistic articles in HTML format.
 4.  **AI Image Generation:** For each article, a separate AI prompt is generated (`gemini-2.5-flash`) and then used to create a hero image with a text-to-image model (`imagen-3.0-generate-002`).
 5.  **Instagram Formatting:** A final step processes the generated images and articles, cropping the images to a 4:5 aspect ratio and overlaying them with the article headline and a logo (`res/logo-gossip.png`) to create Instagram-ready posts.
+6.  **AI Caption Generation:** For each article, an Instagram caption is generated using a GenAI model.
 
-The generated content is saved in the `articles/` (HTML), `generated_images/` (raw generated images), and `insta_images/` (Instagram-formatted images) directories.
+The generated content is saved in the `articles/` (HTML), `generated_images/` (raw generated images), and `insta_images/` (Instagram-formatted images and captions) directories.
 
 ### Key Technologies
 - **Backend:** Python
@@ -41,16 +42,16 @@ GOOGLE_API_KEY = "your_api_key_here"
 ### 3. Execution
 The main entry point is `main.py`.
 
-- **To run the full pipeline (PDF -> Articles -> Images -> Instagram Posts):**
+- **To run the full pipeline (PDF -> Articles -> Images -> Instagram Posts -> Captions):**
   Place your PDF files in the `pdf_files/` directory and run:
   ```bash
   python main.py
   ```
 
-- **To run only the Instagram image generation step:**
-  This assumes that articles and images have already been generated.
+- **To run only specific steps of the pipeline:**
+  Use the `--steps` flag to select which steps to run.
   ```bash
-  python main.py --insta-only
+  python main.py --steps
   ```
 
 ## Development Conventions

@@ -1,4 +1,6 @@
 import time
+import pathlib
+from bs4 import BeautifulSoup
 
 from src.insta_images import create_insta_images
 from src.pipeline_steps.setup_logger import setup_logger
@@ -10,6 +12,7 @@ from src.pipeline_steps.save_article import save_article
 from src.pipeline_steps.generate_image_prompt import generate_image_prompt
 from src.pipeline_steps.generate_image import generate_image
 from src.pipeline_steps.save_image import save_image
+from src.pipeline_steps.generate_insta_caption import generate_insta_caption
 from src import config
 
 def run_pipeline(selected_steps: list[str] | None = None):
@@ -22,6 +25,7 @@ def run_pipeline(selected_steps: list[str] | None = None):
         run_generate_image_prompt = True
         run_generate_image = True
         run_create_insta_images = True
+        run_generate_insta_caption = True
     else:
         assert selected_steps is not None
         # Determine which parts of the main pipeline to run based on selection
@@ -29,14 +33,15 @@ def run_pipeline(selected_steps: list[str] | None = None):
         run_generate_image_prompt = any(s in selected_steps for s in ["Generate image prompt", "Generate image"])
         run_generate_image = "Generate image" in selected_steps
         run_create_insta_images = "Create Instagram images" in selected_steps
+        run_generate_insta_caption = "Generate Instagram captions" in selected_steps
 
     try:
         if run_generate_articles:
             pdf_files = find_pdf_files(logger)
             if not pdf_files:
                 logger.info("No PDF files found.")
-                # Still need to check if we should run insta_images
-                if not run_create_insta_images:
+                # Still need to check if we should run other steps
+                if not run_create_insta_images and not run_generate_insta_caption:
                     return
 
             for pdf_filepath in pdf_files:
@@ -79,6 +84,29 @@ def run_pipeline(selected_steps: list[str] | None = None):
             logger.info("--- Starting Instagram image generation ---")
             create_insta_images()
             logger.info("--- Finished Instagram image generation ---")
-            
+
+        if run_generate_insta_caption:
+            logger.info("--- Starting Instagram caption generation ---")
+            articles_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
+            article_files = list(articles_dir.glob('*.html'))
+
+            if not article_files:
+                logger.warning("No article files found to generate captions for.")
+            else:
+                for article_path in article_files:
+                    try:
+                        with open(article_path, "r", encoding="utf-8") as f:
+                            # Use BeautifulSoup to get the full text content
+                            soup = BeautifulSoup(f, "html.parser")
+                            article_content = soup.get_text(separator=" ", strip=True)
+                        
+                        generate_insta_caption(article_content, article_path.stem, logger)
+                        time.sleep(config.API_CALL_DELAY_SECONDS) # Be respectful to the API
+
+                    except Exception as e:
+                        logger.error(f"Failed to process article {article_path.name} for caption generation: {e}", exc_info=True)
+            logger.info("--- Finished Instagram caption generation ---")
+
     except Exception as e:
         logger.error(f"An unexpected error occurred in the pipeline: {e}", exc_info=True)
+
