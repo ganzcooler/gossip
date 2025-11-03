@@ -25,8 +25,7 @@ def generate_insta_caption(article_content: str, article_stem: str, logger: logg
                     complete_article=article_content
                 ),
                 config=types.GenerateContentConfig(
-                    temperature=0.7, # Higher temperature for more creative captions
-                    thinking_config=types.ThinkingConfig(thinking_budget=0) # Disables thinking
+                    temperature=1, # Higher temperature for more creative captions
                 )
             )
 

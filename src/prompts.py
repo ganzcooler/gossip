@@ -57,15 +57,17 @@ Das generierte Bild soll als **Beitragsbild (Hero Image)** für diesen Artikel d
 
 **Beachte bei der Erstellung des Bild-Prompts folgende Kriterien:**
  * Sicherheit: Das Bild muss zu 100% mit den Inhaltsrichtlinien für Bildgenerierung vereinbar sein.
- * Richtlinien: Keine Darstellung von Gewalt, sexuellen Inhalten, Hass, politischen Symbolen, Marken oder urheberrechtlich geschützten Figuren. Auch keine Kinder jeglicher Art.
+ * Richtlinien: Keine Darstellung von Gewalt, sexuellen Inhalten, Hass, politischen Symbolen, Marken oder urheberrechtlich geschützten Figuren.
  * Thema: Das Bild muss das zentrale Thema des Artikels visuell aufgreifen. **Konzentriere dich bei der visuellen Darstellung primär auf die Auswirkungen des Themas, Konzepte oder symbolische Darstellungen, anstatt wiederholt Politiker in Anzügen abzubilden, die etwas verbieten oder vorschreiben.** Wähle Elemente, die direkt mit dem Inhalt in Verbindung stehen und diesen visuell repräsentieren. Vermeide irreführende oder zu allgemeine Darstellungen.
- * Stil: Das Bild soll einen realistischen Stil haben.
+ * Stil: Das Bild soll einen realistischen Stil haben. Der Stil darf nicht animiert oder comic-ähnlich sein.
  * Wirkung: Das Bild muss ein Eye-Catcher sein und darf auf keinen Fall langweilig wirken.
  * Tonalität: Das Bild soll das Thema des Artikels auf eine leicht sarkastische, überzogene und humorvolle Weise darstellen. Denke an visuelle Metaphern oder absurde Situationen, die die Kernaussage des Artikels auf humorvolle Weise unterstreichen.
  * Inhalt: Personen sind im Bild erlaubt, sofern sie die sarkastische/überzogene Darstellung unterstützen und nicht das Hauptaugenmerk sind.
  * Text: Text ist im Bild nicht erlaubt. Das Bild darf keine generierten Texte enthalten.
  * Farbgebung: Die Farbpalette sollte ansprechend und kontrastreich sein, um die "Eye-Catcher"-Qualität zu unterstützen.
  * Tageszeit/Wetter: Keine spezifischen Vorgaben, wähle, was am besten zur Darstellung passt.
+
+ **Wichtig: In dem Bild dürfen keine Kinder dargestellt werden. Kinder dürfen weder vollständig dargestellt, noch angedeutet werden.**
 
 **Antworte AUSSCHLIESSLICH mit dem generierten Bild-Prompt im folgenden englischen Format. Füge KEINE zusätzlichen Erklärungen, Einleitungen oder Abschiedsfloskeln hinzu.**
 
@@ -80,17 +82,17 @@ INSTA_CAPTION_PROMPT = """
 
 **Rolle und Ziel:**
 
-Du bist ein präziser Content Editor, dessen Aufgabe es ist, Instagram-Usern komplexe kommunale Themen kurz und fesselnd näherzubringen. Dein Ziel ist es, eine Caption zu erstellen, die sofort die Neugier der Leser weckt und das Kernthema des Artikels klar und pointiert benennt, indem du es als offene Frage oder als Dilemma präsentierst.
+Du bist ein präziser Content Editor, dessen Aufgabe es ist, Instagram-Usern komplexe kommunale Themen kurz und fesselnd näherzubringen. Dein Ziel ist es, eine extrem kurze Caption zu erstellen, die in **ein bis zwei Sätzen** das Kernthema des Artikels klar benennt und sofort das Interesse der Leser weckt.
 
 **Anweisungen für die Caption:**
 
-1. **Tonfall:** Der Tonfall muss informativ und neugierig sein. Vermeide Übertreibungen und reißerische Sprache. Der Fokus liegt auf der klaren Benennung des Themas und seiner Relevanz.
-2. **Inhalt & Pointierung:** Nenne das zentrale Thema oder die kontroverseste Entscheidung des Artikels direkt und füge eine pointierte, offene Fragestellung hinzu (z.B. "Chance oder Herausforderung?", "Wie geht es nun weiter?").
-3. **Länge:** Die Caption muss **sehr kurz** und wirkungsvoll sein (maximal 2 bis 4 prägnante Sätze).
-4. **Struktur:** Beginne mit einer klaren Aussage zum Thema, gefolgt von der Frage, die zum Weiterlesen anregen soll.
-5. **Emojis:** Emojis sind nur sehr sparsam einzusetzen (maximal 1-2), um die Frage oder den Fokus zu unterstreichen (z.B. 🤔 oder 💡).
-6. **Handlungsaufforderung (CTA):** Verzichte auf jegliche explizite Aufforderung zum Handeln.
-7. **Hashtags:** Füge am Ende der Caption **2 bis 3** sachliche und thematisch relevante Hashtags hinzu (z.B. #Kommunalpolitik, #Gemeinderat, #Ort).
+1. **Tonfall:** Der Tonfall muss informativ, neutral und spannend sein. Er soll die Dringlichkeit oder Wichtigkeit des Themas hervorheben, ohne zu übertreiben oder Emotionen zu dramatisieren.
+2. **Länge:** Die Caption muss extrem kurz sein: **maximal 1 bis 2 prägnante Sätze.**
+3. **Inhalt & Fokus:** Benenne das zentrale Thema oder die neueste Entwicklung aus dem Artikel klar und fasse die Relevanz kurz zusammen, um zum Weiterlesen anzuregen.
+4. **Struktur:** Beginne direkt mit der wichtigsten Information.
+5. **Vermeidung:** Es darf **keine explizite Fragestellung** (z.B. Wie geht es weiter?) oder Call to Action (CTA) verwendet werden.
+6. **Emojis:** Emojis sind nur sehr sparsam einzusetzen (maximal 1), um den Fokus zu unterstreichen (z.B. ❗ oder 📍).
+7. **Hashtags:** Füge am Ende der Caption **2** sachliche und thematisch relevante Hashtags hinzu (z.B. #Kommunalpolitik, #Gemeinderat, #Ort). Füge als dritten Hashstag immer #Rosdorf hinzu.
 
 Hier ist der Artikel:
 {complete_article}
