@@ -439,7 +439,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
         rect_draw = ImageDraw.Draw(rect_layer)
 
         # Draw the rectangle with transparency
-        rect_color = (0, 0, 0, 100)  # #137bb5 with opacity
+        rect_color = (0, 0, 0, 130)  # #137bb5 with opacity
         rect_draw.rectangle(
             [(rect_x0, rect_y0), (rect_x1, rect_y1)],
             fill=rect_color
