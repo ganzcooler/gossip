@@ -5,7 +5,7 @@ from src.models import SingleArticle
 from src.utils import sanitize_filename
 
 def save_image(image_bytes: bytes, article: SingleArticle, pdf_filename: str, logger: logging.Logger):
-    """Saves the image as a JPG file."""
+    """Saves the image as a PNG file."""
     sane_pdf_name = sanitize_filename(pathlib.Path(pdf_filename).stem)
     sane_headline = sanitize_filename(article.ueberschrift)
 
@@ -18,10 +18,10 @@ def save_image(image_bytes: bytes, article: SingleArticle, pdf_filename: str, lo
     images_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
     images_dir.mkdir(parents=True, exist_ok=True)
 
-    image_filepath = images_dir / f"{base_filename}.jpg"
+    image_filepath = images_dir / f"{base_filename}.png"
     counter = 1
     while image_filepath.exists():
-        image_filepath = images_dir / f"{base_filename}_{counter}.jpg"
+        image_filepath = images_dir / f"{base_filename}_{counter}.png"
         counter += 1
 
     try:
