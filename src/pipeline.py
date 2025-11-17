@@ -108,6 +108,7 @@ def run_pipeline(selected_steps: list[str] | None = None):
                 if run_generate_image_prompt:
                     # Check which articles need images
                     images_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
+                    articles_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
                     articles_to_process = []
                     for article in articles:
                         sane_pdf_name = sanitize_filename(pdf_filepath.stem)
