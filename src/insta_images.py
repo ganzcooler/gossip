@@ -167,6 +167,7 @@ def create_insta_images():
             logger.warning(f"Skipping image {image_path.name} due to missing article or H1 headline.")
             continue
 
+        headline_text = article_content.h1
         # --- Create First (Main) Image ---
         main_dest_path = dest_dir / f"{image_path.stem}.jpg"
         cropped_img = None
@@ -176,7 +177,7 @@ def create_insta_images():
             try:
                 with Image.open(image_path) as img:
                     cropped_img = crop_image_to_aspect(img, 4 / 5)
-                    final_img = create_main_image(cropped_img, article_content.h1, image_path.stem)
+                    final_img = create_main_image(cropped_img, headline_text, image_path.stem)
                     final_img.convert('RGB').save(main_dest_path, 'jpeg', quality=90)
                     logger.info(f"Successfully processed and saved main image: {main_dest_path}")
             except Exception as e:
