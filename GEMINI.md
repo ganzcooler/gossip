@@ -61,6 +61,20 @@ The main entry point is `main.py`.
     - `config.py`: Centralized configuration for paths, model names, and API settings.
     - `prompts.py`: Contains the large, detailed prompts for the AI models. This is the heart of the content's tone and style.
     - `insta_images.py`: Logic dedicated to formatting images for Instagram.
+    - `models.py`: Defines Pydantic models for data validation and serialization.
+    - `tags.py`: Manages content tagging for generated articles.
+    - `utils.py`: Contains various utility functions used across the project.
+    - `pipeline_steps/`: A directory containing individual steps of the content generation pipeline:
+        - `check_existing_articles.py`: Checks for already generated articles to prevent reprocessing.
+        - `extract_text.py`: Extracts text content from PDF documents.
+        - `find_pdf_files.py`: Locates PDF files in the input directory.
+        - `generate_articles.py`: Generates journalistic articles using an AI model.
+        - `generate_image_prompt.py`: Creates prompts for AI image generation.
+        - `generate_image.py`: Generates hero images based on AI prompts.
+        - `generate_insta_caption.py`: Generates Instagram captions for the articles.
+        - `save_article.py`: Saves the generated HTML articles to files.
+        - `save_image.py`: Saves the generated images to files.
+        - `setup_logger.py`: Configures the logging system for the pipeline.
 - **Configuration:** All major settings (file paths, model names, API delays) are managed in `src/config.py`.
 - **Logging:** The pipeline implements comprehensive logging, outputting to both the console and a timestamped log file in the `logs/` directory for each run.
 - **Idempotency:** The pipeline has checks to avoid re-generating articles and images that already exist for a given PDF, making it safe to re-run.
