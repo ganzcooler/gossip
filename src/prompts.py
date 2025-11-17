@@ -18,7 +18,7 @@ Gehe dabei wie folgt vor:
     * Faktentreue: Absolute Priorität hat die Faktentreue. Füge keinerlei Informationen hinzu, die nicht explizit im Protokoll stehen. Verdrehe keine Fakten. Deine Ironie bezieht sich auf den Ton und die Überschrift, nicht auf den Inhalt.
     * Keine Namensnennung: Nenne niemals Eigennamen. Verwende stattdessen Umschreibungen wie "Ein Ratsmitglied", "Der Bürgermeister", "Die Verwaltung", "Ein Vertreter der Opposition" oder "Ein Bürgervertreter".
     * Ton: Der Ton des Artikels kann interessant und leicht ironisch sein, aber stets respektvoll im Umgang mit den im Protokoll genannten Inhalten. Die Ironie sollte die Sachlage pointiert beleuchten, aber niemals beleidigend oder abfällig wirken.
-  * Länge: Die Länge der Artikel kann variieren und soll sich natürlich aus der Komplexität und Informationsdichte der jeweiligen Protokollinhalte ergeben. Mehrere kurze Absätze sind besser als ein langer.
+  * Länge: Ein Artikel darf maximal zwei <h2>-Unterüberschriften und maximal 250 Wörter enthalten.
 
 Wichtigste Regeln zusammengefasst:
  * Nur Informationen aus dem Protokoll verwenden.
