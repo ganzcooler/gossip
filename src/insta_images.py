@@ -169,7 +169,7 @@ def create_insta_images():
 
         headline_text = article_content.h1
         # --- Create First (Main) Image ---
-        main_dest_path = dest_dir / f"{image_path.stem}.jpg"
+        main_dest_path = dest_dir / f"{image_path.stem}.png"
         cropped_img = None
         if main_dest_path.exists():
             logger.info(f"Main image already exists, skipping creation: {main_dest_path}")
@@ -178,7 +178,7 @@ def create_insta_images():
                 with Image.open(image_path) as img:
                     cropped_img = crop_image_to_aspect(img, 4 / 5)
                     final_img = create_main_image(cropped_img, headline_text, image_path.stem)
-                    final_img.convert('RGB').save(main_dest_path, 'jpeg', quality=90)
+                    final_img.save(main_dest_path, 'PNG', compress_level=9)
                     logger.info(f"Successfully processed and saved main image: {main_dest_path}")
             except Exception as e:
                 logger.error(f"Failed to create main image for {image_path.name}: {e}", exc_info=True)
@@ -229,7 +229,7 @@ def create_insta_images():
                 i += 1
 
         for i, block_to_render in enumerate(processed_blocks):
-            part_dest_path = dest_dir / f"{image_path.stem}_part{i+1}.jpg"
+            part_dest_path = dest_dir / f"{image_path.stem}_part{i+1}.png"
             if part_dest_path.exists():
                 logger.info(f"Part image already exists, skipping: {part_dest_path}")
                 continue
@@ -242,7 +242,7 @@ def create_insta_images():
 
                 blurred_img = cropped_img.filter(ImageFilter.GaussianBlur(radius=3))
                 final_part_img = create_content_image(blurred_img, block_to_render)
-                final_part_img.convert('RGB').save(part_dest_path, 'jpeg', quality=90)
+                final_part_img.save(part_dest_path, 'PNG', compress_level=9)
                 logger.info(f"Successfully processed and saved part image: {part_dest_path}")
             except Exception as e:
                 logger.error(f"Failed to create part image for {image_path.name}: {e}", exc_info=True)
