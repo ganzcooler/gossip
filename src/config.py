@@ -33,7 +33,7 @@ INSTA_IMAGES_DIR_NAME = "insta_images"
 
 
 # --- Model Names ---
-GENAI_ARTICLE_GENERATION_MODEL = "gemini-2.5-pro"
+GENAI_ARTICLE_GENERATION_MODEL = "gemini-3-pro-preview"
 GENAI_IMAGE_PROMPT_MODEL = "gemini-2.5-flash"
 GENAI_IMAGE_GENERATION_MODEL = "imagen-4.0-generate-001"
 

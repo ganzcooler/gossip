@@ -17,7 +17,6 @@ def generate_articles(text: str, logger: logging.Logger) -> List[SingleArticle]:
                 model=config.GENAI_ARTICLE_GENERATION_MODEL,
                 contents=prompts.GENAI_JOURNALISTIC_ARTICLE_PROMPT.replace("{PROTOCOL_TEXT}", text),
                 config=types.GenerateContentConfig(
-                    temperature=0.2,
                     response_mime_type='application/json',
                     response_schema=LLMGeneratedArticles
                 )
