@@ -11,19 +11,20 @@ def generate_image(prompt: str, logger: logging.Logger) -> bytes:
     for attempt in range(max_retries):
         try:
             client = genai.Client(api_key=config.load_google_api_key())
-            response = client.models.generate_images(
+            response = client.models.generate_content(
                 model=config.GENAI_IMAGE_GENERATION_MODEL,
-                prompt=prompt,
-                config=types.GenerateImagesConfig(
-                    number_of_images=1,
-                    aspectRatio="16:9"
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    image_config=types.ImageConfig( # type: ignore
+                        aspect_ratio="16:9"
+                    )
                 )
             )
 
-            if response.generated_images:
-                # Assuming we only want the first image
-                logger.info(f"Successfully generated image on attempt {attempt + 1}.")
-                return response.generated_images[0].image.image_bytes
+            for part in response.parts: # type: ignore
+                if part.inline_data:
+                    logger.info(f"Successfully generated image on attempt {attempt + 1}.")
+                    return part.inline_data.data # type: ignore
 
             logger.warning(f"No image data found in response on attempt {attempt + 1}/{max_retries}.")
 
