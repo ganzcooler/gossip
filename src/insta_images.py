@@ -258,7 +258,7 @@ def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Im
     # --- Gradients ---
     bottom_gradient_height = int(gradient_height * 0.4)
     for y in range(bottom_gradient_height):
-        alpha = int(220 * (y / bottom_gradient_height))
+        alpha = int(230 * (y / bottom_gradient_height))
         draw.line([(0, gradient_height - bottom_gradient_height + y), (gradient_width, gradient_height - bottom_gradient_height + y)], fill=(0, 0, 0, alpha))
 
     top_gradient_height = int(gradient_height * 0.2)
@@ -424,7 +424,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
         rect_draw = ImageDraw.Draw(rect_layer)
 
         # Draw the rectangle with transparency
-        rect_color = (0, 0, 0, 130)  # #137bb5 with opacity
+        rect_color = (0, 0, 0, 140)  # #137bb5 with opacity
         rect_draw.rectangle(
             [(rect_x0, rect_y0), (rect_x1, rect_y1)],
             fill=rect_color
