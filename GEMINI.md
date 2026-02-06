@@ -9,9 +9,9 @@ This project is a Python-based pipeline designed to automate the creation of jou
 The core workflow is as follows:
 1.  **PDF Ingestion:** It processes PDF files from the `pdf_files/` directory.
 2.  **Text Extraction:** Text is extracted from the PDFs using the `PyMuPDF` library.
-3.  **AI Article Generation:** The extracted text is fed to a Google GenAI model (`gemini-2.5-pro`) using a detailed German prompt (from `src/prompts.py`) to generate multiple, slightly ironic, journalistic articles in HTML format.
-4.  **AI Image Generation:** For each article, a separate AI prompt is generated (`gemini-2.5-flash`) and then used to create a hero image with a text-to-image model (`imagen-3.0-generate-002`).
-5.  **Instagram Formatting:** A final step processes the generated images and articles, cropping the images to a 4:5 aspect ratio and overlaying them with the article headline and a logo (`res/logo-gossip.png`) to create Instagram-ready posts.
+3.  **AI Article Generation:** The extracted text is fed to a Google GenAI model (`gemini-3-pro-preview`) using a detailed German prompt (from `src/prompts.py`) to generate multiple, slightly ironic, journalistic articles in HTML format.
+4.  **AI Image Generation:** For each article, a separate AI prompt is generated (`gemini-2.5-flash`) and then used to create a hero image in **4:5 aspect ratio** with a text-to-image model (`gemini-2.5-flash-image`).
+5.  **Instagram Formatting:** A final step processes the generated images and articles, overlaying them with the article headline and a logo (`res/logo-gossip.png`) to create Instagram-ready posts. Since images are generated in 4:5, no further cropping is required.
 6.  **AI Caption Generation:** For each article, an Instagram caption is generated using a GenAI model.
 
 The generated content is saved in the `articles/` (HTML), `generated_images/` (raw generated images), and `insta_images/` (Instagram-formatted images and captions) directories.
@@ -32,11 +32,10 @@ pip install -r requirements.txt
 ```
 
 ### 2. Configuration
-The application requires a Google API key. Create a `config.ini` file in the project root directory with the following structure:
+The application requires a Google API key. Create a `.env` file in the project root directory with the following structure:
 
-```ini
-[genai]
-GOOGLE_API_KEY = "your_api_key_here"
+```env
+GOOGLE_API_KEY="your_api_key_here"
 ```
 
 ### 3. Execution
@@ -70,7 +69,7 @@ The main entry point is `main.py`.
         - `find_pdf_files.py`: Locates PDF files in the input directory.
         - `generate_articles.py`: Generates journalistic articles using an AI model.
         - `generate_image_prompt.py`: Creates prompts for AI image generation.
-        - `generate_image.py`: Generates hero images based on AI prompts.
+        - `generate_image.py`: Generates hero images based on AI prompts in 4:5 format.
         - `generate_insta_caption.py`: Generates Instagram captions for the articles.
         - `save_article.py`: Saves the generated HTML articles to files.
         - `save_image.py`: Saves the generated images to files.

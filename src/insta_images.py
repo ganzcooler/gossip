@@ -170,14 +170,14 @@ def create_insta_images():
         headline_text = article_content.h1
         # --- Create First (Main) Image ---
         main_dest_path = dest_dir / f"{image_path.stem}.png"
-        cropped_img = None
+        base_img = None
         if main_dest_path.exists():
             logger.info(f"Main image already exists, skipping creation: {main_dest_path}")
         else:
             try:
                 with Image.open(image_path) as img:
-                    cropped_img = crop_image_to_aspect(img, 4 / 5)
-                    final_img = create_main_image(cropped_img, headline_text, image_path.stem)
+                    base_img = img.copy()
+                    final_img = create_main_image(base_img, headline_text, image_path.stem)
                     final_img.save(main_dest_path, 'PNG', compress_level=9)
                     logger.info(f"Successfully processed and saved main image: {main_dest_path}")
             except Exception as e:
@@ -235,32 +235,17 @@ def create_insta_images():
                 continue
             
             try:
-                # Ensure we have the cropped image to blur
-                if cropped_img is None:
+                # Ensure we have the base image to blur
+                if base_img is None:
                     with Image.open(image_path) as img:
-                        cropped_img = crop_image_to_aspect(img, 4 / 5)
+                        base_img = img.copy()
 
-                blurred_img = cropped_img.filter(ImageFilter.GaussianBlur(radius=3))
+                blurred_img = base_img.filter(ImageFilter.GaussianBlur(radius=3))
                 final_part_img = create_content_image(blurred_img, block_to_render)
                 final_part_img.save(part_dest_path, 'PNG', compress_level=9)
                 logger.info(f"Successfully processed and saved part image: {part_dest_path}")
             except Exception as e:
                 logger.error(f"Failed to create part image for {image_path.name}: {e}", exc_info=True)
-
-
-def crop_image_to_aspect(img: Image.Image, target_aspect: float) -> Image.Image:
-    """Crops an image to a target aspect ratio from the center."""
-    width, height = img.size
-    if width / height > target_aspect:
-        new_width = int(height * target_aspect)
-        left = (width - new_width) / 2
-        right = left + new_width
-        return img.crop((left, 0, right, height))
-    else:
-        new_height = int(width / target_aspect)
-        top = (height - new_height) / 2
-        bottom = top + new_height
-        return img.crop((0, top, width, bottom))
 
 
 def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Image.Image:
@@ -273,7 +258,7 @@ def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Im
     # --- Gradients ---
     bottom_gradient_height = int(gradient_height * 0.4)
     for y in range(bottom_gradient_height):
-        alpha = int(220 * (y / bottom_gradient_height))
+        alpha = int(230 * (y / bottom_gradient_height))
         draw.line([(0, gradient_height - bottom_gradient_height + y), (gradient_width, gradient_height - bottom_gradient_height + y)], fill=(0, 0, 0, alpha))
 
     top_gradient_height = int(gradient_height * 0.2)
@@ -337,7 +322,7 @@ def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Im
         font = ImageFont.load_default()
 
     avg_char_width = font.getlength("x") if hasattr(font, 'getlength') else font.getsize("x")[0] # type: ignore
-    max_chars_per_line = int((base_img.width * 0.9) / avg_char_width) if avg_char_width > 0 else 20
+    max_chars_per_line = int((base_img.width * 0.85) / avg_char_width) if avg_char_width > 0 else 20
     wrapped_text = "\n".join(textwrap.wrap(text.upper(), width=max_chars_per_line))
 
     text_bbox = draw.multiline_textbbox((0, 0), wrapped_text, font=font, align="center")
@@ -439,7 +424,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
         rect_draw = ImageDraw.Draw(rect_layer)
 
         # Draw the rectangle with transparency
-        rect_color = (0, 0, 0, 130)  # #137bb5 with opacity
+        rect_color = (0, 0, 0, 140)  # #137bb5 with opacity
         rect_draw.rectangle(
             [(rect_x0, rect_y0), (rect_x1, rect_y1)],
             fill=rect_color

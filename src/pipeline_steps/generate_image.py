@@ -16,7 +16,7 @@ def generate_image(prompt: str, logger: logging.Logger) -> bytes:
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     image_config=types.ImageConfig( # type: ignore
-                        aspect_ratio="16:9"
+                        aspect_ratio="4:5"
                     )
                 )
             )
