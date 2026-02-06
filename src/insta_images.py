@@ -322,7 +322,7 @@ def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Im
         font = ImageFont.load_default()
 
     avg_char_width = font.getlength("x") if hasattr(font, 'getlength') else font.getsize("x")[0] # type: ignore
-    max_chars_per_line = int((base_img.width * 0.9) / avg_char_width) if avg_char_width > 0 else 20
+    max_chars_per_line = int((base_img.width * 0.85) / avg_char_width) if avg_char_width > 0 else 20
     wrapped_text = "\n".join(textwrap.wrap(text.upper(), width=max_chars_per_line))
 
     text_bbox = draw.multiline_textbbox((0, 0), wrapped_text, font=font, align="center")
