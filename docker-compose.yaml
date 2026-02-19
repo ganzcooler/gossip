@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   app:
     build: .
@@ -16,13 +14,12 @@ services:
       - ./logs:/app/logs
     networks:
       - internal
-      - traefik
+      - traefik-proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.gossip-app.rule=Host(`${TRAEFIK_HOST}`)"
-      - "traefik.http.routers.gossip-app.entrypoints=websecure"
-      - "traefik.http.routers.gossip-app.tls.certresolver=cloudflare"
-      - "traefik.http.services.gossip-app.loadbalancer.server.port=8000"
+      - "traefik.http.routers.actual.rule=Host(`gossip.dano1.de`)"
+      - "traefik.http.routers.actual.entrypoints=web"
+      - "traefik.http.services.actual.loadbalancer.server.port=8000"
 
   postgres:
     image: postgres:16
@@ -49,5 +46,5 @@ volumes:
 networks:
   internal:
     internal: true
-  traefik:
+  traefik-proxy:
     external: true
