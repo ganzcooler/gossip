@@ -1,0 +1,44 @@
+[run]
+source = app
+omit = 
+    */tests/*
+    */test_*
+    */__pycache__/*
+    */venv/*
+    */.venv/*
+    */env/*
+    */.env/*
+    alembic/*
+    app/main.py
+    app/scheduler.py
+    app/logging_config.py
+    app/database.py
+    app/services/article_generator.py
+    app/services/image_generator.py
+    app/services/caption_generator.py
+    app/services/insta_generator.py
+branch = True
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    pass
+    \.\.\.
+    logger\.
+    logging\.
+    @abstractmethod
+
+skip_covered = False
+show_missing = True
+precision = 2
+
+[html]
+directory = htmlcov
+
+[xml]
+output = coverage.xml
