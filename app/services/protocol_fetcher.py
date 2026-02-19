@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.config import SESSIONNET_BASE_URL
+from app.core.config import SESSIONNET_BASE_URL
 from app.models import Protocol
 from app.services.duplicate_detector import check_duplicate
 from app.utils.sessionnet import calculate_sessionnet_params

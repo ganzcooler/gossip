@@ -1,13 +1,17 @@
 import time
 import logging
+from pathlib import Path
 from google import genai
 from google.genai import types
-from src import config, prompts
-import pathlib
 
-def generate_insta_caption(article_content: str, article_stem: str, logger: logging.Logger):
+from app.core import config
+from app.core import prompts
+
+logger = logging.getLogger(__name__)
+
+
+def generate_insta_caption(article_content: str, article_stem: str, caption_dir: Path):
     """Generates and saves an Instagram caption for an article."""
-    caption_dir = config.PROJECT_ROOT / config.INSTA_IMAGES_DIR_NAME
     caption_path = caption_dir / f"{article_stem}_caption.txt"
 
     if caption_path.is_file():
@@ -20,12 +24,12 @@ def generate_insta_caption(article_content: str, article_stem: str, logger: logg
         try:
             client = genai.Client(api_key=config.load_google_api_key())
             response = client.models.generate_content(
-                model=config.GENAI_IMAGE_PROMPT_MODEL, # Using the same model as image prompt for now
+                model=config.GENAI_IMAGE_PROMPT_MODEL,
                 contents=prompts.INSTA_CAPTION_PROMPT.format(
                     complete_article=article_content
                 ),
                 config=types.GenerateContentConfig(
-                    temperature=1, # Higher temperature for more creative captions
+                    temperature=1,
                 )
             )
 
@@ -36,10 +40,10 @@ def generate_insta_caption(article_content: str, article_stem: str, logger: logg
 
                 # Save the caption to a file
                 caption_dir.mkdir(parents=True, exist_ok=True)
-                
+
                 with open(caption_path, "w", encoding="utf-8") as f:
                     f.write(caption)
-                
+
                 logger.info(f"Successfully saved caption to {caption_path}")
                 return
 

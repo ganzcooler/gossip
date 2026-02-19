@@ -1,23 +1,25 @@
 import pathlib
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
-from src import config
-import logging
-from bs4 import BeautifulSoup, Tag
-import textwrap
-from src.models import ArticleContent, ContentBlock
 import re
-from src.tags import TAGS
+import textwrap
+import logging
+from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from bs4 import BeautifulSoup, Tag
+
+from app.core import tags as tags_module
+from app.core.models import ArticleContent, ContentBlock
+from app.core.config import INSTA_IMAGES_DIR
+
+logger = logging.getLogger(__name__)
 
 MAX_PARAGRAPH_LENGTH = 450
-
-# --- Logging Configuration ---
-logger = logging.getLogger("pipeline")
 
 
 def find_tag(article_stem: str) -> str | None:
     """Finds a tag for the article based on its filename."""
     lower_stem = article_stem.lower()
-    for key, value in TAGS.items():
+    for key, value in tags_module.TAGS.items():
         if key.lower() in lower_stem:
             return value.upper()
     return None
@@ -30,7 +32,7 @@ def split_text_into_chunks(text: str, max_length: int) -> list[str]:
 
     chunks = []
     text = text.strip()
-    
+
     # Initial chunking logic
     while len(text) > max_length:
         split_pos = -1
@@ -38,46 +40,46 @@ def split_text_into_chunks(text: str, max_length: int) -> list[str]:
             pos = text.rfind(delimiter, 0, max_length)
             if pos > split_pos:
                 split_pos = pos
-        
+
         if split_pos == -1:
             split_pos = text.rfind(' ', 0, max_length)
-        
+
         if split_pos == -1:
             split_pos = max_length - 1
-        
+
         chunk = text[:split_pos+1].strip()
         chunks.append(chunk)
         text = text[split_pos+1:].strip()
 
     if text:
         chunks.append(text)
-        
+
     # Post-processing to avoid widows
     if len(chunks) > 1:
         while len(chunks[-1]) < 160 and len(chunks) > 1:
             # Take the previous chunk
             previous_chunk = chunks[-2]
-            
+
             # Split previous chunk into sentences
             sentences = re.split(r'(?<=[.!?])\s+', previous_chunk)
-            
+
             # Filter out empty strings that can result from re.split
             sentences = [s for s in sentences if s]
 
             if len(sentences) > 1:
                 # Move the last sentence
                 last_sentence = sentences.pop(-1)
-                
+
                 # Re-assemble the previous chunk
                 chunks[-2] = " ".join(sentences)
-                
+
                 # Prepend sentence to the last chunk
                 chunks[-1] = last_sentence + " " + chunks[-1]
             else:
                 # The previous chunk has only one sentence or cannot be split.
                 # Stop to avoid moving the whole chunk.
                 break
-    
+
     return chunks
 
 
@@ -98,7 +100,7 @@ def extract_article_content(article_path: pathlib.Path) -> ArticleContent | None
         if h1_tag:
             # Get all direct siblings after h1 that are tags
             siblings = [tag for tag in h1_tag.find_next_siblings() if isinstance(tag, Tag)]
-            
+
             i = 0
             while i < len(siblings):
                 element = siblings[i]
@@ -111,22 +113,22 @@ def extract_article_content(article_path: pathlib.Path) -> ArticleContent | None
                         headline=h2_tag.get_text(strip=True),
                         paragraph=p_tag.get_text(strip=True)
                     ))
-                    i += 2 # Move past both h2 and p
-                
+                    i += 2  # Move past both h2 and p
+
                 # Rule: Standalone p
                 elif element.name == 'p':
                     content_blocks.append(ContentBlock(
                         paragraph=element.get_text(strip=True)
                     ))
                     i += 1
-                
+
                 # Rule: Standalone h2 (without a directly following p)
                 elif element.name == 'h2':
                     content_blocks.append(ContentBlock(
                         headline=element.get_text(strip=True)
                     ))
                     i += 1
-                
+
                 # Ignore other tags
                 else:
                     i += 1
@@ -138,123 +140,51 @@ def extract_article_content(article_path: pathlib.Path) -> ArticleContent | None
         return None
 
 
-def create_insta_images():
-    """
-    Iterates through images, creates a primary image with headline, and then
-    creates additional blurred images for each content block in the article.
-    Long paragraphs are split into multiple images.
-    """
-    source_dir = config.PROJECT_ROOT / config.IMAGES_DIR_NAME
-    dest_dir = config.PROJECT_ROOT / config.INSTA_IMAGES_DIR_NAME
-    articles_dir = config.PROJECT_ROOT / config.ARTICLES_DIR_NAME
+def draw_logo(overlay: Image.Image, img_height: int, img_width: int, top_gradient_height: int, scale: float, res_dir: Path):
+    """Draws the project logo onto the overlay image."""
+    try:
+        logo_path = res_dir / "logo-gossip.png"
+        with Image.open(logo_path).convert("RGBA") as logo_img:
+            logo_side = int(img_height * 0.13 * scale)
+            if logo_side == 0:
+                return  # Avoid error with zero size
+            logo_img_resized = logo_img.resize((logo_side, logo_side), Image.Resampling.LANCZOS)
 
-    if not source_dir.is_dir():
-        logger.error(f"Source directory not found: {source_dir}")
-        return
+            padding = int(logo_side * 0.05)
+            bg_side = logo_side + 2 * padding
+            radius = int(bg_side * 0.2)
 
-    dest_dir.mkdir(parents=True, exist_ok=True)
+            bg_x = (img_width - bg_side) // 2
 
-    image_files = list(source_dir.glob('*.jpg')) + list(source_dir.glob('*.png'))
-    if not image_files:
-        logger.warning(f"No JPG or PNG images found in {source_dir}")
-        return
+            # For content images (smaller scale), position the logo at 2% from the top.
+            if scale < 1.0:  # This condition identifies content images
+                bg_y = int(img_height * 0.03)  # Fixed realtive from top
+                top_gradient_center_y = bg_y + (bg_side // 2)  # Calculate center_y from bg_y
+            else:  # Main image, use existing logic
+                top_gradient_center_y = top_gradient_height // 2
+                bg_y = top_gradient_center_y - (bg_side // 2)
 
-    for image_path in image_files:
-        article_path = articles_dir / f"{image_path.stem}.html"
-        article_content = extract_article_content(article_path)
+            draw = ImageDraw.Draw(overlay)
+            draw.rounded_rectangle(
+                (bg_x, bg_y, bg_x + bg_side, bg_y + bg_side),
+                radius=radius,
+                fill="white"
+            )
 
-        if not article_content or not article_content.h1:
-            logger.warning(f"Skipping image {image_path.name} due to missing article or H1 headline.")
-            continue
-
-        headline_text = article_content.h1
-        # --- Create First (Main) Image ---
-        main_dest_path = dest_dir / f"{image_path.stem}.png"
-        base_img = None
-        if main_dest_path.exists():
-            logger.info(f"Main image already exists, skipping creation: {main_dest_path}")
-        else:
-            try:
-                with Image.open(image_path) as img:
-                    base_img = img.copy()
-                    final_img = create_main_image(base_img, headline_text, image_path.stem)
-                    final_img.save(main_dest_path, 'PNG', compress_level=9)
-                    logger.info(f"Successfully processed and saved main image: {main_dest_path}")
-            except Exception as e:
-                logger.error(f"Failed to create main image for {image_path.name}: {e}", exc_info=True)
-                continue
-
-        # --- Create Additional Images for Content Blocks ---
-        raw_blocks = article_content.content_blocks
-        processed_blocks = []
-        i = 0
-        while i < len(raw_blocks):
-            current_block = raw_blocks[i]
-            next_block = raw_blocks[i+1] if (i + 1) < len(raw_blocks) else None
-
-            # --- MERGE 1: H2+P followed by P ---
-            if (current_block.headline is not None and current_block.paragraph is not None and
-                next_block and next_block.headline is None and next_block.paragraph is not None and
-                len(current_block.paragraph) + len(next_block.paragraph) <= MAX_PARAGRAPH_LENGTH):
-
-                merged_paragraph = current_block.paragraph + "\n\n" + next_block.paragraph
-                merged_block = ContentBlock(headline=current_block.headline, paragraph=merged_paragraph)
-                processed_blocks.append(merged_block)
-                i += 2
-
-            # --- MERGE 2: Two consecutive P's ---
-            elif (current_block.headline is None and current_block.paragraph is not None and
-                  next_block and next_block.headline is None and next_block.paragraph is not None and
-                  len(current_block.paragraph) + len(next_block.paragraph) <= MAX_PARAGRAPH_LENGTH):
-
-                merged_paragraph = current_block.paragraph + "\n\n" + next_block.paragraph
-                merged_block = ContentBlock(paragraph=merged_paragraph)
-                processed_blocks.append(merged_block)
-                i += 2
-
-            # --- SPLIT: Handle splitting long paragraphs ---
-            elif current_block.paragraph is not None and len(current_block.paragraph) > MAX_PARAGRAPH_LENGTH:
-                chunks = split_text_into_chunks(current_block.paragraph, MAX_PARAGRAPH_LENGTH)
-                
-                first_chunk_block = ContentBlock(headline=current_block.headline, paragraph=chunks[0])
-                processed_blocks.append(first_chunk_block)
-                
-                for chunk in chunks[1:]:
-                    processed_blocks.append(ContentBlock(paragraph=chunk))
-                i += 1
-            
-            # --- DEFAULT: Keep block as is ---
-            else:
-                processed_blocks.append(current_block)
-                i += 1
-
-        for i, block_to_render in enumerate(processed_blocks):
-            part_dest_path = dest_dir / f"{image_path.stem}_part{i+1}.png"
-            if part_dest_path.exists():
-                logger.info(f"Part image already exists, skipping: {part_dest_path}")
-                continue
-            
-            try:
-                # Ensure we have the base image to blur
-                if base_img is None:
-                    with Image.open(image_path) as img:
-                        base_img = img.copy()
-
-                blurred_img = base_img.filter(ImageFilter.GaussianBlur(radius=3))
-                final_part_img = create_content_image(blurred_img, block_to_render)
-                final_part_img.save(part_dest_path, 'PNG', compress_level=9)
-                logger.info(f"Successfully processed and saved part image: {part_dest_path}")
-            except Exception as e:
-                logger.error(f"Failed to create part image for {image_path.name}: {e}", exc_info=True)
+            logo_x = (img_width - logo_img_resized.width) // 2
+            logo_y = top_gradient_center_y - (logo_img_resized.height // 2)
+            overlay.paste(logo_img_resized, (logo_x, logo_y), logo_img_resized)
+    except FileNotFoundError:
+        logger.warning(f"Logo file not found at {res_dir / 'logo-gossip.png'}, skipping logo.")
 
 
-def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Image.Image:
+def create_main_image(base_img: Image.Image, text: str, article_stem: str, res_dir: Path) -> Image.Image:
     """Creates the main, non-blurred image with gradients, logo, and headline."""
     overlay = Image.new('RGBA', base_img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
-    
+
     gradient_width, gradient_height = base_img.size
-    
+
     # --- Gradients ---
     bottom_gradient_height = int(gradient_height * 0.4)
     for y in range(bottom_gradient_height):
@@ -267,13 +197,13 @@ def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Im
         draw.line([(0, y), (gradient_width, y)], fill=(0, 0, 0, alpha))
 
     # --- Logo ---
-    draw_logo(overlay, base_img.height, base_img.width, top_gradient_height, scale=1.0)
+    draw_logo(overlay, base_img.height, base_img.width, top_gradient_height, scale=1.0, res_dir=res_dir)
 
     # --- Tag ---
     tag_text = find_tag(article_stem)
     if tag_text:
         try:
-            tag_font_path = str(config.PROJECT_ROOT / "res" / "Oswald-Bold.ttf")
+            tag_font_path = str(res_dir / "Oswald-Bold.ttf")
             tag_font_size = int(base_img.height * 0.03)
             tag_font = ImageFont.truetype(tag_font_path, size=tag_font_size)
         except IOError:
@@ -286,7 +216,7 @@ def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Im
 
         rect_padding_x = int(tag_font_size * 0.8)
         rect_padding_y = int(tag_font_size * 0.4)
-        
+
         rect_width = tag_text_width + 2 * rect_padding_x
         rect_height = tag_text_height + 2 * rect_padding_y
 
@@ -297,7 +227,7 @@ def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Im
         top_gradient_center_y = top_gradient_height // 2
         logo_bg_y = top_gradient_center_y - (logo_bg_side // 2)
         logo_bottom_y = logo_bg_y + logo_bg_side
-        
+
         tag_margin_top = int(base_img.height * 0.02)
 
         rect_x0 = (base_img.width - rect_width) / 2
@@ -314,14 +244,14 @@ def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Im
 
     # --- Text ---
     try:
-        font_path = str(config.PROJECT_ROOT / "res" / "Oswald-Bold.ttf")
+        font_path = str(res_dir / "Oswald-Bold.ttf")
         font_size = int(base_img.height * 0.05)
         font = ImageFont.truetype(font_path, size=font_size)
     except IOError:
         logger.warning("Oswald-Bold.ttf not found for main image. Using default font.")
         font = ImageFont.load_default()
 
-    avg_char_width = font.getlength("x") if hasattr(font, 'getlength') else font.getsize("x")[0] # type: ignore
+    avg_char_width = font.getlength("x") if hasattr(font, 'getlength') else font.getsize("x")[0]  # type: ignore
     max_chars_per_line = int((base_img.width * 0.85) / avg_char_width) if avg_char_width > 0 else 20
     wrapped_text = "\n".join(textwrap.wrap(text.upper(), width=max_chars_per_line))
 
@@ -335,20 +265,20 @@ def create_main_image(base_img: Image.Image, text: str, article_stem: str) -> Im
     return Image.alpha_composite(base_img.convert('RGBA'), overlay)
 
 
-def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Image:
+def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Path) -> Image.Image:
     """Creates a blurred content image with a smaller logo and text from a ContentBlock."""
     overlay = Image.new('RGBA', base_img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     img_width, img_height = base_img.size
 
     # --- Logo (smaller) ---
-    top_gradient_height = int(img_height * 0.2) # Estimate for positioning
-    draw_logo(overlay, img_height, img_width, top_gradient_height, scale=0.5)
+    top_gradient_height = int(img_height * 0.2)  # Estimate for positioning
+    draw_logo(overlay, img_height, img_width, top_gradient_height, scale=0.5, res_dir=res_dir)
 
     # --- Fonts ---
     try:
-        font_path_bold = str(config.PROJECT_ROOT / "res" / "Oswald-Bold.ttf")
-        font_path_regular = str(config.PROJECT_ROOT / "res" / "RobotoCondensed-Regular.ttf")
+        font_path_bold = str(res_dir / "Oswald-Bold.ttf")
+        font_path_regular = str(res_dir / "RobotoCondensed-Regular.ttf")
         h2_font_size = int(img_height * 0.04)
         p_font_size = int(img_height * 0.04)
         h2_font = ImageFont.truetype(font_path_bold, size=h2_font_size)
@@ -361,7 +291,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
     # --- Text Wrapping ---
     padding_x = img_width * 0.05
     available_text_width = img_width - (2 * padding_x)
-    
+
     # Heuristic for character wrapping based on available width and font size
     h2_chars_per_line = int(available_text_width / (h2_font_size * 0.6)) if h2_font_size > 0 else 30
     p_chars_per_line = int(available_text_width / (p_font_size * 0.5)) if p_font_size > 0 else 40
@@ -407,7 +337,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
 
     # --- Positioning and Drawing ---
     block_y_start = (img_height - total_combined_block_height) / 2
-    block_x_start = padding_x # Align to the left with padding
+    block_x_start = padding_x  # Align to the left with padding
 
     # Draw a blurred, transparent background rectangle for the text
     if wrapped_h2 or wrapped_p:
@@ -416,7 +346,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
 
         rect_x0 = block_x_start - rect_padding_x
         rect_y0 = block_y_start - rect_padding_y
-        rect_x1 = block_x_start + max_text_width + rect_padding_x # Adjust rect_x1 to align with left-aligned text
+        rect_x1 = block_x_start + max_text_width + rect_padding_x  # Adjust rect_x1 to align with left-aligned text
         rect_y1 = block_y_start + total_combined_block_height + rect_padding_y
 
         # Create a new layer for the rectangle
@@ -441,7 +371,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
     if wrapped_h2 and wrapped_p:
         # Both h2 and p are present
         draw.multiline_text((block_x_start, block_y_start), wrapped_h2, font=h2_font, fill="white", align="left")
-        
+
         p_y = block_y_start + h2_height + fixed_h2_p_spacing
         draw.multiline_text((block_x_start, p_y), wrapped_p, font=p_font, fill="white", align="left")
 
@@ -456,38 +386,101 @@ def create_content_image(base_img: Image.Image, block: ContentBlock) -> Image.Im
     return Image.alpha_composite(base_img.convert('RGBA'), overlay)
 
 
-def draw_logo(overlay: Image.Image, img_height: int, img_width: int, top_gradient_height: int, scale: float):
-    """Draws the project logo onto the overlay image."""
-    try:
-        logo_path = config.PROJECT_ROOT / "res" / "logo-gossip.png"
-        with Image.open(logo_path).convert("RGBA") as logo_img:
-            logo_side = int(img_height * 0.13 * scale)
-            if logo_side == 0: return # Avoid error with zero size
-            logo_img_resized = logo_img.resize((logo_side, logo_side), Image.Resampling.LANCZOS)
+def create_insta_images_for_protocol(
+    protocol_folder: Path,
+    res_dir: Path = Path("/app/res")
+):
+    """
+    Create Instagram-formatted images for all articles in a protocol folder.
+    Iterates through images, creates a primary image with headline, and then
+    creates additional blurred images for each content block in the article.
+    """
+    image_files = list(protocol_folder.glob("image_*.png"))
 
-            padding = int(logo_side * 0.05)
-            bg_side = logo_side + 2 * padding
-            radius = int(bg_side * 0.2)
+    for image_path in image_files:
+        # Find corresponding article
+        article_index = image_path.stem.split("_")[1]
+        article_files = list(protocol_folder.glob(f"article_{article_index}_*.html"))
 
-            bg_x = (img_width - bg_side) // 2
+        if not article_files:
+            logger.warning(f"No article found for image: {image_path}")
+            continue
 
-            # For content images (smaller scale), position the logo at 2% from the top.
-            if scale < 1.0: # This condition identifies content images
-                bg_y = int(img_height * 0.03) # Fixed realtive from top
-                top_gradient_center_y = bg_y + (bg_side // 2) # Calculate center_y from bg_y
-            else: # Main image, use existing logic
-                top_gradient_center_y = top_gradient_height // 2
-                bg_y = top_gradient_center_y - (bg_side // 2)
+        article_path = article_files[0]
+        article_content = extract_article_content(article_path)
 
-            draw = ImageDraw.Draw(overlay)
-            draw.rounded_rectangle(
-                (bg_x, bg_y, bg_x + bg_side, bg_y + bg_side),
-                radius=radius,
-                fill="white"
-            )
+        if not article_content or not article_content.h1:
+            logger.warning(f"Could not extract content from: {article_path}")
+            continue
 
-            logo_x = (img_width - logo_img_resized.width) // 2
-            logo_y = top_gradient_center_y - (logo_img_resized.height // 2)
-            overlay.paste(logo_img_resized, (logo_x, logo_y), logo_img_resized)
-    except FileNotFoundError:
-        logger.warning(f"Logo file not found at {config.PROJECT_ROOT / 'res' / 'logo-gossip.png'}, skipping logo.")
+        # Create main Instagram image
+        insta_main_path = protocol_folder / f"insta_{article_index}_main.png"
+        if not insta_main_path.exists():
+            try:
+                with Image.open(image_path) as img:
+                    base_img = img.copy()
+                    final_img = create_main_image(base_img, article_content.h1, article_path.stem, res_dir)
+                    final_img.save(insta_main_path, 'PNG', compress_level=9)
+                    logger.info(f"Created Instagram main image: {insta_main_path}")
+            except Exception as e:
+                logger.error(f"Failed to create main Instagram image: {e}")
+
+        # Process content blocks
+        raw_blocks = article_content.content_blocks
+        processed_blocks = []
+        i = 0
+        while i < len(raw_blocks):
+            current_block = raw_blocks[i]
+            next_block = raw_blocks[i+1] if (i + 1) < len(raw_blocks) else None
+
+            # --- MERGE 1: H2+P followed by P ---
+            if (current_block.headline is not None and current_block.paragraph is not None and
+                next_block and next_block.headline is None and next_block.paragraph is not None and
+                len(current_block.paragraph) + len(next_block.paragraph) <= MAX_PARAGRAPH_LENGTH):
+
+                merged_paragraph = current_block.paragraph + "\n\n" + next_block.paragraph
+                merged_block = ContentBlock(headline=current_block.headline, paragraph=merged_paragraph)
+                processed_blocks.append(merged_block)
+                i += 2
+
+            # --- MERGE 2: Two consecutive P's ---
+            elif (current_block.headline is None and current_block.paragraph is not None and
+                  next_block and next_block.headline is None and next_block.paragraph is not None and
+                  len(current_block.paragraph) + len(next_block.paragraph) <= MAX_PARAGRAPH_LENGTH):
+
+                merged_paragraph = current_block.paragraph + "\n\n" + next_block.paragraph
+                merged_block = ContentBlock(paragraph=merged_paragraph)
+                processed_blocks.append(merged_block)
+                i += 2
+
+            # --- SPLIT: Handle splitting long paragraphs ---
+            elif current_block.paragraph is not None and len(current_block.paragraph) > MAX_PARAGRAPH_LENGTH:
+                chunks = split_text_into_chunks(current_block.paragraph, MAX_PARAGRAPH_LENGTH)
+
+                first_chunk_block = ContentBlock(headline=current_block.headline, paragraph=chunks[0])
+                processed_blocks.append(first_chunk_block)
+
+                for chunk in chunks[1:]:
+                    processed_blocks.append(ContentBlock(paragraph=chunk))
+                i += 1
+
+            # --- DEFAULT: Keep block as is ---
+            else:
+                processed_blocks.append(current_block)
+                i += 1
+
+        # Create content images for each block
+        for block_idx, block in enumerate(processed_blocks):
+            insta_part_path = protocol_folder / f"insta_{article_index}_part{block_idx+1}.png"
+            if insta_part_path.exists():
+                continue
+
+            try:
+                with Image.open(image_path) as img:
+                    base_img = img.copy()
+                    blurred_img = base_img.filter(ImageFilter.GaussianBlur(radius=3))
+                    final_part_img = create_content_image(blurred_img, block, res_dir)
+                    final_part_img.save(insta_part_path, 'PNG', compress_level=9)
+                    logger.info(f"Created Instagram part image: {insta_part_path}")
+            except Exception as e:
+                logger.error(f"Failed to create part Instagram image: {e}")

@@ -3,7 +3,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables
-env_path = Path(__file__).resolve().parent.parent / ".env"
+env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(env_path)
 
 # Database
@@ -37,3 +37,19 @@ ARTICLES_DIR = Path("/app/articles")
 GENERATED_IMAGES_DIR = Path("/app/generated_images")
 INSTA_IMAGES_DIR = Path("/app/insta_images")
 LOGS_DIR = Path("/app/logs")
+
+# --- Model Names ---
+GENAI_ARTICLE_GENERATION_MODEL = "gemini-3-pro-preview"
+GENAI_IMAGE_PROMPT_MODEL = "gemini-2.5-flash"
+GENAI_IMAGE_GENERATION_MODEL = "gemini-2.5-flash-image"
+
+# --- API Call Settings ---
+API_CALL_DELAY_SECONDS = 1
+
+
+def load_google_api_key():
+    """Loads the Google API Key from environment variables."""
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY not found in .env file or environment variables.")
+    return api_key

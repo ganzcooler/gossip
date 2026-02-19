@@ -3,10 +3,15 @@ import logging
 from typing import List
 from google import genai
 from google.genai import types
-from src import config, prompts
-from src.models import SingleArticle, LLMGeneratedArticles
 
-def generate_articles(text: str, logger: logging.Logger) -> List[SingleArticle]:
+from app.core import config
+from app.core import prompts
+from app.core.models import SingleArticle, LLMGeneratedArticles
+
+logger = logging.getLogger(__name__)
+
+
+def generate_articles(text: str) -> List[SingleArticle]:
     """Generates articles from text using a direct Google GenAI API call with retries."""
     logger.info("Generating articles...")
     max_retries = 5
@@ -34,7 +39,7 @@ def generate_articles(text: str, logger: logging.Logger) -> List[SingleArticle]:
             logger.error(f"Error generating articles on attempt {attempt + 1}/{max_retries}: {e}", exc_info=True)
 
         if attempt < max_retries - 1:
-            time.sleep(config.API_CALL_DELAY_SECONDS) # Wait before next retry
+            time.sleep(config.API_CALL_DELAY_SECONDS)
 
     logger.error("Failed to generate articles after multiple retries.")
     return []

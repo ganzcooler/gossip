@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from app.config import LOGS_DIR, LOG_LEVEL
+from app.core.config import LOGS_DIR, LOG_LEVEL
 
 
 def setup_logging():
