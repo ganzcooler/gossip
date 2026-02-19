@@ -4,3 +4,11 @@ beautifulsoup4
 PyMuPDF
 pydantic
 Pillow
+fastapi
+uvicorn
+sqlalchemy
+asyncpg
+alembic
+apscheduler
+httpx
+lxml
