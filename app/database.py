@@ -33,7 +33,19 @@ async def get_db():
             await session.close()
 
 
-async def init_db():
-    """Initialize database tables."""
+async def create_tables():
+    """Create all database tables using SQLAlchemy's create_all().
+    
+    This function is called on application startup to initialize the database schema.
+    It imports all models to ensure they are registered with the Base metadata.
+    """
+    # Import models to ensure they are registered with Base.metadata
+    from app.models import Protocol, Article  # noqa: F401
+    
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+async def init_db():
+    """Initialize database tables on startup."""
+    await create_tables()

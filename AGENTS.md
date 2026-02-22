@@ -23,10 +23,6 @@ A FastAPI-based automation system that generates journalistic blog posts and Ins
 pip install -r requirements.txt   # Install deps
 docker network create traefik     # Required before compose
 docker-compose up -d              # Start app + postgres
-
-# Database
-alembic upgrade head              # Run migrations
-alembic revision --autogenerate -m "msg"  # Create migration
 ```
 
 ## API Endpoints

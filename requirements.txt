@@ -8,7 +8,6 @@ fastapi
 uvicorn
 sqlalchemy
 asyncpg
-alembic
 apscheduler
 httpx
 lxml
