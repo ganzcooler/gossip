@@ -31,7 +31,7 @@ async def fetch_and_parse_protocols(params: dict, db_session: AsyncSession) -> i
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(
-                f"{SESSIONNET_BASE_URL}kalender.php",
+                f"{SESSIONNET_BASE_URL}si0046.asp",
                 params=params,
                 timeout=30.0
             )
@@ -87,7 +87,7 @@ def parse_protocol_list(soup: BeautifulSoup) -> list[dict]:
 
     # Find all table rows with protocol data
     # This is a placeholder - actual parsing depends on SessionNet HTML structure
-    rows = soup.find_all('tr', class_='zl11') + soup.find_all('tr', class_='zl12')
+    rows = soup.find_all('tr', class_='smc-t-r-l')
 
     for row in rows:
         try:
@@ -96,11 +96,18 @@ def parse_protocol_list(soup: BeautifulSoup) -> list[dict]:
                 continue
 
             # Extract date
-            date_str = cells[0].get_text(strip=True)
+            date_text = cells[0].get_text(strip=True)
+            import re
+            date_match = re.search(r'(\d{2}\.\d{2}\.\d{4})', date_text)
+            if not date_match:
+                logger.warning(f"Could not extract date from: {date_text}")
+                continue
+            date_str = date_match.group(1)
             session_date = datetime.strptime(date_str, '%d.%m.%Y').date()
 
-            # Extract title
-            title = cells[2].get_text(strip=True)
+            # Extract title from first div in cells[1]
+            first_div = cells[1].find('div')
+            title = first_div.get_text(strip=True) if first_div else cells[1].get_text(strip=True)
 
             # Extract PDF link
             pdf_link = cells[3].find('a', href=True)
@@ -130,7 +137,7 @@ def parse_protocol_list(soup: BeautifulSoup) -> list[dict]:
 def extract_getfile_id(url: str) -> int:
     """Extract getfile_id from SessionNet URL."""
     import re
-    match = re.search(r'getfile=([0-9]+)', url)
+    match = re.search(r'id=([0-9]+)', url)
     if match:
         return int(match.group(1))
     raise ValueError(f"Could not extract getfile_id from URL: {url}")

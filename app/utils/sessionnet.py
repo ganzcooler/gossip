@@ -10,9 +10,9 @@ def calculate_sessionnet_params():
     six_months_ago = now - timedelta(days=180)
 
     return {
-        "__cjahr": now.year,
+        "__cjahr": six_months_ago.year,
         "__cmonat": six_months_ago.month,
-        "__canz": 6,
+        "__canz": 12, # 12 months, to make sure we get all protocols up to date
         "smccont": 12,
         "__cselect": 81920
     }
