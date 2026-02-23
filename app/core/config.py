@@ -33,10 +33,12 @@ TRAEFIK_HOST = os.getenv("TRAEFIK_HOST", "gossip.localhost")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # Directories (for bind mounts)
-ARTICLES_DIR = Path("/app/articles")
-GENERATED_IMAGES_DIR = Path("/app/generated_images")
-INSTA_IMAGES_DIR = Path("/app/insta_images")
-LOGS_DIR = Path("/app/logs")
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+ARTICLES_DIR = BASE_DIR / Path(os.getenv("ARTICLES_DIR", "/app/articles"))
+GENERATED_IMAGES_DIR = BASE_DIR / Path(os.getenv("GENERATED_IMAGES_DIR", "/app/generated_images"))
+INSTA_IMAGES_DIR = BASE_DIR / Path(os.getenv("INSTA_IMAGES_DIR", "/app/insta_images"))
+LOGS_DIR = BASE_DIR / Path(os.getenv("LOGS_DIR", "/app/logs"))
+
 
 # --- Model Names ---
 GENAI_ARTICLE_GENERATION_MODEL = "gemini-3-pro-preview"
