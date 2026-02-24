@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 from app.services.protocol_fetcher import (
     parse_protocol_list,
     extract_getfile_id,
+    extract_protocol_documents,
 )
 
 
@@ -17,31 +18,31 @@ class TestExtractGetfileId:
 
     def test_extract_from_standard_url(self):
         """Test extracting getfile_id from standard SessionNet URL."""
-        url = "https://sessionnet.example/getfile.asp?file=123&id=456&getfile=78901"
+        url = "https://sessionnet.example/getfile.asp?file=123&id=456"
         result = extract_getfile_id(url)
-        assert result == 78901
+        assert result == 456
 
     def test_extract_from_simple_url(self):
         """Test extracting getfile_id from simple URL."""
-        url = "getfile.asp?getfile=12345"
+        url = "getfile.asp?id=12345"
         result = extract_getfile_id(url)
         assert result == 12345
 
     def test_extract_with_multiple_params(self):
         """Test extracting getfile_id with multiple URL parameters."""
-        url = "https://example.com/page?param1=value1&getfile=99999&param2=value2"
+        url = "https://example.com/page?param1=value1&id=99999&param2=value2"
         result = extract_getfile_id(url)
         assert result == 99999
 
     def test_extract_at_start_of_query(self):
         """Test extracting getfile_id at start of query string."""
-        url = "page?getfile=11111&other=value"
+        url = "page?id=11111&other=value"
         result = extract_getfile_id(url)
         assert result == 11111
 
     def test_extract_large_number(self):
         """Test extracting large getfile_id."""
-        url = "page?getfile=999999999"
+        url = "page?id=999999999"
         result = extract_getfile_id(url)
         assert result == 999999999
 
@@ -70,12 +71,19 @@ class TestParseProtocolList:
         html = """
         <html>
         <body>
-            <tr class="zl11">
-                <td>15.01.2024</td>
-                <td>10:00</td>
-                <td>Test Protocol Title</td>
-                <td><a href="getfile.asp?getfile=12345">PDF</a></td>
-            </tr>
+            <table>
+                <tr class="smc-t-r-l">
+                    <td>15.01.2024</td>
+                    <td><a href="si0046.asp?sisessionid=123">Test Protocol Title</a></td>
+                    <td>Extra cell</td>
+                    <td>
+                        <div>
+                            <i>NÖ</i>
+                            <a href="getfile.asp?id=12345">Protokoll</a>
+                        </div>
+                    </td>
+                </tr>
+            </table>
         </body>
         </html>
         """
@@ -94,18 +102,30 @@ class TestParseProtocolList:
         html = """
         <html>
         <body>
-            <tr class="zl11">
-                <td>15.01.2024</td>
-                <td>10:00</td>
-                <td>First Protocol</td>
-                <td><a href="getfile.asp?getfile=11111">PDF</a></td>
-            </tr>
-            <tr class="zl12">
-                <td>20.01.2024</td>
-                <td>14:00</td>
-                <td>Second Protocol</td>
-                <td><a href="getfile.asp?getfile=22222">PDF</a></td>
-            </tr>
+            <table>
+                <tr class="smc-t-r-l">
+                    <td>15.01.2024</td>
+                    <td><a href="si0046.asp?sisessionid=111">First Protocol</a></td>
+                    <td>Extra</td>
+                    <td>
+                        <div>
+                            <i>NÖ</i>
+                            <a href="getfile.asp?id=11111">Protokoll</a>
+                        </div>
+                    </td>
+                </tr>
+                <tr class="smc-t-r-l">
+                    <td>20.01.2024</td>
+                    <td><a href="si0046.asp?sisessionid=222">Second Protocol</a></td>
+                    <td>Extra</td>
+                    <td>
+                        <div>
+                            <i>NS</i>
+                            <a href="getfile.asp?id=22222">Protokoll</a>
+                        </div>
+                    </td>
+                </tr>
+            </table>
         </body>
         </html>
         """
@@ -117,13 +137,30 @@ class TestParseProtocolList:
         assert result[1]['title'] == "Second Protocol"
 
     def test_parse_both_row_classes(self):
-        """Test that both zl11 and zl12 classes are parsed."""
+        """Test that multiple rows with smc-t-r-l class are parsed."""
         html = """
         <html>
         <body>
-            <tr class="zl11"><td>15.01.2024</td><td>10:00</td><td>Protocol 1</td><td><a href="getfile.asp?getfile=1">PDF</a></td></tr>
-            <tr class="zl12"><td>16.01.2024</td><td>10:00</td><td>Protocol 2</td><td><a href="getfile.asp?getfile=2">PDF</a></td></tr>
-            <tr class="zl11"><td>17.01.2024</td><td>10:00</td><td>Protocol 3</td><td><a href="getfile.asp?getfile=3">PDF</a></td></tr>
+            <table>
+                <tr class="smc-t-r-l">
+                    <td>15.01.2024</td>
+                    <td><a href="si0046.asp?sisessionid=1">Protocol 1</a></td>
+                    <td>Extra</td>
+                    <td><a href="getfile.asp?id=1">Protokoll</a></td>
+                </tr>
+                <tr class="smc-t-r-l">
+                    <td>16.01.2024</td>
+                    <td><a href="si0046.asp?sisessionid=2">Protocol 2</a></td>
+                    <td>Extra</td>
+                    <td><a href="getfile.asp?id=2">Protokoll</a></td>
+                </tr>
+                <tr class="smc-t-r-l">
+                    <td>17.01.2024</td>
+                    <td><a href="si0046.asp?sisessionid=3">Protocol 3</a></td>
+                    <td>Extra</td>
+                    <td><a href="getfile.asp?id=3">Protokoll</a></td>
+                </tr>
+            </table>
         </body>
         </html>
         """
@@ -137,16 +174,18 @@ class TestParseProtocolList:
         html = """
         <html>
         <body>
-            <tr class="zl11">
-                <td>15.01.2024</td>
-                <td>Test</td>
-            </tr>
-            <tr class="zl11">
-                <td>20.01.2024</td>
-                <td>10:00</td>
-                <td>Valid Protocol</td>
-                <td><a href="getfile.asp?getfile=12345">PDF</a></td>
-            </tr>
+            <table>
+                <tr class="smc-t-r-l">
+                    <td>15.01.2024</td>
+                    <td>Too few cells</td>
+                </tr>
+                <tr class="smc-t-r-l">
+                    <td>20.01.2024</td>
+                    <td><a href="si0046.asp?sisessionid=123">Valid Protocol</a></td>
+                    <td>Extra</td>
+                    <td><a href="getfile.asp?id=12345">Protokoll</a></td>
+                </tr>
+            </table>
         </body>
         </html>
         """
@@ -156,23 +195,25 @@ class TestParseProtocolList:
         assert len(result) == 1
         assert result[0]['title'] == "Valid Protocol"
 
-    def test_skips_rows_without_pdf_link(self):
-        """Test that rows without PDF link are skipped."""
+    def test_skips_rows_without_protocol_document(self):
+        """Test that rows without protocol document link are skipped."""
         html = """
         <html>
         <body>
-            <tr class="zl11">
-                <td>15.01.2024</td>
-                <td>10:00</td>
-                <td>No Link Protocol</td>
-                <td>No link here</td>
-            </tr>
-            <tr class="zl11">
-                <td>20.01.2024</td>
-                <td>10:00</td>
-                <td>Valid Protocol</td>
-                <td><a href="getfile.asp?getfile=12345">PDF</a></td>
-            </tr>
+            <table>
+                <tr class="smc-t-r-l">
+                    <td>15.01.2024</td>
+                    <td><a href="si0046.asp?sisessionid=123">No Document Protocol</a></td>
+                    <td>No protocol</td>
+                    <td>No protocol link here</td>
+                </tr>
+                <tr class="smc-t-r-l">
+                    <td>20.01.2024</td>
+                    <td><a href="si0046.asp?sisessionid=456">Valid Protocol</a></td>
+                    <td>Extra</td>
+                    <td><a href="getfile.asp?id=12345">Protokoll</a></td>
+                </tr>
+            </table>
         </body>
         </html>
         """
@@ -186,12 +227,14 @@ class TestParseProtocolList:
         html = """
         <html>
         <body>
-            <tr class="zl11">
-                <td>15.01.2024</td>
-                <td>10:00</td>
-                <td>Test Protocol</td>
-                <td><a href="getfile.asp?getfile=12345">PDF</a></td>
-            </tr>
+            <table>
+                <tr class="smc-t-r-l">
+                    <td>15.01.2024</td>
+                    <td><a href="si0046.asp?sisessionid=123">Test Protocol</a></td>
+                    <td>Extra</td>
+                    <td><a href="getfile.asp?id=12345">Protokoll</a></td>
+                </tr>
+            </table>
         </body>
         </html>
         """
@@ -201,30 +244,36 @@ class TestParseProtocolList:
         assert result[0]['pdf_url'].startswith('http')
 
     def test_handles_absolute_urls(self):
-        """Test that absolute URLs are preserved."""
+        """Test that URLs are always prefixed with SESSIONNET_BASE_URL."""
         html = """
         <html>
         <body>
-            <tr class="zl11">
-                <td>15.01.2024</td>
-                <td>10:00</td>
-                <td>Test Protocol</td>
-                <td><a href="https://example.com/getfile.asp?getfile=12345">PDF</a></td>
-            </tr>
+            <table>
+                <tr class="smc-t-r-l">
+                    <td>15.01.2024</td>
+                    <td><a href="si0046.asp?sisessionid=123">Test Protocol</a></td>
+                    <td>Extra</td>
+                    <td><a href="getfile.asp?id=12345">Protokoll</a></td>
+                </tr>
+            </table>
         </body>
         </html>
         """
         soup = BeautifulSoup(html, 'lxml')
         result = parse_protocol_list(soup)
 
-        assert result[0]['pdf_url'] == "https://example.com/getfile.asp?getfile=12345"
+        # URL is always prefixed with base URL (even if already absolute)
+        assert result[0]['pdf_url'].startswith('http')
+        assert 'getfile.asp?id=12345' in result[0]['pdf_url']
 
     def test_returns_empty_list_when_no_rows(self):
-        """Test that empty list is returned when no protocol rows found."""
+        """Test that empty list is returned when no smc-t-r-l rows found."""
         html = """
         <html>
         <body>
-            <div>No protocols here</div>
+            <table>
+                <tr class="other-class"><td>No protocols here</td></tr>
+            </table>
         </body>
         </html>
         """
@@ -238,18 +287,20 @@ class TestParseProtocolList:
         html = """
         <html>
         <body>
-            <tr class="zl11">
-                <td>invalid-date</td>
-                <td>10:00</td>
-                <td>Test Protocol</td>
-                <td><a href="getfile.asp?getfile=12345">PDF</a></td>
-            </tr>
-            <tr class="zl11">
-                <td>20.01.2024</td>
-                <td>10:00</td>
-                <td>Valid Protocol</td>
-                <td><a href="getfile.asp?getfile=67890">PDF</a></td>
-            </tr>
+            <table>
+                <tr class="smc-t-r-l">
+                    <td>invalid-date</td>
+                    <td><a href="si0046.asp?sisessionid=123">Test Protocol</a></td>
+                    <td>Extra</td>
+                    <td><a href="getfile.asp?id=12345">Protokoll</a></td>
+                </tr>
+                <tr class="smc-t-r-l">
+                    <td>20.01.2024</td>
+                    <td><a href="si0046.asp?sisessionid=456">Valid Protocol</a></td>
+                    <td>Extra</td>
+                    <td><a href="getfile.asp?id=67890">Protokoll</a></td>
+                </tr>
+            </table>
         </body>
         </html>
         """
@@ -259,3 +310,168 @@ class TestParseProtocolList:
         # Should skip invalid date row and parse valid one
         assert len(result) == 1
         assert result[0]['title'] == "Valid Protocol"
+
+
+class TestExtractProtocolDocuments:
+    """Tests for extract_protocol_documents function."""
+
+    def test_extracts_protokoll_link(self):
+        """Test extracting document with 'Protokoll' in link text."""
+        html = """
+        <tr>
+            <td>Date</td>
+            <td>Title</td>
+            <td>Extra</td>
+            <td>
+                <a href="getfile.asp?id=12345">Protokoll</a>
+            </td>
+        </tr>
+        """
+        soup = BeautifulSoup(html, 'lxml')
+        row = soup.find('tr')
+        result = extract_protocol_documents(row, "https://example.com/")
+
+        assert len(result) == 1
+        assert result[0]['title'] == "Protokoll"
+        assert result[0]['url'] == "https://example.com/getfile.asp?id=12345"
+        assert result[0]['getfile_id'] == 12345
+
+    def test_extracts_no_icon_document(self):
+        """Test extracting document with NÖ icon."""
+        html = """
+        <tr>
+            <td>Date</td>
+            <td>Title</td>
+            <td>Extra</td>
+            <td>
+                <div>
+                    <i>NÖ</i>
+                    <a href="getfile.asp?id=67890">Document</a>
+                </div>
+            </td>
+        </tr>
+        """
+        soup = BeautifulSoup(html, 'lxml')
+        row = soup.find('tr')
+        result = extract_protocol_documents(row, "https://example.com/")
+
+        assert len(result) == 1
+        assert result[0]['getfile_id'] == 67890
+
+    def test_extracts_ns_icon_document(self):
+        """Test extracting document with NS icon."""
+        html = """
+        <tr>
+            <td>Date</td>
+            <td>Title</td>
+            <td>Extra</td>
+            <td>
+                <div>
+                    <i>NS</i>
+                    <a href="getfile.asp?id=11111">Document</a>
+                </div>
+            </td>
+        </tr>
+        """
+        soup = BeautifulSoup(html, 'lxml')
+        row = soup.find('tr')
+        result = extract_protocol_documents(row, "https://example.com/")
+
+        assert len(result) == 1
+        assert result[0]['getfile_id'] == 11111
+
+    def test_skips_non_getfile_links(self):
+        """Test that non-getfile.asp links are skipped."""
+        html = """
+        <tr>
+            <td>Date</td>
+            <td>Title</td>
+            <td>Extra</td>
+            <td>
+                <a href="other.asp?id=123">Other Link</a>
+            </td>
+        </tr>
+        """
+        soup = BeautifulSoup(html, 'lxml')
+        row = soup.find('tr')
+        result = extract_protocol_documents(row, "https://example.com/")
+
+        assert len(result) == 0
+
+    def test_skips_non_protocol_documents(self):
+        """Test that documents without Protokoll or NÖ/NS icon are skipped."""
+        html = """
+        <tr>
+            <td>Date</td>
+            <td>Title</td>
+            <td>Extra</td>
+            <td>
+                <div>
+                    <i>Other</i>
+                    <a href="getfile.asp?id=123">Some Other Doc</a>
+                </div>
+            </td>
+        </tr>
+        """
+        soup = BeautifulSoup(html, 'lxml')
+        row = soup.find('tr')
+        result = extract_protocol_documents(row, "https://example.com/")
+
+        assert len(result) == 0
+
+    def test_extracts_multiple_documents(self):
+        """Test extracting multiple protocol documents from one row."""
+        html = """
+        <tr>
+            <td>Date</td>
+            <td>Title</td>
+            <td>Extra</td>
+            <td>
+                <div>
+                    <i>NÖ</i>
+                    <a href="getfile.asp?id=11111">Protokoll</a>
+                </div>
+                <div>
+                    <i>NS</i>
+                    <a href="getfile.asp?id=22222">Niederschrift</a>
+                </div>
+            </td>
+        </tr>
+        """
+        soup = BeautifulSoup(html, 'lxml')
+        row = soup.find('tr')
+        result = extract_protocol_documents(row, "https://example.com/")
+
+        assert len(result) == 2
+        assert result[0]['getfile_id'] == 11111
+        assert result[1]['getfile_id'] == 22222
+
+    def test_returns_empty_list_when_no_documents(self):
+        """Test that empty list is returned when no protocol documents found."""
+        html = """
+        <tr>
+            <td>Date</td>
+            <td>Title</td>
+            <td>Extra</td>
+            <td>No documents here</td>
+        </tr>
+        """
+        soup = BeautifulSoup(html, 'lxml')
+        row = soup.find('tr')
+        result = extract_protocol_documents(row, "https://example.com/")
+
+        assert result == []
+
+    def test_returns_empty_list_when_less_than_4_cells(self):
+        """Test that empty list is returned when row has fewer than 4 cells."""
+        html = """
+        <tr>
+            <td>Only</td>
+            <td>Two cells</td>
+        </tr>
+        """
+        soup = BeautifulSoup(html, 'lxml')
+        row = soup.find('tr')
+        result = extract_protocol_documents(row, "https://example.com/")
+
+        assert result == []

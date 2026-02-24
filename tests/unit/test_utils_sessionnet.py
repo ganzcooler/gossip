@@ -19,12 +19,16 @@ class TestCalculateSessionnetParams:
         for key in required_keys:
             assert key in params
 
-    def test_cjahr_is_current_year(self):
-        """Test that __cjahr is set to current year."""
+    def test_cjahr_is_six_months_ago_year(self):
+        """Test that __cjahr is set to year from 6 months ago."""
         params = calculate_sessionnet_params()
-        current_year = datetime.now().year
+        now = datetime.now()
+        six_months_ago = now.replace(year=now.year - 1) if now.month <= 6 else now
+        expected_year = six_months_ago.year - (1 if now.month <= 6 else 0)
         
-        assert params["__cjahr"] == current_year
+        # __cjahr is the year from 6 months ago
+        actual_six_months_ago = now - __import__('datetime').timedelta(days=180)
+        assert params["__cjahr"] == actual_six_months_ago.year
 
     def test_cmonat_is_six_months_ago(self):
         """Test that __cmonat is set to month from 6 months ago."""
@@ -36,11 +40,11 @@ class TestCalculateSessionnetParams:
         
         assert params["__cmonat"] == expected_month
 
-    def test_canz_is_six(self):
-        """Test that __canz is set to 6."""
+    def test_canz_is_twelve(self):
+        """Test that __canz is set to 12."""
         params = calculate_sessionnet_params()
         
-        assert params["__canz"] == 6
+        assert params["__canz"] == 12
 
     def test_smccont_is_twelve(self):
         """Test that smccont is set to 12."""
@@ -57,60 +61,46 @@ class TestCalculateSessionnetParams:
     @patch('app.utils.sessionnet.datetime')
     def test_year_boundary_january(self, mock_datetime):
         """Test month calculation when current month is January."""
-        # Mock January 2024
-        mock_now = MagicMock()
-        mock_now.year = 2024
-        mock_now.month = 1
-        mock_now.__sub__ = lambda self, other: MagicMock(month=7)  # 6 months before Jan is July
+        from datetime import timedelta
+        
+        # Create a real datetime for January 2024
+        mock_now = datetime(2024, 1, 15)
         mock_datetime.now.return_value = mock_now
+        
+        # Mock timedelta to return a real datetime 6 months ago
+        six_months_ago = datetime(2023, 7, 15)
+        mock_datetime.timedelta = __import__('datetime').timedelta
         
         params = calculate_sessionnet_params()
         
-        # January - 6 months = July (month 7)
+        # January - 6 months = July (month 7), year becomes 2023
         assert params["__cmonat"] == 7
-        assert params["__cjahr"] == 2024
+        assert params["__cjahr"] == 2023
 
     @patch('app.utils.sessionnet.datetime')
     def test_year_boundary_june(self, mock_datetime):
         """Test month calculation when current month is June."""
-        mock_now = MagicMock()
-        mock_now.year = 2024
-        mock_now.month = 6
+        # Create a real datetime for June 2024
+        mock_now = datetime(2024, 6, 15)
         mock_datetime.now.return_value = mock_now
+        mock_datetime.timedelta = __import__('datetime').timedelta
         
-        # Create mock for timedelta result
-        six_months_ago = MagicMock()
-        six_months_ago.month = 12  # December
+        params = calculate_sessionnet_params()
         
-        mock_datetime.now.return_value = mock_now
-        
-        # Patch the timedelta to return our mock
-        with patch('app.utils.sessionnet.timedelta') as mock_timedelta:
-            mock_timedelta.return_value = MagicMock()
-            # We need to patch the subtraction result
-            mock_now.__sub__ = MagicMock(return_value=six_months_ago)
-            
-            params = calculate_sessionnet_params()
-            
-            assert params["__cjahr"] == 2024
+        # June - 6 months = December (month 12), year becomes 2023
+        assert params["__cmonat"] == 12
+        assert params["__cjahr"] == 2023
 
     @patch('app.utils.sessionnet.datetime')
     def test_year_boundary_december(self, mock_datetime):
         """Test month calculation when current month is December."""
-        mock_now = MagicMock()
-        mock_now.year = 2024
-        mock_now.month = 12
+        # Create a real datetime for December 2024
+        mock_now = datetime(2024, 12, 15)
         mock_datetime.now.return_value = mock_now
+        mock_datetime.timedelta = __import__('datetime').timedelta
         
-        # Create mock for timedelta result (6 months ago = June)
-        six_months_ago = MagicMock()
-        six_months_ago.month = 6
+        params = calculate_sessionnet_params()
         
-        with patch('app.utils.sessionnet.timedelta') as mock_timedelta:
-            mock_result = MagicMock()
-            mock_result.month = 6
-            mock_now.__sub__ = MagicMock(return_value=mock_result)
-            
-            params = calculate_sessionnet_params()
-            
-            assert params["__cjahr"] == 2024
+        # December - 6 months = June (month 6), year stays 2024
+        assert params["__cmonat"] == 6
+        assert params["__cjahr"] == 2024

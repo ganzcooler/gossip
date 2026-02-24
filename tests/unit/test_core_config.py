@@ -29,7 +29,11 @@ class TestConfig:
 
     def test_database_url_from_env(self, mock_env_vars):
         """Test that DATABASE_URL is loaded from environment."""
+        import importlib
         from app.core import config
+        
+        # Reload to pick up mocked env vars
+        importlib.reload(config)
         
         expected_url = "postgresql+asyncpg://test_user:test_password@localhost:5432/test_db"
         assert config.DATABASE_URL == expected_url
@@ -50,7 +54,11 @@ class TestConfig:
 
     def test_sessionnet_base_url_default(self, mock_env_vars):
         """Test default SessionNet base URL."""
+        import importlib
         from app.core import config
+        
+        # Reload to pick up mocked env vars
+        importlib.reload(config)
         
         # When env var is set in fixture
         assert config.SESSIONNET_BASE_URL == "https://test.sessionnet.example/"
@@ -67,13 +75,21 @@ class TestConfig:
 
     def test_traefik_host_config(self, mock_env_vars):
         """Test Traefik host configuration."""
+        import importlib
         from app.core import config
+        
+        # Reload to pick up mocked env vars
+        importlib.reload(config)
         
         assert config.TRAEFIK_HOST == "test.localhost"
 
     def test_log_level_config(self, mock_env_vars):
         """Test log level configuration."""
+        import importlib
         from app.core import config
+        
+        # Reload to pick up mocked env vars
+        importlib.reload(config)
         
         assert config.LOG_LEVEL == "DEBUG"
 
@@ -93,10 +109,15 @@ class TestConfig:
 
     def test_directory_paths(self, mock_env_vars):
         """Test directory path configurations."""
+        import importlib
         from app.core import config
         from pathlib import Path
         
-        assert config.ARTICLES_DIR == Path("/app/articles")
-        assert config.GENERATED_IMAGES_DIR == Path("/app/generated_images")
-        assert config.INSTA_IMAGES_DIR == Path("/app/insta_images")
-        assert config.LOGS_DIR == Path("/app/logs")
+        # Reload to pick up mocked env vars
+        importlib.reload(config)
+        
+        # Check paths end with expected values (platform-independent)
+        assert str(config.ARTICLES_DIR).replace("\\", "/").endswith("/app/articles")
+        assert str(config.GENERATED_IMAGES_DIR).replace("\\", "/").endswith("/app/generated_images")
+        assert str(config.INSTA_IMAGES_DIR).replace("\\", "/").endswith("/app/insta_images")
+        assert str(config.LOGS_DIR).replace("\\", "/").endswith("/app/logs")

@@ -27,6 +27,7 @@ class TestCheckDuplicate:
             return protocol
         return _create
 
+    @pytest.mark.asyncio
     async def test_no_recent_protocols(self, mock_db_session):
         """Test when no recent protocols exist."""
         # Mock empty result
@@ -39,6 +40,7 @@ class TestCheckDuplicate:
         assert result is False
         mock_db_session.execute.assert_called_once()
 
+    @pytest.mark.asyncio
     async def test_no_duplicate_similarity_below_threshold(self, mock_db_session, create_mock_protocol):
         """Test when similar protocols exist but similarity is below 95%."""
         # Create a protocol with different text
@@ -53,6 +55,7 @@ class TestCheckDuplicate:
 
         assert result is False
 
+    @pytest.mark.asyncio
     async def test_duplicate_detected_similarity_at_threshold(self, mock_db_session, create_mock_protocol):
         """Test when similarity is exactly at 95% threshold."""
         # Create text that is 95% similar
@@ -69,6 +72,7 @@ class TestCheckDuplicate:
 
         assert result is True
 
+    @pytest.mark.asyncio
     async def test_duplicate_detected_high_similarity(self, mock_db_session, create_mock_protocol):
         """Test when similarity is above 95% threshold."""
         base_text = "This is the base text content for testing similarity detection in the system"
@@ -86,6 +90,7 @@ class TestCheckDuplicate:
         # Even with just a period difference, should be very similar
         assert result is True
 
+    @pytest.mark.asyncio
     async def test_multiple_protocols_checked(self, mock_db_session, create_mock_protocol):
         """Test that all recent protocols are checked for similarity."""
         protocols = [
@@ -103,6 +108,7 @@ class TestCheckDuplicate:
 
         assert result is False
 
+    @pytest.mark.asyncio
     async def test_only_checks_last_three_months(self, mock_db_session):
         """Test that only protocols from last 3 months are checked."""
         mock_result = MagicMock()
@@ -115,6 +121,7 @@ class TestCheckDuplicate:
         call_args = mock_db_session.execute.call_args
         assert call_args is not None
 
+    @pytest.mark.asyncio
     async def test_empty_new_text(self, mock_db_session):
         """Test behavior with empty new text."""
         mock_result = MagicMock()
@@ -125,6 +132,7 @@ class TestCheckDuplicate:
 
         assert result is False
 
+    @pytest.mark.asyncio
     async def test_protocols_with_old_dates_ignored(self, mock_db_session, create_mock_protocol):
         """Test that protocols older than 3 months are not considered."""
         # Create a protocol from 4 months ago

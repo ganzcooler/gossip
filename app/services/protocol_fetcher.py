@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from urllib.parse import urljoin
 from app.core.config import SESSIONNET_BASE_URL
 from app.models import Protocol
 from app.services.duplicate_detector import check_duplicate
@@ -81,6 +82,43 @@ async def fetch_and_parse_protocols(params: dict, db_session: AsyncSession) -> i
     return new_count
 
 
+def extract_protocol_documents(row, base_url: str) -> list[dict]:
+    """Extract protocol documents from a table row."""
+    documents = []
+
+    # Only search in document cell (4th column) to avoid matching unrelated links
+    cells = row.find_all("td")
+    if len(cells) < 4:
+        return documents
+
+    document_cell = cells[3]
+
+    for link in document_cell.find_all("a", href=True):
+        href = link["href"]
+
+        if "getfile.asp" not in href:
+            continue
+
+        link_text = link.get_text(strip=True)
+
+        # Icon suchen im gleichen Dokument-Container
+        parent = link.find_parent("div")
+        icon = parent.find("i") if parent else None
+        icon_text = icon.get_text(strip=True) if icon else ""
+
+        if "Protokoll" in link_text or icon_text in {"NÖ", "NS"}:
+
+            getfile_id = extract_getfile_id(href)
+
+            documents.append({
+                "title": link_text,
+                "url": urljoin(base_url, href),
+                "getfile_id": getfile_id
+            })
+
+    return documents
+
+
 def parse_protocol_list(soup: BeautifulSoup) -> list[dict]:
     """Parse the protocol list from SessionNet HTML."""
     protocols = []
@@ -105,21 +143,20 @@ def parse_protocol_list(soup: BeautifulSoup) -> list[dict]:
             date_str = date_match.group(1)
             session_date = datetime.strptime(date_str, '%d.%m.%Y').date()
 
-            # Extract title from first div in cells[1]
-            first_div = cells[1].find('div')
-            title = first_div.get_text(strip=True) if first_div else cells[1].get_text(strip=True)
+            # Extract title from link in cells[1], fallback to cell text
+            link = cells[1].find("a", href=True)
+            title = link.get_text(strip=True) if link else cells[1].get_text(strip=True)
 
-            # Extract PDF link
-            pdf_link = cells[3].find('a', href=True)
-            if not pdf_link:
+            # Extract protocol documents from the row
+            documents = extract_protocol_documents(row, SESSIONNET_BASE_URL)
+
+            # Use the first protocol document found
+            if not documents:
+                logger.warning(f"No protocol document found for row with date {session_date}")
                 continue
 
-            pdf_url = pdf_link['href']
-            if not pdf_url.startswith('http'):
-                pdf_url = f"{SESSIONNET_BASE_URL}{pdf_url}"
-
-            # Extract getfile_id from URL
-            getfile_id = extract_getfile_id(pdf_url)
+            pdf_url = documents[0]["url"]
+            getfile_id = documents[0]["getfile_id"]
 
             protocols.append({
                 'session_date': session_date,
@@ -160,7 +197,7 @@ async def download_pdf_text(pdf_url: str, max_retries: int = 3) -> str | None:
 
                 text = ""
                 for page in doc:
-                    text += page.get_text()
+                    text += page.get_text()  # type: ignore
 
                 doc.close()
                 return text
