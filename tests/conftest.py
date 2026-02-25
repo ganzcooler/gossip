@@ -4,6 +4,15 @@ Pytest configuration and shared fixtures.
 import os
 import sys
 from pathlib import Path
+
+# Set up test directory paths BEFORE any app imports
+# This ensures logging configuration works on Windows
+project_root = Path(__file__).parent.parent
+os.environ.setdefault("ARTICLES_DIR", str(project_root / "app/articles"))
+os.environ.setdefault("GENERATED_IMAGES_DIR", str(project_root / "app/generated_images"))
+os.environ.setdefault("INSTA_IMAGES_DIR", str(project_root / "app/insta_images"))
+os.environ.setdefault("LOGS_DIR", str(project_root / "app/logs"))
+
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 
@@ -14,6 +23,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 @pytest.fixture
 def mock_env_vars(monkeypatch):
     """Fixture to set up mock environment variables."""
+    # Get project root for test directories
+    project_root = Path(__file__).parent.parent
     env_vars = {
         "GOOGLE_API_KEY": "test-api-key",
         "DB_HOST": "localhost",
@@ -25,6 +36,10 @@ def mock_env_vars(monkeypatch):
         "SESSIONNET_BASE_URL": "https://test.sessionnet.example/",
         "TRAEFIK_HOST": "test.localhost",
         "LOG_LEVEL": "DEBUG",
+        "ARTICLES_DIR": str(project_root / "app/articles"),
+        "GENERATED_IMAGES_DIR": str(project_root / "app/generated_images"),
+        "INSTA_IMAGES_DIR": str(project_root / "app/insta_images"),
+        "LOGS_DIR": str(project_root / "app/logs"),
     }
     for key, value in env_vars.items():
         monkeypatch.setenv(key, value)

@@ -82,43 +82,6 @@ async def fetch_and_parse_protocols(params: dict, db_session: AsyncSession) -> i
     return new_count
 
 
-def extract_protocol_documents(row, base_url: str) -> list[dict]:
-    """Extract protocol documents from a table row."""
-    documents = []
-
-    # Only search in document cell (4th column) to avoid matching unrelated links
-    cells = row.find_all("td")
-    if len(cells) < 4:
-        return documents
-
-    document_cell = cells[3]
-
-    for link in document_cell.find_all("a", href=True):
-        href = link["href"]
-
-        if "getfile.asp" not in href:
-            continue
-
-        link_text = link.get_text(strip=True)
-
-        # Icon suchen im gleichen Dokument-Container
-        parent = link.find_parent("div")
-        icon = parent.find("i") if parent else None
-        icon_text = icon.get_text(strip=True) if icon else ""
-
-        if "Protokoll" in link_text or icon_text in {"NÖ", "NS"}:
-
-            getfile_id = extract_getfile_id(href)
-
-            documents.append({
-                "title": link_text,
-                "url": urljoin(base_url, href),
-                "getfile_id": getfile_id
-            })
-
-    return documents
-
-
 def parse_protocol_list(soup: BeautifulSoup) -> list[dict]:
     """Parse the protocol list from SessionNet HTML."""
     protocols = []
@@ -129,12 +92,17 @@ def parse_protocol_list(soup: BeautifulSoup) -> list[dict]:
 
     for row in rows:
         try:
-            cells = row.find_all('td')
-            if len(cells) < 4:
+            # Find cells by class attribute
+            date_cell = row.find("td", class_="sidat_tag")
+            title_cell = row.find("td", class_="silink")
+            document_cell = row.find("td", class_="sidocs")
+
+            if not date_cell or not title_cell or not document_cell:
+                logger.warning("Could not find required cells by class in row")
                 continue
 
             # Extract date
-            date_text = cells[0].get_text(strip=True)
+            date_text = date_cell.get_text(strip=True)
             import re
             date_match = re.search(r'(\d{2}\.\d{2}\.\d{4})', date_text)
             if not date_match:
@@ -143,20 +111,76 @@ def parse_protocol_list(soup: BeautifulSoup) -> list[dict]:
             date_str = date_match.group(1)
             session_date = datetime.strptime(date_str, '%d.%m.%Y').date()
 
-            # Extract title from link in cells[1], fallback to cell text
-            link = cells[1].find("a", href=True)
-            title = link.get_text(strip=True) if link else cells[1].get_text(strip=True)
+            # Extract title from link in title_cell, fallback to cell text
+            link = title_cell.find("a", href=True)
+            title = link.get_text(strip=True) if link else title_cell.get_text(strip=True)
 
-            # Extract protocol documents from the row
-            documents = extract_protocol_documents(row, SESSIONNET_BASE_URL)
+            # Extract protocol URL and getfile_id from the document cell
+            pdf_url = None
+            getfile_id = None
 
-            # Use the first protocol document found
-            if not documents:
+            # Step 1 & 2: Find all i-tags and check for "NS" or "NÖ"
+            i_tags = document_cell.find_all("i")
+            found_protocol_icon = False
+
+            for icon in i_tags:
+                icon_text = icon.get_text(strip=True)
+                if icon_text in {"NÖ", "NS"}:
+                    found_protocol_icon = True
+
+                    # Step 3: Traverse up to find a-tags (max 5 levels)
+                    current = icon
+                    a_tags = []
+                    for _ in range(5):
+                        current = current.find_parent()
+                        if current is None:
+                            break
+                        a_tags = current.find_all("a", href=True)
+                        if a_tags:
+                            break
+
+                    # Step 4: Check for "Protokoll" in link text
+                    protocol_link = None
+                    first_getfile_link = None
+
+                    for link in a_tags:
+                        link_text = link.get_text(strip=True)
+                        href = link["href"]
+
+                        if "getfile.asp" not in href:
+                            continue
+
+                        if first_getfile_link is None:
+                            first_getfile_link = link
+
+                        if "Protokoll" in link_text:
+                            protocol_link = link
+                            break
+
+                    # Step 4: Warning if "Protokoll" not found, use first getfile link as fallback
+                    if protocol_link is None:
+                        if first_getfile_link is not None:
+                            logger.warning(
+                                f"No 'Protokoll' link found for row with date {session_date}, "
+                                f"using first available link: {first_getfile_link.get_text(strip=True)}"
+                            )
+                            protocol_link = first_getfile_link
+                        else:
+                            logger.warning(f"No getfile.asp links found for row with date {session_date}")
+                            continue
+
+                    # Extract URL and getfile_id
+                    href = protocol_link["href"]
+                    pdf_url = urljoin(SESSIONNET_BASE_URL, href)
+                    getfile_id = extract_getfile_id(href)
+                    break
+
+            if not found_protocol_icon:
+                logger.warning(f"No protocol icon (NÖ/NS) found for row with date {session_date}")
+
+            if not pdf_url or not getfile_id:
                 logger.warning(f"No protocol document found for row with date {session_date}")
                 continue
-
-            pdf_url = documents[0]["url"]
-            getfile_id = documents[0]["getfile_id"]
 
             protocols.append({
                 'session_date': session_date,

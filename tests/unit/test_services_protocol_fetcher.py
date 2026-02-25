@@ -9,7 +9,6 @@ from bs4 import BeautifulSoup
 from app.services.protocol_fetcher import (
     parse_protocol_list,
     extract_getfile_id,
-    extract_protocol_documents,
 )
 
 
@@ -73,10 +72,9 @@ class TestParseProtocolList:
         <body>
             <table>
                 <tr class="smc-t-r-l">
-                    <td>15.01.2024</td>
-                    <td><a href="si0046.asp?sisessionid=123">Test Protocol Title</a></td>
-                    <td>Extra cell</td>
-                    <td>
+                    <td class="sidat_tag">15.01.2024</td>
+                    <td class="silink"><a href="si0046.asp?sisessionid=123">Test Protocol Title</a></td>
+                    <td class="sidocs">
                         <div>
                             <i>NÖ</i>
                             <a href="getfile.asp?id=12345">Protokoll</a>
@@ -104,10 +102,9 @@ class TestParseProtocolList:
         <body>
             <table>
                 <tr class="smc-t-r-l">
-                    <td>15.01.2024</td>
-                    <td><a href="si0046.asp?sisessionid=111">First Protocol</a></td>
-                    <td>Extra</td>
-                    <td>
+                    <td class="sidat_tag">15.01.2024</td>
+                    <td class="silink"><a href="si0046.asp?sisessionid=111">First Protocol</a></td>
+                    <td class="sidocs">
                         <div>
                             <i>NÖ</i>
                             <a href="getfile.asp?id=11111">Protokoll</a>
@@ -115,10 +112,9 @@ class TestParseProtocolList:
                     </td>
                 </tr>
                 <tr class="smc-t-r-l">
-                    <td>20.01.2024</td>
-                    <td><a href="si0046.asp?sisessionid=222">Second Protocol</a></td>
-                    <td>Extra</td>
-                    <td>
+                    <td class="sidat_tag">20.01.2024</td>
+                    <td class="silink"><a href="si0046.asp?sisessionid=222">Second Protocol</a></td>
+                    <td class="sidocs">
                         <div>
                             <i>NS</i>
                             <a href="getfile.asp?id=22222">Protokoll</a>
@@ -143,22 +139,34 @@ class TestParseProtocolList:
         <body>
             <table>
                 <tr class="smc-t-r-l">
-                    <td>15.01.2024</td>
-                    <td><a href="si0046.asp?sisessionid=1">Protocol 1</a></td>
-                    <td>Extra</td>
-                    <td><a href="getfile.asp?id=1">Protokoll</a></td>
+                    <td class="sidat_tag">15.01.2024</td>
+                    <td class="silink"><a href="si0046.asp?sisessionid=1">Protocol 1</a></td>
+                    <td class="sidocs">
+                        <div>
+                            <i>NÖ</i>
+                            <a href="getfile.asp?id=1">Protokoll</a>
+                        </div>
+                    </td>
                 </tr>
                 <tr class="smc-t-r-l">
-                    <td>16.01.2024</td>
-                    <td><a href="si0046.asp?sisessionid=2">Protocol 2</a></td>
-                    <td>Extra</td>
-                    <td><a href="getfile.asp?id=2">Protokoll</a></td>
+                    <td class="sidat_tag">16.01.2024</td>
+                    <td class="silink"><a href="si0046.asp?sisessionid=2">Protocol 2</a></td>
+                    <td class="sidocs">
+                        <div>
+                            <i>NÖ</i>
+                            <a href="getfile.asp?id=2">Protokoll</a>
+                        </div>
+                    </td>
                 </tr>
                 <tr class="smc-t-r-l">
-                    <td>17.01.2024</td>
-                    <td><a href="si0046.asp?sisessionid=3">Protocol 3</a></td>
-                    <td>Extra</td>
-                    <td><a href="getfile.asp?id=3">Protokoll</a></td>
+                    <td class="sidat_tag">17.01.2024</td>
+                    <td class="silink"><a href="si0046.asp?sisessionid=3">Protocol 3</a></td>
+                    <td class="sidocs">
+                        <div>
+                            <i>NÖ</i>
+                            <a href="getfile.asp?id=3">Protokoll</a>
+                        </div>
+                    </td>
                 </tr>
             </table>
         </body>
@@ -169,21 +177,25 @@ class TestParseProtocolList:
 
         assert len(result) == 3
 
-    def test_skips_rows_with_insufficient_cells(self):
-        """Test that rows with fewer than 4 cells are skipped."""
+    def test_skips_rows_with_missing_cells(self):
+        """Test that rows without required class cells are skipped."""
         html = """
         <html>
         <body>
             <table>
                 <tr class="smc-t-r-l">
                     <td>15.01.2024</td>
-                    <td>Too few cells</td>
+                    <td>Missing class cells</td>
                 </tr>
                 <tr class="smc-t-r-l">
-                    <td>20.01.2024</td>
-                    <td><a href="si0046.asp?sisessionid=123">Valid Protocol</a></td>
-                    <td>Extra</td>
-                    <td><a href="getfile.asp?id=12345">Protokoll</a></td>
+                    <td class="sidat_tag">20.01.2024</td>
+                    <td class="silink"><a href="si0046.asp?sisessionid=123">Valid Protocol</a></td>
+                    <td class="sidocs">
+                        <div>
+                            <i>NÖ</i>
+                            <a href="getfile.asp?id=12345">Protokoll</a>
+                        </div>
+                    </td>
                 </tr>
             </table>
         </body>
@@ -202,16 +214,19 @@ class TestParseProtocolList:
         <body>
             <table>
                 <tr class="smc-t-r-l">
-                    <td>15.01.2024</td>
-                    <td><a href="si0046.asp?sisessionid=123">No Document Protocol</a></td>
-                    <td>No protocol</td>
-                    <td>No protocol link here</td>
+                    <td class="sidat_tag">15.01.2024</td>
+                    <td class="silink"><a href="si0046.asp?sisessionid=123">No Document Protocol</a></td>
+                    <td class="sidocs">No protocol link here</td>
                 </tr>
                 <tr class="smc-t-r-l">
-                    <td>20.01.2024</td>
-                    <td><a href="si0046.asp?sisessionid=456">Valid Protocol</a></td>
-                    <td>Extra</td>
-                    <td><a href="getfile.asp?id=12345">Protokoll</a></td>
+                    <td class="sidat_tag">20.01.2024</td>
+                    <td class="silink"><a href="si0046.asp?sisessionid=456">Valid Protocol</a></td>
+                    <td class="sidocs">
+                        <div>
+                            <i>NÖ</i>
+                            <a href="getfile.asp?id=12345">Protokoll</a>
+                        </div>
+                    </td>
                 </tr>
             </table>
         </body>
@@ -229,10 +244,14 @@ class TestParseProtocolList:
         <body>
             <table>
                 <tr class="smc-t-r-l">
-                    <td>15.01.2024</td>
-                    <td><a href="si0046.asp?sisessionid=123">Test Protocol</a></td>
-                    <td>Extra</td>
-                    <td><a href="getfile.asp?id=12345">Protokoll</a></td>
+                    <td class="sidat_tag">15.01.2024</td>
+                    <td class="silink"><a href="si0046.asp?sisessionid=123">Test Protocol</a></td>
+                    <td class="sidocs">
+                        <div>
+                            <i>NÖ</i>
+                            <a href="getfile.asp?id=12345">Protokoll</a>
+                        </div>
+                    </td>
                 </tr>
             </table>
         </body>
@@ -250,10 +269,14 @@ class TestParseProtocolList:
         <body>
             <table>
                 <tr class="smc-t-r-l">
-                    <td>15.01.2024</td>
-                    <td><a href="si0046.asp?sisessionid=123">Test Protocol</a></td>
-                    <td>Extra</td>
-                    <td><a href="getfile.asp?id=12345">Protokoll</a></td>
+                    <td class="sidat_tag">15.01.2024</td>
+                    <td class="silink"><a href="si0046.asp?sisessionid=123">Test Protocol</a></td>
+                    <td class="sidocs">
+                        <div>
+                            <i>NÖ</i>
+                            <a href="getfile.asp?id=12345">Protokoll</a>
+                        </div>
+                    </td>
                 </tr>
             </table>
         </body>
@@ -289,16 +312,24 @@ class TestParseProtocolList:
         <body>
             <table>
                 <tr class="smc-t-r-l">
-                    <td>invalid-date</td>
-                    <td><a href="si0046.asp?sisessionid=123">Test Protocol</a></td>
-                    <td>Extra</td>
-                    <td><a href="getfile.asp?id=12345">Protokoll</a></td>
+                    <td class="sidat_tag">invalid-date</td>
+                    <td class="silink"><a href="si0046.asp?sisessionid=123">Test Protocol</a></td>
+                    <td class="sidocs">
+                        <div>
+                            <i>NÖ</i>
+                            <a href="getfile.asp?id=12345">Protokoll</a>
+                        </div>
+                    </td>
                 </tr>
                 <tr class="smc-t-r-l">
-                    <td>20.01.2024</td>
-                    <td><a href="si0046.asp?sisessionid=456">Valid Protocol</a></td>
-                    <td>Extra</td>
-                    <td><a href="getfile.asp?id=67890">Protokoll</a></td>
+                    <td class="sidat_tag">20.01.2024</td>
+                    <td class="silink"><a href="si0046.asp?sisessionid=456">Valid Protocol</a></td>
+                    <td class="sidocs">
+                        <div>
+                            <i>NÖ</i>
+                            <a href="getfile.asp?id=67890">Protokoll</a>
+                        </div>
+                    </td>
                 </tr>
             </table>
         </body>
@@ -310,168 +341,3 @@ class TestParseProtocolList:
         # Should skip invalid date row and parse valid one
         assert len(result) == 1
         assert result[0]['title'] == "Valid Protocol"
-
-
-class TestExtractProtocolDocuments:
-    """Tests for extract_protocol_documents function."""
-
-    def test_extracts_protokoll_link(self):
-        """Test extracting document with 'Protokoll' in link text."""
-        html = """
-        <tr>
-            <td>Date</td>
-            <td>Title</td>
-            <td>Extra</td>
-            <td>
-                <a href="getfile.asp?id=12345">Protokoll</a>
-            </td>
-        </tr>
-        """
-        soup = BeautifulSoup(html, 'lxml')
-        row = soup.find('tr')
-        result = extract_protocol_documents(row, "https://example.com/")
-
-        assert len(result) == 1
-        assert result[0]['title'] == "Protokoll"
-        assert result[0]['url'] == "https://example.com/getfile.asp?id=12345"
-        assert result[0]['getfile_id'] == 12345
-
-    def test_extracts_no_icon_document(self):
-        """Test extracting document with NÖ icon."""
-        html = """
-        <tr>
-            <td>Date</td>
-            <td>Title</td>
-            <td>Extra</td>
-            <td>
-                <div>
-                    <i>NÖ</i>
-                    <a href="getfile.asp?id=67890">Document</a>
-                </div>
-            </td>
-        </tr>
-        """
-        soup = BeautifulSoup(html, 'lxml')
-        row = soup.find('tr')
-        result = extract_protocol_documents(row, "https://example.com/")
-
-        assert len(result) == 1
-        assert result[0]['getfile_id'] == 67890
-
-    def test_extracts_ns_icon_document(self):
-        """Test extracting document with NS icon."""
-        html = """
-        <tr>
-            <td>Date</td>
-            <td>Title</td>
-            <td>Extra</td>
-            <td>
-                <div>
-                    <i>NS</i>
-                    <a href="getfile.asp?id=11111">Document</a>
-                </div>
-            </td>
-        </tr>
-        """
-        soup = BeautifulSoup(html, 'lxml')
-        row = soup.find('tr')
-        result = extract_protocol_documents(row, "https://example.com/")
-
-        assert len(result) == 1
-        assert result[0]['getfile_id'] == 11111
-
-    def test_skips_non_getfile_links(self):
-        """Test that non-getfile.asp links are skipped."""
-        html = """
-        <tr>
-            <td>Date</td>
-            <td>Title</td>
-            <td>Extra</td>
-            <td>
-                <a href="other.asp?id=123">Other Link</a>
-            </td>
-        </tr>
-        """
-        soup = BeautifulSoup(html, 'lxml')
-        row = soup.find('tr')
-        result = extract_protocol_documents(row, "https://example.com/")
-
-        assert len(result) == 0
-
-    def test_skips_non_protocol_documents(self):
-        """Test that documents without Protokoll or NÖ/NS icon are skipped."""
-        html = """
-        <tr>
-            <td>Date</td>
-            <td>Title</td>
-            <td>Extra</td>
-            <td>
-                <div>
-                    <i>Other</i>
-                    <a href="getfile.asp?id=123">Some Other Doc</a>
-                </div>
-            </td>
-        </tr>
-        """
-        soup = BeautifulSoup(html, 'lxml')
-        row = soup.find('tr')
-        result = extract_protocol_documents(row, "https://example.com/")
-
-        assert len(result) == 0
-
-    def test_extracts_multiple_documents(self):
-        """Test extracting multiple protocol documents from one row."""
-        html = """
-        <tr>
-            <td>Date</td>
-            <td>Title</td>
-            <td>Extra</td>
-            <td>
-                <div>
-                    <i>NÖ</i>
-                    <a href="getfile.asp?id=11111">Protokoll</a>
-                </div>
-                <div>
-                    <i>NS</i>
-                    <a href="getfile.asp?id=22222">Niederschrift</a>
-                </div>
-            </td>
-        </tr>
-        """
-        soup = BeautifulSoup(html, 'lxml')
-        row = soup.find('tr')
-        result = extract_protocol_documents(row, "https://example.com/")
-
-        assert len(result) == 2
-        assert result[0]['getfile_id'] == 11111
-        assert result[1]['getfile_id'] == 22222
-
-    def test_returns_empty_list_when_no_documents(self):
-        """Test that empty list is returned when no protocol documents found."""
-        html = """
-        <tr>
-            <td>Date</td>
-            <td>Title</td>
-            <td>Extra</td>
-            <td>No documents here</td>
-        </tr>
-        """
-        soup = BeautifulSoup(html, 'lxml')
-        row = soup.find('tr')
-        result = extract_protocol_documents(row, "https://example.com/")
-
-        assert result == []
-
-    def test_returns_empty_list_when_less_than_4_cells(self):
-        """Test that empty list is returned when row has fewer than 4 cells."""
-        html = """
-        <tr>
-            <td>Only</td>
-            <td>Two cells</td>
-        </tr>
-        """
-        soup = BeautifulSoup(html, 'lxml')
-        row = soup.find('tr')
-        result = extract_protocol_documents(row, "https://example.com/")
-
-        assert result == []

@@ -33,11 +33,10 @@ TRAEFIK_HOST = os.getenv("TRAEFIK_HOST", "gossip.localhost")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # Directories (for bind mounts)
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-ARTICLES_DIR = BASE_DIR / Path(os.getenv("ARTICLES_DIR", "/app/articles"))
-GENERATED_IMAGES_DIR = BASE_DIR / Path(os.getenv("GENERATED_IMAGES_DIR", "/app/generated_images"))
-INSTA_IMAGES_DIR = BASE_DIR / Path(os.getenv("INSTA_IMAGES_DIR", "/app/insta_images"))
-LOGS_DIR = BASE_DIR / Path(os.getenv("LOGS_DIR", "/app/logs"))
+ARTICLES_DIR = Path(os.getenv("ARTICLES_DIR", "/app/articles"))
+GENERATED_IMAGES_DIR = Path(os.getenv("GENERATED_IMAGES_DIR", "/app/generated_images"))
+INSTA_IMAGES_DIR = Path(os.getenv("INSTA_IMAGES_DIR", "/app/insta_images"))
+LOGS_DIR = Path(os.getenv("LOGS_DIR", "/app/logs"))
 
 
 # --- Model Names ---
