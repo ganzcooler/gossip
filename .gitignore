@@ -107,6 +107,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.devcontainer/
 
 # Configuration files (sensitive or local)
 config.ini

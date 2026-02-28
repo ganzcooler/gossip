@@ -1,0 +1,50 @@
+services:
+  app:
+    build: .
+    container_name: gossip-app
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./articles:/app/articles
+      - ./generated_images:/app/generated_images
+      - ./insta_images:/app/insta_images
+      - ./logs:/app/logs
+    networks:
+      - internal
+      - traefik-proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.actual.rule=Host(`gossip.dano1.de`)"
+      - "traefik.http.routers.actual.entrypoints=web"
+      - "traefik.http.services.actual.loadbalancer.server.port=8000"
+
+  postgres:
+    image: postgres:16
+    container_name: gossip-postgres
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
+networks:
+  internal:
+    internal: true
+  traefik-proxy:
+    external: true

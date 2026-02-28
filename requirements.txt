@@ -4,3 +4,18 @@ beautifulsoup4
 PyMuPDF
 pydantic
 Pillow
+fastapi
+uvicorn
+sqlalchemy
+asyncpg
+apscheduler
+httpx
+lxml
+
+# Testing dependencies
+pytest
+pytest-asyncio
+pytest-cov
+coverage
+httpx
+aiosqlite
