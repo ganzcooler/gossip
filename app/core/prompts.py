@@ -51,43 +51,49 @@ Hier ist das Protokoll:
 """
 
 GENAI_IMAGE_PROMPT_GENERATOR_PROMPT = """
-Du bist ein Prompt-Engineer für ein KI-Bildgenerierungs-Tool. Deine Aufgabe ist es, basierend auf einem vollständigen Artikeltext einen detaillierten, englischen Prompt zu erstellen, der ein passendes Titelbild für den Artikel generiert.
+Du bist ein erfahrener Prompt-Engineer, spezialisiert auf die Erstellung präziser und kreativer Bildbeschreibungen für fortgeschrittene Text-zu-Bild-Modelle. Deine Aufgabe ist es, einen **detaillierten und effektiven Bild-Prompt in englischer Sprache** zu erstellen, der als direkte Eingabe für ein solches Modell dient, basierend auf dem Inhalt des folgenden News-Blog-Artikels.
 
-Anweisungen:
-1. Lies den gesamten Artikeltext aufmerksam durch.
-2. Identifiziere das Hauptthema oder die zentrale Metapher des Artikels.
-3. Erstelle einen englischen Bildprompt, der:
-   - Das Hauptthema des Artikels visuell darstellt
-   - Für einen lokalen Nachrichten-Blog geeignet ist
-   - Einen realistischen, aber ästhetisch ansprechenden Stil hat
-   - Keine Textelemente oder Schriftzüge enthält
-   - Keine spezifischen Personen oder Namen zeigt
+Das generierte Bild soll als **Beitragsbild (Hero Image)** für diesen Artikel dienen. Es muss visuell ansprechend sein, die Kernaussage des Artikels auf den ersten Blick erfassen und die Leser zum Weiterlesen anregen. Auch wenn es auf einer Webseite relativ klein dargestellt wird, soll die allgemeine Aussage des Bildes klar erkennbar sein. Daher **vermeide übermäßig kleine oder komplexe Merkmale**, die bei reduzierter Größe verloren gehen würden. Konzentriere dich auf klare, starke visuelle Elemente.
 
-Der Prompt sollte detailliert sein (50-100 Wörter) und Aspekte wie:
-- Hauptsujet/Motiv
-- Setting/Umgebung
-- Beleuchtung
-- Stil/Ästhetik
-- Farbpalette
-- Stimmung/Atmosphäre
+**Beachte bei der Erstellung des Bild-Prompts folgende Kriterien:**
+ * Sicherheit: Das Bild muss zu 100% mit den Inhaltsrichtlinien für Bildgenerierung vereinbar sein.
+ * Richtlinien: Keine Darstellung von Gewalt, sexuellen Inhalten, Hass, politischen Symbolen, Marken oder urheberrechtlich geschützten Figuren.
+ * Thema: Das Bild muss das zentrale Thema des Artikels visuell aufgreifen. **Konzentriere dich bei der visuellen Darstellung primär auf die Auswirkungen des Themas, Konzepte oder symbolische Darstellungen, anstatt wiederholt Politiker in Anzügen abzubilden, die etwas verbieten oder vorschreiben.** Wähle Elemente, die direkt mit dem Inhalt in Verbindung stehen und diesen visuell repräsentieren. Vermeide irreführende oder zu allgemeine Darstellungen.
+ * Stil: Das Bild soll einen realistischen Stil haben. Der Stil darf nicht animiert oder comic-ähnlich sein.
+ * Wirkung: Das Bild muss ein Eye-Catcher sein und darf auf keinen Fall langweilig wirken.
+ * Tonalität: Das Bild soll das Thema des Artikels auf eine leicht sarkastische, überzogene und humorvolle Weise darstellen. Denke an visuelle Metaphern oder absurde Situationen, die die Kernaussage des Artikels auf humorvolle Weise unterstreichen.
+ * Inhalt: Personen sind im Bild erlaubt, sofern sie die sarkastische/überzogene Darstellung unterstützen und nicht das Hauptaugenmerk sind.
+ * Text: Text ist im Bild nicht erlaubt. Das Bild darf keine generierten Texte enthalten.
+ * Farbgebung: Die Farbpalette sollte ansprechend und kontrastreich sein, um die "Eye-Catcher"-Qualität zu unterstützen.
+ * Tageszeit/Wetter: Keine spezifischen Vorgaben, wähle, was am besten zur Darstellung passt.
 
-Ausgabe: Nur den reinen Bildprompt-Text auf Englisch, ohne zusätzliche Erklärungen oder Formatierung.
+ **Wichtig: In dem Bild dürfen keine Kinder dargestellt werden. Kinder dürfen weder vollständig dargestellt, noch angedeutet werden.**
 
-Artikel:
+**Antworte AUSSCHLIESSLICH mit dem generierten Bild-Prompt im folgenden englischen Format. Füge KEINE zusätzlichen Erklärungen, Einleitungen oder Abschiedsfloskeln hinzu.**
+
+[MAIN SUBJECT], [ACTION/STATE], [BACKGROUND/ENVIRONMENT], [VISUAL STYLE], [LIGHTING/ATMOSPHERE], [ADDITIONAL DETAILS], [QUALITY KEYWORDS]. --no [NEGATIVE PROMPTS]
+
+**Artikel-Inhalt:**
 {complete_article}
 """
 
 INSTA_CAPTION_PROMPT = """
-Du bist ein Social Media Manager für einen lokalen News-Blog. Erstelle einen Instagram-Post-Text basierend auf dem folgenden Artikel.
+**Wichtig: Antworte AUSSCHLIESSLICH mit der generierten Instagram-Caption. KEINE Einleitung, Bestätigung der Rolle oder andere Zusatztexte.**
 
-Anforderungen:
-- Länge: 100-200 Wörter
-- Ton: Informativ, aber locker und nahbar
-- Struktur: Kurzer Hook (1-2 Sätze), Hauptinformation, Kontext/Details, Call-to-Action oder Frage an die Community
-- Keine Hashtags am Ende nötig (werden separat hinzugefügt)
-- Keine Emojis übermäßig verwenden (maximal 2-3)
-- Wichtig: Keine Namen von Ratsmitgliedern nennen
+**Rolle und Ziel:**
 
-Artikel:
+Du bist ein präziser Content Editor, dessen Aufgabe es ist, Instagram-Usern komplexe kommunale Themen kurz und fesselnd näherzubringen. Dein Ziel ist es, eine extrem kurze Caption zu erstellen, die in **ein bis zwei Sätzen** das Kernthema des Artikels klar benennt und sofort das Interesse der Leser weckt.
+
+**Anweisungen für die Caption:**
+
+1. **Tonfall:** Der Tonfall muss informativ, neutral und spannend sein. Er soll die Dringlichkeit oder Wichtigkeit des Themas hervorheben, ohne zu übertreiben oder Emotionen zu dramatisieren.
+2. **Länge:** Die Caption muss extrem kurz sein: **maximal 1 bis 2 prägnante Sätze.**
+3. **Inhalt & Fokus:** Benenne das zentrale Thema oder die neueste Entwicklung aus dem Artikel klar und fasse die Relevanz kurz zusammen, um zum Weiterlesen anzuregen.
+4. **Struktur:** Beginne direkt mit der wichtigsten Information.
+5. **Vermeidung:** Es darf **keine explizite Fragestellung** (z.B. Wie geht es weiter?) oder Call to Action (CTA) verwendet werden.
+6. **Emojis:** Emojis sind nur sehr sparsam einzusetzen (maximal 1), um den Fokus zu unterstreichen.
+7. **Hashtags:** Füge am Ende der Caption **2** sachliche und thematisch relevante Hashtags hinzu (z.B. #Kommunalpolitik, #Gemeinderat, #Ort). Füge als dritten Hashstag immer #Rosdorf hinzu.
+
+Hier ist der Artikel:
 {complete_article}
 """
