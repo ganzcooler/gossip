@@ -35,8 +35,8 @@ def generate_insta_caption(article_content: str, article_stem: str, caption_dir:
 
             if response.text:
                 caption = response.text.strip()
-                logger.info(f"Successfully generated Instagram caption for article: '{article_stem}'")
-                logger.info(f"Caption: {caption}")
+                preview = caption[:50] + "..." if len(caption) > 50 else caption
+                logger.info(f"Successfully generated Instagram caption for article: '{article_stem}' - Caption: {preview}")
 
                 # Save the caption to a file
                 caption_dir.mkdir(parents=True, exist_ok=True)

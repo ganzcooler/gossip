@@ -388,8 +388,10 @@ def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Pa
 
 def create_insta_images_for_protocol(
     protocol_folder: Path,
-    res_dir: Path = Path("/app/res")
+    res_dir: Path = None
 ):
+    if res_dir is None:
+        res_dir = Path(__file__).parent.parent / "res"
     """
     Create Instagram-formatted images for all articles in a protocol folder.
     Iterates through images, creates a primary image with headline, and then

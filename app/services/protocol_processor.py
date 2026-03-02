@@ -61,7 +61,7 @@ async def process_protocol(protocol: Protocol, db_session: AsyncSession):
     articles = await loop.run_in_executor(None, generate_articles, protocol.pdf_text)
 
     if not articles:
-        logger.warning(f"No articles generated for protocol {protocol.id}")
+        logger.error(f"No articles generated for protocol {protocol.id}")
         # Mark as processed anyway to avoid infinite retries
         protocol.processed = True
         await db_session.commit()

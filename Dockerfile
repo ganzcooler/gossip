@@ -15,7 +15,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Application code
 COPY app/ ./app/
 COPY src/ ./src/
-COPY res/ ./res/
 COPY main.py .
 
 # Create directories for bind mounts
