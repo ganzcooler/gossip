@@ -15,7 +15,6 @@ omit =
     app/database.py
     app/services/article_generator.py
     app/services/image_generator.py
-    app/services/caption_generator.py
     app/services/insta_generator.py
 branch = True
 

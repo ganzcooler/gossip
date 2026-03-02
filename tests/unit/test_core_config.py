@@ -118,6 +118,4 @@ class TestConfig:
         
         # Check paths end with expected values (platform-independent)
         assert str(config.ARTICLES_DIR).replace("\\", "/").endswith("/app/articles")
-        assert str(config.GENERATED_IMAGES_DIR).replace("\\", "/").endswith("/app/generated_images")
-        assert str(config.INSTA_IMAGES_DIR).replace("\\", "/").endswith("/app/insta_images")
         assert str(config.LOGS_DIR).replace("\\", "/").endswith("/app/logs")

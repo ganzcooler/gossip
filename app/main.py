@@ -7,7 +7,7 @@ from app.logging_config import setup_logging
 from app.scheduler import setup_scheduler, start_scheduler, stop_scheduler
 from app.api.routes import router
 from app.utils.folder_utils import ensure_directories
-from app.core.config import ARTICLES_DIR, GENERATED_IMAGES_DIR, INSTA_IMAGES_DIR, LOGS_DIR
+from app.core.config import ARTICLES_DIR, LOGS_DIR
 
 # Setup logging
 setup_logging()
@@ -23,8 +23,6 @@ async def lifespan(app: FastAPI):
     # Ensure directories exist
     ensure_directories([
         ARTICLES_DIR,
-        GENERATED_IMAGES_DIR,
-        INSTA_IMAGES_DIR,
         LOGS_DIR
     ])
 

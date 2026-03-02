@@ -2,7 +2,6 @@
 Unit tests for app/services/insta_generator.py
 """
 import pytest
-from pathlib import Path
 from unittest.mock import MagicMock, patch, mock_open
 
 from app.services.insta_generator import (
@@ -113,7 +112,7 @@ class TestSplitTextIntoChunks:
 class TestExtractArticleContent:
     """Tests for extract_article_content function."""
 
-    def test_extract_h1_and_content(self, temp_directory):
+    def test_extract_h1_and_content(self):
         """Test extracting H1 and content blocks."""
         html_content = """<!DOCTYPE html>
 <html>
@@ -126,16 +125,13 @@ class TestExtractArticleContent:
 </body>
 </html>"""
         
-        article_path = temp_directory / "test_article.html"
-        article_path.write_text(html_content, encoding="utf-8")
-        
-        result = extract_article_content(article_path)
+        result = extract_article_content(html_content)
         
         assert result is not None
         assert result.h1 == "Main Headline"
         assert len(result.content_blocks) == 2
 
-    def test_extract_h2_p_pairs(self, temp_directory):
+    def test_extract_h2_p_pairs(self):
         """Test extracting H2+P pairs as content blocks."""
         html_content = """<!DOCTYPE html>
 <html>
@@ -148,10 +144,7 @@ class TestExtractArticleContent:
 </body>
 </html>"""
         
-        article_path = temp_directory / "test_article.html"
-        article_path.write_text(html_content, encoding="utf-8")
-        
-        result = extract_article_content(article_path)
+        result = extract_article_content(html_content)
         
         assert result is not None
         assert len(result.content_blocks) == 2
@@ -160,7 +153,7 @@ class TestExtractArticleContent:
         assert result.content_blocks[1].headline == "Second Section"
         assert result.content_blocks[1].paragraph == "Second paragraph."
 
-    def test_extract_standalone_paragraphs(self, temp_directory):
+    def test_extract_standalone_paragraphs(self):
         """Test extracting standalone paragraphs."""
         html_content = """<!DOCTYPE html>
 <html>
@@ -170,22 +163,19 @@ class TestExtractArticleContent:
 </body>
 </html>"""
         
-        article_path = temp_directory / "test_article.html"
-        article_path.write_text(html_content, encoding="utf-8")
-        
-        result = extract_article_content(article_path)
+        result = extract_article_content(html_content)
         
         assert result is not None
         assert len(result.content_blocks) == 1
         assert result.content_blocks[0].headline is None
         assert result.content_blocks[0].paragraph == "Standalone paragraph."
 
-    def test_file_not_found(self):
-        """Test handling of non-existent file."""
-        result = extract_article_content(Path("/nonexistent/path/article.html"))
+    def test_empty_content(self):
+        """Test handling of empty HTML content."""
+        result = extract_article_content("")
         assert result is None
 
-    def test_no_h1_tag(self, temp_directory):
+    def test_no_h1_tag(self):
         """Test extraction when no H1 tag exists."""
         html_content = """<!DOCTYPE html>
 <html>
@@ -194,25 +184,17 @@ class TestExtractArticleContent:
 </body>
 </html>"""
         
-        article_path = temp_directory / "test_article.html"
-        article_path.write_text(html_content, encoding="utf-8")
-        
-        result = extract_article_content(article_path)
+        result = extract_article_content(html_content)
         
         assert result is not None
         assert result.h1 is None
 
-    def test_empty_file(self, temp_directory):
-        """Test handling of empty file."""
-        article_path = temp_directory / "empty.html"
-        article_path.write_text("", encoding="utf-8")
-        
-        result = extract_article_content(article_path)
-        
-        # Empty HTML might return None or empty content
-        assert result is None or result.h1 is None
+    def test_none_content(self):
+        """Test handling of None content."""
+        result = extract_article_content(None)
+        assert result is None
 
-    def test_handles_standalone_h2(self, temp_directory):
+    def test_handles_standalone_h2(self):
         """Test handling of H2 without following P."""
         html_content = """<!DOCTYPE html>
 <html>
@@ -223,10 +205,7 @@ class TestExtractArticleContent:
 </body>
 </html>"""
         
-        article_path = temp_directory / "test_article.html"
-        article_path.write_text(html_content, encoding="utf-8")
-        
-        result = extract_article_content(article_path)
+        result = extract_article_content(html_content)
         
         assert result is not None
         # Should have the H2 as a block without paragraph

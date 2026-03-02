@@ -9,7 +9,6 @@ from bs4 import BeautifulSoup, Tag
 
 from app.core import tags as tags_module
 from app.core.models import ArticleContent, ContentBlock
-from app.core.config import INSTA_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -83,15 +82,14 @@ def split_text_into_chunks(text: str, max_length: int) -> list[str]:
     return chunks
 
 
-def extract_article_content(article_path: pathlib.Path) -> ArticleContent | None:
-    """Extracts H1 and content blocks (H2/P combinations) from an HTML article file."""
-    if not article_path.is_file():
-        logger.warning(f"Article file not found: {article_path}")
+def extract_article_content(html_content: str) -> ArticleContent | None:
+    """Extracts H1 and content blocks (H2/P combinations) from an HTML string."""
+    if not html_content:
+        logger.warning("Empty HTML content provided")
         return None
 
     try:
-        with open(article_path, "r", encoding="utf-8") as f:
-            soup = BeautifulSoup(f, "html.parser")
+        soup = BeautifulSoup(html_content, "html.parser")
 
         h1_tag = soup.find("h1")
         h1_text = h1_tag.get_text(strip=True) if h1_tag else None
@@ -136,7 +134,7 @@ def extract_article_content(article_path: pathlib.Path) -> ArticleContent | None
         return ArticleContent(h1=h1_text, content_blocks=content_blocks)
 
     except Exception as e:
-        logger.error(f"Error reading or parsing article file {article_path}: {e}", exc_info=True)
+        logger.error(f"Error parsing HTML content: {e}", exc_info=True)
         return None
 
 
@@ -386,34 +384,46 @@ def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Pa
     return Image.alpha_composite(base_img.convert('RGBA'), overlay)
 
 
-def create_insta_images_for_protocol(
+async def create_insta_images_for_protocol(
     protocol_folder: Path,
+    articles_data: list[dict],
     res_dir: Path = None
-):
-    if res_dir is None:
-        res_dir = Path(__file__).parent.parent / "res"
+) -> None:
     """
     Create Instagram-formatted images for all articles in a protocol folder.
     Iterates through images, creates a primary image with headline, and then
     creates additional blurred images for each content block in the article.
+
+    Args:
+        protocol_folder: Path to the protocol folder for saving images
+        articles_data: List of dicts with 'index', 'content', and 'title' keys
+        res_dir: Path to resources directory (fonts, logo)
     """
+    if res_dir is None:
+        res_dir = Path(__file__).parent.parent / "res"
+
     image_files = list(protocol_folder.glob("image_*.png"))
 
-    for image_path in image_files:
-        # Find corresponding article
-        article_index = image_path.stem.split("_")[1]
-        article_files = list(protocol_folder.glob(f"article_{article_index}_*.html"))
+    # Create a lookup for articles_data by index
+    articles_by_index = {str(article["index"]): article for article in articles_data}
 
-        if not article_files:
-            logger.warning(f"No article found for image: {image_path}")
+    for image_path in image_files:
+        # Find corresponding article index from image filename
+        article_index = image_path.stem.split("_")[1]
+
+        if article_index not in articles_by_index:
+            logger.warning(f"No article data found for image: {image_path}")
             continue
 
-        article_path = article_files[0]
-        article_content = extract_article_content(article_path)
+        article_data = articles_by_index[article_index]
+        article_content = extract_article_content(article_data["content"])
 
         if not article_content or not article_content.h1:
-            logger.warning(f"Could not extract content from: {article_path}")
+            logger.warning(f"Could not extract content from article index {article_index}")
             continue
+
+        # Use title for article_stem if available, otherwise use index
+        article_stem = article_data.get("title", f"article_{article_index}")
 
         # Create main Instagram image
         insta_main_path = protocol_folder / f"insta_{article_index}_main.png"
@@ -421,7 +431,7 @@ def create_insta_images_for_protocol(
             try:
                 with Image.open(image_path) as img:
                     base_img = img.copy()
-                    final_img = create_main_image(base_img, article_content.h1, article_path.stem, res_dir)
+                    final_img = create_main_image(base_img, article_content.h1, article_stem, res_dir)
                     final_img.save(insta_main_path, 'PNG', compress_level=9)
                     logger.info(f"Created Instagram main image: {insta_main_path}")
             except Exception as e:

@@ -1,6 +1,5 @@
 import time
 import logging
-from pathlib import Path
 from google import genai
 from google.genai import types
 
@@ -10,25 +9,17 @@ from app.core import prompts
 logger = logging.getLogger(__name__)
 
 
-def generate_insta_caption(article_content: str, article_stem: str, caption_dir: Path) -> str | None:
-    """Generates and saves an Instagram caption for an article.
+def generate_insta_caption(article_title: str, article_content: str) -> str | None:
+    """Generates an Instagram caption for an article.
+
+    Args:
+        article_title: The title of the article.
+        article_content: The content of the article.
 
     Returns:
         The generated caption string if successful, None otherwise.
     """
-    caption_path = caption_dir / f"{article_stem}_caption.txt"
-
-    if caption_path.is_file():
-        logger.info(f"Caption file already exists for article '{article_stem}', skipping generation.")
-        # Read and return existing caption
-        try:
-            with open(caption_path, "r", encoding="utf-8") as f:
-                return f.read()
-        except Exception as e:
-            logger.error(f"Error reading existing caption file for '{article_stem}': {e}")
-            return None
-
-    logger.info(f"Generating Instagram caption for article: '{article_stem}'")
+    logger.info(f"Generating Instagram caption for article: '{article_title}'")
     max_retries = 5
     for attempt in range(max_retries):
         try:
@@ -46,24 +37,16 @@ def generate_insta_caption(article_content: str, article_stem: str, caption_dir:
             if response.text:
                 caption = response.text.strip()
                 preview = caption[:50] + "..." if len(caption) > 50 else caption
-                logger.info(f"Successfully generated Instagram caption for article: '{article_stem}' - Caption: {preview}")
-
-                # Save the caption to a file
-                caption_dir.mkdir(parents=True, exist_ok=True)
-
-                with open(caption_path, "w", encoding="utf-8") as f:
-                    f.write(caption)
-
-                logger.info(f"Successfully saved caption to {caption_path}")
+                logger.info(f"Successfully generated Instagram caption for article: '{article_title}' - Caption: {preview}")
                 return caption
 
             logger.warning(f"Instagram caption generation returned empty data on attempt {attempt + 1}/{max_retries}.")
 
         except Exception as e:
-            logger.error(f"Error generating Instagram caption for article '{article_stem}' on attempt {attempt + 1}/{max_retries}: {e}", exc_info=True)
+            logger.error(f"Error generating Instagram caption for article '{article_title}' on attempt {attempt + 1}/{max_retries}: {e}", exc_info=True)
 
         if attempt < max_retries - 1:
             time.sleep(config.API_CALL_DELAY_SECONDS)
 
-    logger.error(f"Failed to generate Instagram caption for article '{article_stem}' after multiple retries.")
+    logger.error(f"Failed to generate Instagram caption for article '{article_title}' after multiple retries.")
     return None
