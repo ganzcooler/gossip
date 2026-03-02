@@ -10,13 +10,23 @@ from app.core import prompts
 logger = logging.getLogger(__name__)
 
 
-def generate_insta_caption(article_content: str, article_stem: str, caption_dir: Path):
-    """Generates and saves an Instagram caption for an article."""
+def generate_insta_caption(article_content: str, article_stem: str, caption_dir: Path) -> str | None:
+    """Generates and saves an Instagram caption for an article.
+
+    Returns:
+        The generated caption string if successful, None otherwise.
+    """
     caption_path = caption_dir / f"{article_stem}_caption.txt"
 
     if caption_path.is_file():
         logger.info(f"Caption file already exists for article '{article_stem}', skipping generation.")
-        return
+        # Read and return existing caption
+        try:
+            with open(caption_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception as e:
+            logger.error(f"Error reading existing caption file for '{article_stem}': {e}")
+            return None
 
     logger.info(f"Generating Instagram caption for article: '{article_stem}'")
     max_retries = 5
@@ -45,7 +55,7 @@ def generate_insta_caption(article_content: str, article_stem: str, caption_dir:
                     f.write(caption)
 
                 logger.info(f"Successfully saved caption to {caption_path}")
-                return
+                return caption
 
             logger.warning(f"Instagram caption generation returned empty data on attempt {attempt + 1}/{max_retries}.")
 
@@ -56,3 +66,4 @@ def generate_insta_caption(article_content: str, article_stem: str, caption_dir:
             time.sleep(config.API_CALL_DELAY_SECONDS)
 
     logger.error(f"Failed to generate Instagram caption for article '{article_stem}' after multiple retries.")
+    return None

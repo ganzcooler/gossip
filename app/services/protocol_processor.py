@@ -138,9 +138,14 @@ async def process_single_article(
 
     # Step 2e: Generate Instagram caption (sync function in thread pool)
     article_stem = article_path.stem
-    await loop.run_in_executor(
+    caption = await loop.run_in_executor(
         None, generate_insta_caption, article_content, article_stem, protocol_folder
     )
+
+    # Save caption to database if generated successfully
+    if caption:
+        article_record.caption = caption
+        logger.info(f"Saved caption to database for article {article_index}")
 
     logger.info(f"Successfully processed article {article_index}: {article_data.ueberschrift}")
 
