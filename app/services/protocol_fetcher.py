@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import logging
 from bs4 import BeautifulSoup
@@ -55,6 +56,7 @@ async def fetch_and_parse_protocols(params: dict, db_session: AsyncSession) -> i
             continue
 
         # Download PDF text
+        await asyncio.sleep(3)
         pdf_text = await download_pdf_text(protocol_data['pdf_url'])
         if not pdf_text:
             logger.warning(f"Could not download PDF for protocol {protocol_data['getfile_id']}")
@@ -106,7 +108,6 @@ def parse_protocol_list(soup: BeautifulSoup) -> list[dict]:
             import re
             date_match = re.search(r'(\d{2}\.\d{2}\.\d{4})', date_text)
             if not date_match:
-                logger.warning(f"Could not extract date from: {date_text}")
                 continue
             date_str = date_match.group(1)
             session_date = datetime.strptime(date_str, '%d.%m.%Y').date()
@@ -176,10 +177,10 @@ def parse_protocol_list(soup: BeautifulSoup) -> list[dict]:
                     break
 
             if not found_protocol_icon:
-                logger.warning(f"No protocol icon (NÖ/NS) found for row with date {session_date}")
+                logger.info(f"No protocol icon (NÖ/NS) found for row with date {session_date}")
 
             if not pdf_url or not getfile_id:
-                logger.warning(f"No protocol document found for row with date {session_date}")
+                logger.info(f"No protocol document found for row with date {session_date}")
                 continue
 
             protocols.append({

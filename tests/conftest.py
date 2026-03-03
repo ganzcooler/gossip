@@ -9,8 +9,6 @@ from pathlib import Path
 # This ensures logging configuration works on Windows
 project_root = Path(__file__).parent.parent
 os.environ.setdefault("ARTICLES_DIR", str(project_root / "app/articles"))
-os.environ.setdefault("GENERATED_IMAGES_DIR", str(project_root / "app/generated_images"))
-os.environ.setdefault("INSTA_IMAGES_DIR", str(project_root / "app/insta_images"))
 os.environ.setdefault("LOGS_DIR", str(project_root / "app/logs"))
 
 import pytest
@@ -37,8 +35,6 @@ def mock_env_vars(monkeypatch):
         "TRAEFIK_HOST": "test.localhost",
         "LOG_LEVEL": "DEBUG",
         "ARTICLES_DIR": str(project_root / "app/articles"),
-        "GENERATED_IMAGES_DIR": str(project_root / "app/generated_images"),
-        "INSTA_IMAGES_DIR": str(project_root / "app/insta_images"),
         "LOGS_DIR": str(project_root / "app/logs"),
     }
     for key, value in env_vars.items():

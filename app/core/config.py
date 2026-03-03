@@ -34,14 +34,12 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # Directories (for bind mounts)
 ARTICLES_DIR = Path(os.getenv("ARTICLES_DIR", "/app/articles"))
-GENERATED_IMAGES_DIR = Path(os.getenv("GENERATED_IMAGES_DIR", "/app/generated_images"))
-INSTA_IMAGES_DIR = Path(os.getenv("INSTA_IMAGES_DIR", "/app/insta_images"))
 LOGS_DIR = Path(os.getenv("LOGS_DIR", "/app/logs"))
 
 
 # --- Model Names ---
 GENAI_ARTICLE_GENERATION_MODEL = "gemini-3-pro-preview"
-GENAI_IMAGE_PROMPT_MODEL = "gemini-2.5-flash"
+GENAI_IMAGE_PROMPT_MODEL = "gemini-2.5-flash-lite"
 GENAI_IMAGE_GENERATION_MODEL = "gemini-2.5-flash-image"
 
 # --- API Call Settings ---

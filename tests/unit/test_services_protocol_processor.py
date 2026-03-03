@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch, AsyncMock
 
 from app.services.protocol_processor import (
     sanitize_filename,
-    save_article_to_file,
     save_image_to_file,
 )
 
@@ -65,87 +64,6 @@ class TestSanitizeFilename:
         """Test that unicode letters are preserved."""
         result = sanitize_filename("München Köln")
         assert "München" in result or "muenchen" in result.lower()
-
-
-class TestSaveArticleToFile:
-    """Tests for save_article_to_file function."""
-
-    @pytest.fixture
-    def mock_article(self):
-        """Create a mock article object."""
-        article = MagicMock()
-        article.ueberschrift = "Test Article Headline"
-        article.inhalt = "<p>Test content</p><h2>Section</h2><p>More content.</p>"
-        return article
-
-    def test_creates_html_file(self, temp_directory, mock_article):
-        """Test that HTML file is created."""
-        result = save_article_to_file(mock_article, temp_directory, 1)
-
-        assert result.exists()
-        assert result.suffix == ".html"
-
-    def test_filename_contains_index(self, temp_directory, mock_article):
-        """Test that filename contains article index."""
-        result = save_article_to_file(mock_article, temp_directory, 5)
-
-        assert "05" in result.name
-
-    def test_filename_contains_headline(self, temp_directory, mock_article):
-        """Test that filename contains sanitized headline."""
-        result = save_article_to_file(mock_article, temp_directory, 1)
-
-        assert "Test_Article" in result.name or "test_article" in result.name.lower()
-
-    def test_file_contains_html_structure(self, temp_directory, mock_article):
-        """Test that file contains proper HTML structure."""
-        result = save_article_to_file(mock_article, temp_directory, 1)
-
-        content = result.read_text(encoding="utf-8")
-        assert "<!DOCTYPE html>" in content
-        assert "<html" in content
-        assert "</html>" in content
-
-    def test_file_contains_headline_in_title(self, temp_directory, mock_article):
-        """Test that HTML title contains article headline."""
-        result = save_article_to_file(mock_article, temp_directory, 1)
-
-        content = result.read_text(encoding="utf-8")
-        assert "<title>Test Article Headline</title>" in content
-
-    def test_file_contains_content(self, temp_directory, mock_article):
-        """Test that file contains article content."""
-        result = save_article_to_file(mock_article, temp_directory, 1)
-
-        content = result.read_text(encoding="utf-8")
-        assert "Test content" in content
-        assert "Section" in content
-        assert "More content" in content
-
-    def test_escapes_html_in_headline(self, temp_directory):
-        """Test that HTML special chars in headline are escaped."""
-        mock_article = MagicMock()
-        mock_article.ueberschrift = "Test <script>alert('xss')</script>"
-        mock_article.inhalt = "<p>Content</p>"
-
-        result = save_article_to_file(mock_article, temp_directory, 1)
-
-        content = result.read_text(encoding="utf-8")
-        # The script tag should be escaped (not present as raw HTML)
-        assert "<script>" not in content
-        # Should be HTML escaped entities
-        assert "&lt;script&gt;" in content or "&#x27;" in content
-
-    def test_truncates_long_headlines(self, temp_directory):
-        """Test that long headlines are truncated in filename."""
-        mock_article = MagicMock()
-        mock_article.ueberschrift = "A" * 100  # Very long headline
-        mock_article.inhalt = "<p>Content</p>"
-
-        result = save_article_to_file(mock_article, temp_directory, 1)
-
-        # Filename should be reasonable length
-        assert len(result.name) < 100
 
 
 class TestSaveImageToFile:
