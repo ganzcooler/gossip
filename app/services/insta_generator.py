@@ -384,7 +384,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Pa
     return Image.alpha_composite(base_img.convert('RGBA'), overlay)
 
 
-async def create_insta_images_for_protocol(
+def create_insta_images_for_protocol(
     protocol_folder: Path,
     articles_data: list[dict],
     res_dir: Path = None
@@ -394,9 +394,12 @@ async def create_insta_images_for_protocol(
     Iterates through images, creates a primary image with headline, and then
     creates additional blurred images for each content block in the article.
 
+    Note: Articles are passed via articles_data from the database, not read from files.
+    Only image files (image_*.png) are read from the protocol_folder.
+
     Args:
-        protocol_folder: Path to the protocol folder for saving images
-        articles_data: List of dicts with 'index', 'content', and 'title' keys
+        protocol_folder: Path to the protocol folder for saving images and reading source images
+        articles_data: List of dicts with 'index', 'content', and 'title' keys (from database)
         res_dir: Path to resources directory (fonts, logo)
     """
     if res_dir is None:
@@ -409,10 +412,15 @@ async def create_insta_images_for_protocol(
 
     for image_path in image_files:
         # Find corresponding article index from image filename
-        article_index = image_path.stem.split("_")[1]
+        # Normalize the index to handle leading zeros (e.g., "01" -> "1")
+        try:
+            article_index = str(int(image_path.stem.split("_")[1]))
+        except (IndexError, ValueError):
+            logger.warning(f"Could not parse article index from image filename: {image_path}")
+            continue
 
         if article_index not in articles_by_index:
-            logger.warning(f"No article data found for image: {image_path}")
+            logger.warning(f"No article data found for image: {image_path} (index: {article_index})")
             continue
 
         article_data = articles_by_index[article_index]
