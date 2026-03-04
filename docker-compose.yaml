@@ -34,6 +34,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - internal
+      - gossip-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
@@ -47,4 +48,6 @@ networks:
   internal:
     internal: true
   traefik-proxy:
+    external: true
+  gossip-net:
     external: true
