@@ -14,8 +14,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Application code
 COPY app/ ./app/
-COPY src/ ./src/
-COPY main.py .
 
 # Create directories for bind mounts
 RUN mkdir -p articles generated_images insta_images logs
