@@ -11,10 +11,16 @@ from app.core.models import SingleArticle, LLMGeneratedArticles
 logger = logging.getLogger(__name__)
 
 
+class ArticleGenerationError(Exception):
+    """Raised when article generation fails after all retries."""
+    pass
+
+
 def generate_articles(text: str) -> List[SingleArticle]:
     """Generates articles from text using a direct Google GenAI API call with retries."""
     logger.info("Generating articles...")
     max_retries = 5
+    last_error = None
     for attempt in range(max_retries):
         try:
             client = genai.Client(api_key=config.load_google_api_key())
@@ -37,9 +43,18 @@ def generate_articles(text: str) -> List[SingleArticle]:
 
         except Exception as e:
             logger.error(f"Error generating articles on attempt {attempt + 1}/{max_retries}: {e}", exc_info=True)
+            last_error = e
 
         if attempt < max_retries - 1:
             time.sleep(config.API_CALL_DELAY_SECONDS)
 
-    logger.error("Failed to generate articles after multiple retries.")
-    return []
+    logger.error(f"Failed to generate articles after {max_retries} retries. Last error: {last_error}")
+    # Distinguish between actual errors and empty responses
+    if last_error is not None:
+        # An actual exception occurred - raise to signal serious failure
+        raise ArticleGenerationError(f"Article generation failed after {max_retries} retries: {last_error}")
+    else:
+        # All attempts returned empty but no exceptions - return empty list
+        # This allows protocol_processor to handle it gracefully
+        logger.warning(f"Article generation returned empty results after {max_retries} attempts.")
+        return []

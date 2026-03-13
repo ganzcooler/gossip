@@ -9,7 +9,7 @@ from app.models import Protocol, Article
 from app.core.config import ARTICLES_DIR
 from app.core.models import SingleArticle
 from app.utils.folder_utils import create_protocol_folder
-from app.services.article_generator import generate_articles
+from app.services.article_generator import generate_articles, ArticleGenerationError
 from app.services.image_generator import generate_image_for_article
 from app.services.caption_generator import generate_insta_caption
 from app.services.insta_generator import create_insta_images_for_protocol
@@ -57,11 +57,17 @@ async def process_protocol(protocol: Protocol, db_session: AsyncSession):
     # Step 1: Generate articles from PDF text (sync function in thread pool)
     logger.info(f"Generating articles for protocol {protocol.id}...")
     loop = asyncio.get_event_loop()
-    articles = await loop.run_in_executor(None, generate_articles, protocol.pdf_text)
+    
+    try:
+        articles = await loop.run_in_executor(None, generate_articles, protocol.pdf_text)
+    except ArticleGenerationError as e:
+        # Serious error (API failure) - do NOT mark as processed so it can be retried later
+        logger.error(f"Article generation failed for protocol {protocol.id}: {e}")
+        raise
 
     if not articles:
-        logger.error(f"No articles generated for protocol {protocol.id}")
-        # Mark as processed anyway to avoid infinite retries
+        logger.warning(f"No articles generated for protocol {protocol.id} (API returned empty result)")
+        # Mark as processed anyway to avoid infinite retries for empty but valid responses
         protocol.processed = True
         await db_session.commit()
         return
