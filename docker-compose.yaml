@@ -17,9 +17,9 @@ services:
       - traefik-proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.actual.rule=Host(`gossip.dano1.de`)"
-      - "traefik.http.routers.actual.entrypoints=web"
-      - "traefik.http.services.actual.loadbalancer.server.port=8000"
+      - "traefik.http.routers.gossip.rule=Host(`gossip.dano1.de`)"
+      - "traefik.http.routers.gossip.entrypoints=web"
+      - "traefik.http.services.gossip.loadbalancer.server.port=8000"
 
   postgres:
     image: postgres:16
