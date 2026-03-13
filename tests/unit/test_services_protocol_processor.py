@@ -9,7 +9,9 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from app.services.protocol_processor import (
     sanitize_filename,
     save_image_to_file,
+    process_protocols_job,
 )
+from app.services import AuthenticationError
 
 
 class TestSanitizeFilename:
@@ -102,3 +104,88 @@ class TestSaveImageToFile:
 
         saved_content = result.read_bytes()
         assert saved_content == image_bytes
+
+
+class TestProcessProtocolsJobAuthError:
+    """Tests for AuthenticationError handling in process_protocols_job."""
+
+    @pytest.mark.asyncio
+    async def test_authentication_error_stops_processing(self):
+        """Test that AuthenticationError stops the entire job, not just the current protocol."""
+        # Create mock db session
+        mock_session = AsyncMock()
+
+        # Create two mock protocols
+        protocol1 = MagicMock()
+        protocol1.id = 1
+        protocol2 = MagicMock()
+        protocol2.id = 2
+
+        # Mock the query result to return both protocols
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [protocol1, protocol2]
+        mock_session.execute.return_value = mock_result
+
+        # Mock process_protocol to raise AuthenticationError on first call
+        with patch('app.services.protocol_processor.process_protocol') as mock_process:
+            mock_process.side_effect = AuthenticationError("Invalid API key")
+
+            # The job should raise AuthenticationError
+            with pytest.raises(AuthenticationError):
+                await process_protocols_job(mock_session)
+
+            # process_protocol should only be called once (for the first protocol)
+            # because AuthenticationError stops the entire job
+            assert mock_process.call_count == 1
+            mock_process.assert_called_once_with(protocol1, mock_session)
+
+    @pytest.mark.asyncio
+    async def test_other_errors_continue_processing(self):
+        """Test that non-auth errors allow processing to continue to next protocol."""
+        # Create mock db session
+        mock_session = AsyncMock()
+
+        # Create two mock protocols
+        protocol1 = MagicMock()
+        protocol1.id = 1
+        protocol2 = MagicMock()
+        protocol2.id = 2
+
+        # Mock the query result to return both protocols
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [protocol1, protocol2]
+        mock_session.execute.return_value = mock_result
+
+        # Mock process_protocol to raise generic Exception on first call, succeed on second
+        with patch('app.services.protocol_processor.process_protocol') as mock_process:
+            mock_process.side_effect = [Exception("Some error"), None]
+
+            # The job should complete successfully
+            result = await process_protocols_job(mock_session)
+
+            # Both protocols should be processed
+            assert mock_process.call_count == 2
+            assert result == 1  # Only one protocol was successfully processed
+
+    @pytest.mark.asyncio
+    async def test_authentication_error_re_raises(self):
+        """Test that AuthenticationError is re-raised to stop the job."""
+        # Create mock db session
+        mock_session = AsyncMock()
+
+        # Create a mock protocol
+        protocol = MagicMock()
+        protocol.id = 1
+
+        # Mock the query result
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [protocol]
+        mock_session.execute.return_value = mock_result
+
+        # Mock process_protocol to raise AuthenticationError
+        with patch('app.services.protocol_processor.process_protocol') as mock_process:
+            mock_process.side_effect = AuthenticationError("API key expired")
+
+            # The error should be re-raised
+            with pytest.raises(AuthenticationError, match="API key expired"):
+                await process_protocols_job(mock_session)

@@ -9,10 +9,12 @@ from app.models import Protocol, Article
 from app.core.config import ARTICLES_DIR
 from app.core.models import SingleArticle
 from app.utils.folder_utils import create_protocol_folder
-from app.services.article_generator import generate_articles, ArticleGenerationError
+from app.services.article_generator import generate_articles
+from app.services import ArticleGenerationError
 from app.services.image_generator import generate_image_for_article
 from app.services.caption_generator import generate_insta_caption
 from app.services.insta_generator import create_insta_images_for_protocol
+from app.services import AuthenticationError
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,11 @@ async def process_protocols_job(db_session: AsyncSession):
         try:
             await process_protocol(protocol, db_session)
             processed_count += 1
+        except AuthenticationError as e:
+            # Authentication errors should stop the entire job immediately
+            logger.critical(f"Authentication error while processing protocol {protocol.id}: {e}")
+            logger.critical("Stopping protocol processing job due to authentication failure")
+            raise  # Re-raise to stop the job
         except Exception as e:
             logger.error(f"Error processing protocol {protocol.id}: {e}")
             continue

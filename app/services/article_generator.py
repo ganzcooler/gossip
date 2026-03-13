@@ -7,13 +7,34 @@ from google.genai import types
 from app.core import config
 from app.core import prompts
 from app.core.models import SingleArticle, LLMGeneratedArticles
+from app.services import AuthenticationError, ArticleGenerationError
 
 logger = logging.getLogger(__name__)
 
 
-class ArticleGenerationError(Exception):
-    """Raised when article generation fails after all retries."""
-    pass
+def _is_auth_error(exception: Exception) -> bool:
+    """Check if an exception is an authentication error (401/403).
+
+    The google-genai library throws exceptions with `code` and `status` attributes.
+    HTTP 401 = UNAUTHORIZED, HTTP 403 = FORBIDDEN
+    """
+    # Check for common auth error indicators in the exception
+    error_code = getattr(exception, 'code', None)
+    status = getattr(exception, 'status', None)
+
+    # Check for 401/403 status codes
+    if status in (401, 403):
+        return True
+    if error_code in (401, 403):
+        return True
+
+    # Also check error message for auth-related keywords
+    error_str = str(exception).lower()
+    auth_keywords = ['unauthorized', 'forbidden', 'api key', 'authentication', 'permission denied']
+    if any(keyword in error_str for keyword in auth_keywords):
+        return True
+
+    return False
 
 
 def generate_articles(text: str) -> List[SingleArticle]:
@@ -43,6 +64,12 @@ def generate_articles(text: str) -> List[SingleArticle]:
 
         except Exception as e:
             logger.error(f"Error generating articles on attempt {attempt + 1}/{max_retries}: {e}", exc_info=True)
+
+            # Check for authentication errors - these should NOT be retried
+            if _is_auth_error(e):
+                logger.critical(f"Authentication error detected: {e}. Stopping immediately.")
+                raise AuthenticationError(f"Authentication failed: {e}") from e
+
             last_error = e
 
         if attempt < max_retries - 1:
