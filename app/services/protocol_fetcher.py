@@ -177,10 +177,10 @@ def parse_protocol_list(soup: BeautifulSoup) -> list[dict]:
                     break
 
             if not found_protocol_icon:
-                logger.info(f"No protocol icon (NÖ/NS) found for row with date {session_date}")
+                logger.debug(f"No protocol icon (NÖ/NS) found for row with date {session_date}")
 
             if not pdf_url or not getfile_id:
-                logger.info(f"No protocol document found for row with date {session_date}")
+                logger.debug(f"No protocol document found for row with date {session_date}")
                 continue
 
             protocols.append({
