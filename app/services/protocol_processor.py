@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from datetime import date
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -53,14 +54,6 @@ async def process_protocol(protocol: Protocol, db_session: AsyncSession):
     """
     logger.info(f"Processing protocol: {protocol.title} (ID: {protocol.id})")
 
-    # Create folder for this protocol
-    protocol_folder = create_protocol_folder(
-        ARTICLES_DIR,
-        protocol.session_date,
-        protocol.title
-    )
-    logger.info(f"Created protocol folder: {protocol_folder}")
-
     # Step 1: Generate articles from PDF text (sync function in thread pool)
     logger.info(f"Generating articles for protocol {protocol.id}...")
     loop = asyncio.get_event_loop()
@@ -82,9 +75,10 @@ async def process_protocol(protocol: Protocol, db_session: AsyncSession):
     logger.info(f"Generated {len(articles)} articles for protocol {protocol.id}")
 
     # Step 2: Process each article
+    protocol_folder = None  # Will be set lazily when first article is saved
     for index, article_data in enumerate(articles, start=1):
         try:
-            await process_single_article(
+            protocol_folder = await process_single_article(
                 protocol=protocol,
                 article_data=article_data,
                 article_index=index,
@@ -96,19 +90,23 @@ async def process_protocol(protocol: Protocol, db_session: AsyncSession):
             continue
 
     # Step 3: Create Instagram images for all articles in this protocol
-    try:
-        # Build articles_data from the generated articles
-        articles_data = [
-            {
-                "index": idx,
-                "content": f"<h1>{article.ueberschrift}</h1>\n{article.inhalt}",
-                "title": article.ueberschrift
-            }
-            for idx, article in enumerate(articles, start=1)
-        ]
-        await create_insta_images_for_protocol_async(protocol_folder, articles_data)
-    except Exception as e:
-        logger.error(f"Error creating Instagram images for protocol {protocol.id}: {e}")
+    # Only if we have a valid protocol_folder (at least one image was generated)
+    if protocol_folder is not None and protocol_folder.exists():
+        try:
+            # Build articles_data from the generated articles
+            articles_data = [
+                {
+                    "index": idx,
+                    "content": f"<h1>{article.ueberschrift}</h1>\n{article.inhalt}",
+                    "title": article.ueberschrift
+                }
+                for idx, article in enumerate(articles, start=1)
+            ]
+            await create_insta_images_for_protocol_async(protocol_folder, articles_data)
+        except Exception as e:
+            logger.error(f"Error creating Instagram images for protocol {protocol.id}: {e}")
+    else:
+        logger.warning(f"No protocol folder available for Instagram generation (protocol {protocol.id})")
 
     # Mark protocol as processed
     protocol.processed = True
@@ -121,11 +119,12 @@ async def process_single_article(
     protocol: Protocol,
     article_data: SingleArticle,
     article_index: int,
-    protocol_folder: Path,
+    protocol_folder: Path | None,
     db_session: AsyncSession
-):
+) -> Path | None:
     """
     Process a single article: save HTML, generate image, create Instagram content.
+    Returns the protocol_folder path (created if needed).
     """
     logger.info(f"Processing article {article_index}: {article_data.ueberschrift}")
 
@@ -148,10 +147,17 @@ async def process_single_article(
 
     if not image_bytes:
         logger.warning(f"No image generated for article {article_index}")
-        return
+        return protocol_folder  # Return existing folder path to avoid recreating it
 
-    # Step 2c: Save image
-    image_path = save_image_to_file(image_bytes, protocol_folder, article_index)
+    # Step 2c: Save image (folder will be created lazily if needed)
+    image_path = save_image_to_file(
+        image_bytes,
+        protocol_folder,
+        article_index,
+        protocol.session_date,
+        protocol.title
+    )
+    protocol_folder = image_path.parent
     logger.info(f"Saved image to: {image_path}")
 
     # Step 2d: Generate Instagram caption (sync function in thread pool)
@@ -165,13 +171,47 @@ async def process_single_article(
         logger.info(f"Saved caption to database for article {article_index}")
 
     logger.info(f"Successfully processed article {article_index}: {article_data.ueberschrift}")
+    return protocol_folder
 
 
-def save_image_to_file(image_bytes: bytes, protocol_folder: Path, article_index: int, suffix: str = "") -> Path:
+def save_image_to_file(
+    image_bytes: bytes,
+    protocol_folder: Path | None,
+    article_index: int,
+    session_date: date,
+    title: str,
+    suffix: str = ""
+) -> Path:
     """
     Save an image as a PNG file in the protocol folder.
+    Creates the folder lazily if it doesn't exist yet.
     Returns the path to the saved file.
     """
+    # Lazily create the protocol folder if it doesn't exist
+    if protocol_folder is None or not protocol_folder.exists():
+        try:
+            protocol_folder = create_protocol_folder(
+                ARTICLES_DIR,
+                session_date,
+                title
+            )
+            logger.info(f"Created protocol folder: {protocol_folder}")
+        except FileExistsError:
+            # Folder exists from a previous run - reuse it
+            # Reconstruct the folder path using the same naming logic as create_protocol_folder
+            normalized = title
+            for umlaut, replacement in [('ä', 'ae'), ('ö', 'oe'), ('ü', 'ue'), ('ß', 'ss'), ('Ä', 'Ae'), ('Ö', 'Oe'), ('Ü', 'Ue')]:
+                normalized = normalized.replace(umlaut, replacement)
+            normalized = normalized.replace(' ', '_').lower()
+            normalized = ''.join(c for c in normalized if c.isalnum() or c == '_')[:80]
+            folder_name = f"{session_date.strftime('%y%m%d')}_{normalized}"
+            protocol_folder = ARTICLES_DIR / folder_name
+            logger.info(f"Reusing existing protocol folder: {protocol_folder}")
+        except OSError as e:
+            # Handle other OS-level errors (permission denied, disk full, etc.)
+            logger.error(f"Failed to create protocol folder for '{title}': {e}")
+            raise
+
     filename = f"image_{article_index:02d}{suffix}.png"
     filepath = protocol_folder / filename
 
