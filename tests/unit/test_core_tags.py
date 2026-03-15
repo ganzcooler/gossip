@@ -16,27 +16,27 @@ class TestTags:
     def test_contains_expected_committee_tags(self):
         """Test that expected committee tags exist."""
         expected_committees = [
-            "ausschuss_bau_umwelt",
-            "feuerwehrausschuss",
-            "jugendausschuss",
-            "ausschuss_fuer_schule",
-            "ausschuss_sport",
+            "bau",
+            "feuerwehr",
+            "jugend",
+            "schule",
+            "sport",
             "gemeinderat",
-            "ausschuss_wirtschaft",
+            "wirtschaft",
         ]
-        
+
         for committee in expected_committees:
             assert committee in tags_module.TAGS
 
     def test_contains_expected_district_tags(self):
         """Test that expected district tags exist."""
         expected_districts = [
-            "ortsrat_atzenhausen",
-            "ortsrat_dahlenrode",
-            "ortsrat_dramfeld",
-            "ortsrat_rosdorf",
+            "atzenhausen",
+            "dahlenrode",
+            "dramfeld",
+            "rosdorf",
         ]
-        
+
         for district in expected_districts:
             assert district in tags_module.TAGS
 
@@ -61,11 +61,11 @@ class TestTags:
 
     def test_bau_umwelt_tag(self):
         """Test specific Bau/Umwelt tag value."""
-        assert tags_module.TAGS["ausschuss_bau_umwelt"] == "Bau, Umwelt, Verkehr"
+        assert tags_module.TAGS["bau"] == "Bau, Umwelt, Verkehr"
 
     def test_schule_tag(self):
         """Test specific Schule tag value."""
-        assert tags_module.TAGS["ausschuss_fuer_schule"] == "Schule, Bildung"
+        assert tags_module.TAGS["schule"] == "Schule, Bildung"
 
     def test_number_of_tags(self):
         """Test that expected number of tags exists."""
@@ -74,5 +74,8 @@ class TestTags:
 
     def test_all_ortsrat_tags(self):
         """Test that all Ortsrat tags exist."""
-        ortsrat_tags = [k for k in tags_module.TAGS.keys() if k.startswith("ortsrat_")]
+        districts = ["atzenhausen", "dahlenrode", "dramfeld", "klein_wiershausen",
+                     "mengershausen", "lemshausen", "obernjesa", "rosdorf",
+                     "sieboldshausen", "settmarshausen", "volkerode"]
+        ortsrat_tags = [k for k in tags_module.TAGS.keys() if k in districts]
         assert len(ortsrat_tags) == 11  # 11 districts

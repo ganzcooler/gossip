@@ -16,23 +16,23 @@ class TestFindTag:
     """Tests for find_tag function."""
 
     def test_find_bau_umwelt_tag(self):
-        """Test finding Bau/Umwelt tag."""
-        result = find_tag("ausschuss_bau_umwelt_protocol_2024")
+        """Test finding Bau/Umwelt tag from protocol title."""
+        result = find_tag("Bau- und Umweltausschuss")
         assert result == "BAU, UMWELT, VERKEHR"
 
     def test_find_gemeinderat_tag(self):
-        """Test finding Gemeinderat tag."""
-        result = find_tag("gemeinderat_meeting_january")
+        """Test finding Gemeinderat tag from protocol title."""
+        result = find_tag("Gemeinderatssitzung")
         assert result == "GEMEINDERAT"
 
     def test_find_ortsrat_tag(self):
-        """Test finding Ortsrat tag."""
-        result = find_tag("ortsrat_rosdorf_meeting")
+        """Test finding Ortsrat tag from protocol title."""
+        result = find_tag("Ortsrat Rosdorf")
         assert result == "ROSDORF"
 
     def test_case_insensitive_matching(self):
         """Test that tag matching is case insensitive."""
-        result = find_tag("AUSSCHUSS_BAU_UMWELT_PROTOCOL")
+        result = find_tag("BAU UND UMWELT AUSSCHUSS")
         assert result == "BAU, UMWELT, VERKEHR"
 
     def test_no_tag_found(self):

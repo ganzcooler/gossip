@@ -102,7 +102,7 @@ async def process_protocol(protocol: Protocol, db_session: AsyncSession):
                 }
                 for idx, article in enumerate(articles, start=1)
             ]
-            await create_insta_images_for_protocol_async(protocol_folder, articles_data)
+            await create_insta_images_for_protocol_async(protocol_folder, articles_data, protocol.title)
         except Exception as e:
             logger.error(f"Error creating Instagram images for protocol {protocol.id}: {e}")
     else:
@@ -241,7 +241,8 @@ def sanitize_filename(name: str) -> str:
 
 async def create_insta_images_for_protocol_async(
     protocol_folder: Path,
-    articles_data: list[dict]
+    articles_data: list[dict],
+    protocol_title: str
 ):
     """
     Async wrapper for creating Instagram images.
@@ -249,5 +250,5 @@ async def create_insta_images_for_protocol_async(
     """
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(
-        None, create_insta_images_for_protocol, protocol_folder, articles_data
+        None, create_insta_images_for_protocol, protocol_folder, articles_data, protocol_title
     )

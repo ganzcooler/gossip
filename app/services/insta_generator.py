@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 MAX_PARAGRAPH_LENGTH = 450
 
 
-def find_tag(article_stem: str) -> str | None:
-    """Finds a tag for the article based on its filename."""
-    lower_stem = article_stem.lower()
+def find_tag(protocol_title: str) -> str | None:
+    """Finds a tag for the protocol based on its title."""
+    lower_stem = protocol_title.lower()
     for key, value in tags_module.TAGS.items():
         if key.lower() in lower_stem:
             return value.upper()
@@ -176,7 +176,7 @@ def draw_logo(overlay: Image.Image, img_height: int, img_width: int, top_gradien
         logger.warning(f"Logo file not found at {res_dir / 'logo-gossip.png'}, skipping logo.")
 
 
-def create_main_image(base_img: Image.Image, text: str, article_stem: str, res_dir: Path) -> Image.Image:
+def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res_dir: Path) -> Image.Image:
     """Creates the main, non-blurred image with gradients, logo, and headline."""
     overlay = Image.new('RGBA', base_img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -198,7 +198,7 @@ def create_main_image(base_img: Image.Image, text: str, article_stem: str, res_d
     draw_logo(overlay, base_img.height, base_img.width, top_gradient_height, scale=1.0, res_dir=res_dir)
 
     # --- Tag ---
-    tag_text = find_tag(article_stem)
+    tag_text = find_tag(protocol_title)
     if tag_text:
         try:
             tag_font_path = str(res_dir / "Oswald-Bold.ttf")
@@ -387,6 +387,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Pa
 def create_insta_images_for_protocol(
     protocol_folder: Path,
     articles_data: list[dict],
+    protocol_title: str,
     res_dir: Path = None
 ) -> None:
     """
@@ -400,6 +401,7 @@ def create_insta_images_for_protocol(
     Args:
         protocol_folder: Path to the protocol folder for saving images and reading source images
         articles_data: List of dicts with 'index', 'content', and 'title' keys (from database)
+        protocol_title: The title of the protocol (used for tag matching)
         res_dir: Path to resources directory (fonts, logo)
     """
     if res_dir is None:
@@ -430,16 +432,13 @@ def create_insta_images_for_protocol(
             logger.warning(f"Could not extract content from article index {article_index}")
             continue
 
-        # Use title for article_stem if available, otherwise use index
-        article_stem = article_data.get("title", f"article_{article_index}")
-
         # Create main Instagram image
         insta_main_path = protocol_folder / f"insta_{article_index}_main.png"
         if not insta_main_path.exists():
             try:
                 with Image.open(image_path) as img:
                     base_img = img.copy()
-                    final_img = create_main_image(base_img, article_content.h1, article_stem, res_dir)
+                    final_img = create_main_image(base_img, article_content.h1, protocol_title, res_dir)
                     final_img.save(insta_main_path, 'PNG', compress_level=9)
                     logger.info(f"Created Instagram main image: {insta_main_path}")
             except Exception as e:
