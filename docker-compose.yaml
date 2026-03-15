@@ -9,8 +9,6 @@ services:
         condition: service_healthy
     volumes:
       - ./articles:/app/articles
-      - ./generated_images:/app/generated_images
-      - ./insta_images:/app/insta_images
       - ./logs:/app/logs
     networks:
       - internal
@@ -20,6 +18,7 @@ services:
       - "traefik.http.routers.gossip.rule=Host(`gossip.dano1.de`)"
       - "traefik.http.routers.gossip.entrypoints=web"
       - "traefik.http.services.gossip.loadbalancer.server.port=8000"
+      - "traefik.docker.network=traefik-proxy" # Fix
 
   postgres:
     image: postgres:16
