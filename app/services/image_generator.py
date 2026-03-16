@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def generate_image_prompt(article: SingleArticle) -> str:
     """Generates an image prompt for an article using a direct Google GenAI API call with retries."""
-    logger.info(f"Generating image prompt for article: '{article.ueberschrift}'")
+    logger.debug(f"Generating image prompt for article: '{article.ueberschrift}'")
     max_retries = 5
     for attempt in range(max_retries):
         try:
@@ -30,8 +30,8 @@ def generate_image_prompt(article: SingleArticle) -> str:
             )
 
             if response.text:
-                logger.info(f"Successfully generated image prompt for article: '{article.ueberschrift}' on attempt {attempt + 1}.")
-                logger.info(f"Image Prompt: {response.text}")
+                logger.debug(f"Successfully generated image prompt for article: '{article.ueberschrift}' on attempt {attempt + 1}.")
+                logger.debug(f"Image Prompt: {response.text}")
                 return response.text
 
             logger.warning(f"Image prompt generation returned empty data on attempt {attempt + 1}/{max_retries}.")
@@ -48,7 +48,7 @@ def generate_image_prompt(article: SingleArticle) -> str:
 
 def generate_image(prompt: str) -> bytes:
     """Generates an image from a prompt using a direct Google GenAI API call with retries."""
-    logger.info("Generating image...")
+    logger.debug("Generating image...")
     max_retries = 5
     for attempt in range(max_retries):
         try:
@@ -65,7 +65,7 @@ def generate_image(prompt: str) -> bytes:
 
             for part in response.parts:
                 if part.inline_data:
-                    logger.info(f"Successfully generated image on attempt {attempt + 1}.")
+                    logger.debug(f"Successfully generated image on attempt {attempt + 1}.")
                     return part.inline_data.data
 
             logger.warning(f"No image data found in response on attempt {attempt + 1}/{max_retries}.")

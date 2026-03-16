@@ -31,5 +31,5 @@ async def check_duplicate(new_pdf_text: str, db_session: AsyncSession) -> bool:
             logger.warning(f"Duplicate detected (similarity: {similarity:.2%})")
             return True
 
-    logger.info(f"No duplicate detected (checked {len(recent_protocols)} protocols)")
+    logger.debug(f"No duplicate detected (checked {len(recent_protocols)} protocols)")
     return False

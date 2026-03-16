@@ -52,10 +52,10 @@ async def process_protocol(protocol: Protocol, db_session: AsyncSession):
     """
     Process a single protocol - generate articles, images, and Instagram content.
     """
-    logger.info(f"Processing protocol: {protocol.title} (ID: {protocol.id})")
+    logger.debug(f"Processing protocol: {protocol.title} (ID: {protocol.id})")
 
     # Step 1: Generate articles from PDF text (sync function in thread pool)
-    logger.info(f"Generating articles for protocol {protocol.id}...")
+    logger.debug(f"Generating articles for protocol {protocol.id}...")
     loop = asyncio.get_event_loop()
     
     try:
@@ -72,7 +72,7 @@ async def process_protocol(protocol: Protocol, db_session: AsyncSession):
         await db_session.commit()
         return
 
-    logger.info(f"Generated {len(articles)} articles for protocol {protocol.id}")
+    logger.debug(f"Generated {len(articles)} articles for protocol {protocol.id}")
 
     # Step 2: Process each article
     protocol_folder = None  # Will be set lazily when first article is saved
@@ -112,7 +112,7 @@ async def process_protocol(protocol: Protocol, db_session: AsyncSession):
     protocol.processed = True
     await db_session.commit()
 
-    logger.info(f"Successfully processed protocol: {protocol.title}")
+    logger.debug(f"Successfully processed protocol: {protocol.title}")
 
 
 async def process_single_article(
@@ -126,7 +126,7 @@ async def process_single_article(
     Process a single article: save HTML, generate image, create Instagram content.
     Returns the protocol_folder path (created if needed).
     """
-    logger.info(f"Processing article {article_index}: {article_data.ueberschrift}")
+    logger.debug(f"Processing article {article_index}: {article_data.ueberschrift}")
 
     # Step 2a: Save article to database
     article_content = f"<h1>{article_data.ueberschrift}</h1>\n{article_data.inhalt}"
@@ -139,7 +139,7 @@ async def process_single_article(
     await db_session.flush()  # Get the ID without committing
 
     # Step 2b: Generate image prompt and image (sync functions in thread pool)
-    logger.info(f"Generating image for article {article_index}...")
+    logger.debug(f"Generating image for article {article_index}...")
     loop = asyncio.get_event_loop()
     prompt, image_bytes = await loop.run_in_executor(
         None, generate_image_for_article, article_data
@@ -158,7 +158,7 @@ async def process_single_article(
         protocol.title
     )
     protocol_folder = image_path.parent
-    logger.info(f"Saved image to: {image_path}")
+    logger.debug(f"Saved image to: {image_path}")
 
     # Step 2d: Generate Instagram caption (sync function in thread pool)
     caption = await loop.run_in_executor(
@@ -168,9 +168,9 @@ async def process_single_article(
     # Save caption to database if generated successfully
     if caption:
         article_record.caption = caption
-        logger.info(f"Saved caption to database for article {article_index}")
+        logger.debug(f"Saved caption to database for article {article_index}")
 
-    logger.info(f"Successfully processed article {article_index}: {article_data.ueberschrift}")
+    logger.debug(f"Successfully processed article {article_index}: {article_data.ueberschrift}")
     return protocol_folder
 
 
@@ -195,7 +195,7 @@ def save_image_to_file(
                 session_date,
                 title
             )
-            logger.info(f"Created protocol folder: {protocol_folder}")
+            logger.debug(f"Created protocol folder: {protocol_folder}")
         except FileExistsError:
             # Folder exists from a previous run - reuse it
             # Reconstruct the folder path using the same naming logic as create_protocol_folder
@@ -206,7 +206,7 @@ def save_image_to_file(
             normalized = ''.join(c for c in normalized if c.isalnum() or c == '_')[:80]
             folder_name = f"{session_date.strftime('%y%m%d')}_{normalized}"
             protocol_folder = ARTICLES_DIR / folder_name
-            logger.info(f"Reusing existing protocol folder: {protocol_folder}")
+            logger.debug(f"Reusing existing protocol folder: {protocol_folder}")
         except OSError as e:
             # Handle other OS-level errors (permission denied, disk full, etc.)
             logger.error(f"Failed to create protocol folder for '{title}': {e}")
@@ -218,7 +218,7 @@ def save_image_to_file(
     try:
         with open(filepath, "wb") as f:
             f.write(image_bytes)
-        logger.info(f"Saved image to: {filepath}")
+        logger.debug(f"Saved image to: {filepath}")
         return filepath
     except IOError as e:
         logger.error(f"Error saving image to {filepath}: {e}")

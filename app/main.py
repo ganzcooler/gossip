@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
-    logger.info("Starting up Gossip application...")
+    logger.debug("Starting up Gossip application...")
 
     # Ensure directories exist
     ensure_directories([
@@ -27,22 +27,22 @@ async def lifespan(app: FastAPI):
     ])
 
     # Initialize database
-    logger.info("Initializing database...")
+    logger.debug("Initializing database...")
     await init_db()
-    logger.info("Database initialized")
+    logger.debug("Database initialized")
 
     # Setup and start scheduler
     setup_scheduler()
     start_scheduler()
 
-    logger.info("Gossip application started successfully")
+    logger.debug("Gossip application started successfully")
 
     yield
 
     # Shutdown
-    logger.info("Shutting down Gossip application...")
+    logger.debug("Shutting down Gossip application...")
     stop_scheduler()
-    logger.info("Gossip application stopped")
+    logger.debug("Gossip application stopped")
 
 
 # Create FastAPI application

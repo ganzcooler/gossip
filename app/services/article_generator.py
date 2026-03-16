@@ -39,7 +39,7 @@ def _is_auth_error(exception: Exception) -> bool:
 
 def generate_articles(text: str) -> List[SingleArticle]:
     """Generates articles from text using a direct Google GenAI API call with retries."""
-    logger.info("Generating articles...")
+    logger.debug("Generating articles...")
     max_retries = 5
     last_error = None
     for attempt in range(max_retries):
@@ -57,7 +57,7 @@ def generate_articles(text: str) -> List[SingleArticle]:
             articles = response.parsed
 
             if articles and isinstance(articles, LLMGeneratedArticles):
-                logger.info(f"Successfully generated and validated {len(articles.artikel)} articles on attempt {attempt + 1}.")
+                logger.debug(f"Successfully generated and validated {len(articles.artikel)} articles on attempt {attempt + 1}.")
                 return articles.artikel
 
             logger.warning(f"Article generation returned empty or invalid data on attempt {attempt + 1}/{max_retries}.")

@@ -50,4 +50,4 @@ def ensure_directories(base_paths: list[Path]):
     """Ensure all required directories exist."""
     for path in base_paths:
         path.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Ensured directory exists: {path}")
+        logger.debug(f"Ensured directory exists: {path}")

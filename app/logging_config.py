@@ -13,11 +13,12 @@ def setup_logging():
     log_file = log_dir / f"{datetime.now().strftime('%Y-%m')}.log"
 
     # Get log level
-    level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
+    level = getattr(logging, LOG_LEVEL.upper(), logging.DEBUG)
 
     logging.basicConfig(
         level=level,
-        format='%(asctime)s %(levelname)s %(name)s: %(message)s',
+        format='%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s',
+        datefmt='%Y-%m-%dT%H:%M:%S',
         handlers=[
             logging.StreamHandler(),
             logging.FileHandler(log_file, encoding='utf-8')

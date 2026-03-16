@@ -440,7 +440,7 @@ def create_insta_images_for_protocol(
                     base_img = img.copy()
                     final_img = create_main_image(base_img, article_content.h1, protocol_title, res_dir)
                     final_img.save(insta_main_path, 'PNG', compress_level=9)
-                    logger.info(f"Created Instagram main image: {insta_main_path}")
+                    logger.debug(f"Created Instagram main image: {insta_main_path}")
             except Exception as e:
                 logger.error(f"Failed to create main Instagram image: {e}")
 
@@ -500,6 +500,6 @@ def create_insta_images_for_protocol(
                     blurred_img = base_img.filter(ImageFilter.GaussianBlur(radius=3))
                     final_part_img = create_content_image(blurred_img, block, res_dir)
                     final_part_img.save(insta_part_path, 'PNG', compress_level=9)
-                    logger.info(f"Created Instagram part image: {insta_part_path}")
+                    logger.debug(f"Created Instagram part image: {insta_part_path}")
             except Exception as e:
                 logger.error(f"Failed to create part Instagram image: {e}")

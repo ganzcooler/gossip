@@ -56,9 +56,9 @@ def setup_scheduler():
         replace_existing=True
     )
 
-    logger.info("Scheduler configured with jobs:")
+    logger.debug("Scheduler configured with jobs:")
     for job in scheduler.get_jobs():
-        logger.info(f"  - {job.name}: {job.trigger}")
+        logger.debug(f"  - {job.name}: {job.trigger}")
 
     return scheduler
 
@@ -67,11 +67,11 @@ def start_scheduler():
     """Start the scheduler."""
     if not scheduler.running:
         scheduler.start()
-        logger.info("Scheduler started")
+        logger.debug("Scheduler started")
 
 
 def stop_scheduler():
     """Stop the scheduler."""
     if scheduler.running:
         scheduler.shutdown()
-        logger.info("Scheduler stopped")
+        logger.debug("Scheduler stopped")

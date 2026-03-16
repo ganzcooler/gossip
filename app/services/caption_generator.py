@@ -19,7 +19,7 @@ def generate_insta_caption(article_title: str, article_content: str) -> str | No
     Returns:
         The generated caption string if successful, None otherwise.
     """
-    logger.info(f"Generating Instagram caption for article: '{article_title}'")
+    logger.debug(f"Generating Instagram caption for article: '{article_title}'")
     max_retries = 5
     for attempt in range(max_retries):
         try:
@@ -37,7 +37,7 @@ def generate_insta_caption(article_title: str, article_content: str) -> str | No
             if response.text:
                 caption = response.text.strip()
                 preview = caption[:50] + "..." if len(caption) > 50 else caption
-                logger.info(f"Successfully generated Instagram caption for article: '{article_title}' - Caption: {preview}")
+                logger.debug(f"Successfully generated Instagram caption for article: '{article_title}' - Caption: {preview}")
                 return caption
 
             logger.warning(f"Instagram caption generation returned empty data on attempt {attempt + 1}/{max_retries}.")
