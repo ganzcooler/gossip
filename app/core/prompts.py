@@ -93,8 +93,13 @@ Du bist ein erfahrener Lokalredakteur mit einer spitzen Feder. Deine Aufgabe ist
   <h2>Eine prägnante Überschrift</h2>
   <p>Der gesamte zusammenfassende Text in genau einem Absatz.</p>
 - Es darf exakt eine h2-Überschrift und exakt einen p-Tag geben.
-- Zeichenbegrenzung: Der sichtbare Text (Inhalt von h2 und p) darf insgesamt maximal 450 Zeichen lang sein. Die HTML-Tags selbst zählen nicht in dieses Limit.
 
-**Zu verarbeitender Artikel:**
+**WICHTIG:** Zeichenbegrenzung: Der sichtbare Text (Inhalt von h2 und p) darf insgesamt maximal 450 Zeichen lang sein.
+
+Beispiel für eine Ausgabe eines kurzen Artikels:
+<h2>Digitale Mangelware: App-Zukunft ungewiss</h2>
+<p>Die Gemeinde ringt mit der Digitalisierung: Die bisherige Website soll abgeschaltet werden, die dazugehörige App droht kostenpflichtig zu werden, die Kreis-Unterstützung bleibt fraglich. Ratsmitglieder schimpfen über die verschwendete Ehrenamts-Energie und die App mutiert zur Verkaufsbude. Die Verwaltung verspricht, den Frust weiterzureichen - man darf gespannt sein, ob das den kostenlosen Zugang rettet.</p>
+
+Zu verarbeitender Artikel:
 {complete_article}
 """
