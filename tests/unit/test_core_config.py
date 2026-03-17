@@ -98,7 +98,7 @@ class TestConfig:
         from app.core import config
         
         assert config.GENAI_ARTICLE_GENERATION_MODEL == "gemini-3-pro-preview"
-        assert config.GENAI_IMAGE_PROMPT_MODEL == "gemini-2.5-flash-lite"
+        assert config.GENAI_IMAGE_PROMPT_MODEL == "gemini-2.5-flash"
         assert config.GENAI_IMAGE_GENERATION_MODEL == "gemini-2.5-flash-image"
 
     def test_api_call_delay_configured(self, mock_env_vars):

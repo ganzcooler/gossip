@@ -103,3 +103,27 @@ Beispiel für eine Ausgabe eines kurzen Artikels:
 Zu verarbeitender Artikel:
 {complete_article}
 """
+
+SHORT_ARTICLE_RETRY_PROMPT = """
+Du bist ein erfahrener Lokalredakteur. Deine Aufgabe ist es, einen bereits erstellten Kurzartikel zu kürzen.
+
+Der vorhandene Kurzartikel ist leider zu lang und muss gekürzt werden.
+
+**Inhalts-Vorgaben:**
+- Kürze den Artikel auf maximal 450 Zeichen (sichtbarer Text ohne HTML-Tags).
+- Behalte alle wesentlichen Fakten bei.
+- Ändere den Inhalt so wenig wie möglich; formuliere nur dann um, wenn nötig für die Länge.
+- Sprache: Deutsch.
+- Stil: Einfach, direkt, pointiert, mit einem Hauch von Ironie.
+
+**Format-Vorgaben (Strikt einzuhalten):**
+- Gib ausschließlich HTML-Code aus.
+- Kein Einleitungstext, kein abschließender Satz.
+- Struktur:
+  <h2>Eine prägnante Überschrift</h2>
+  <p>Der gesamte zusammenfassende Text in genau einem Absatz.</p>
+- Es darf exakt eine h2-Überschrift und exakt einen p-Tag geben.
+
+Zu kürzender Kurzartikel:
+{short_article}
+"""
