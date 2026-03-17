@@ -444,6 +444,31 @@ def create_insta_images_for_protocol(
             except Exception as e:
                 logger.error(f"Failed to create main Instagram image: {e}")
 
+        # Create summary image from short_article (REQ-009 to REQ-013)
+        short_article = article_data.get("short_article")
+        summary_image_path = protocol_folder / f"insta_{article_index}_summary.png"
+        if short_article and not summary_image_path.exists():
+            try:
+                # Parse short_article HTML to extract h2 and p content
+                soup = BeautifulSoup(short_article, "html.parser")
+                h2_tag = soup.find("h2")
+                p_tag = soup.find("p")
+                
+                if h2_tag and p_tag:
+                    summary_block = ContentBlock(
+                        headline=h2_tag.get_text(strip=True),
+                        paragraph=p_tag.get_text(strip=True)[:MAX_PARAGRAPH_LENGTH]
+                    )
+                    
+                    with Image.open(image_path) as img:
+                        base_img = img.copy()
+                        blurred_img = base_img.filter(ImageFilter.GaussianBlur(radius=3))
+                        summary_img = create_content_image(blurred_img, summary_block, res_dir)
+                        summary_img.save(summary_image_path, 'PNG', compress_level=9)
+                        logger.debug(f"Created Instagram summary image: {summary_image_path}")
+            except Exception as e:
+                logger.error(f"Failed to create summary Instagram image: {e}")
+
         # Process content blocks
         raw_blocks = article_content.content_blocks
         processed_blocks = []

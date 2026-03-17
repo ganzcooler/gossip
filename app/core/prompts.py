@@ -77,23 +77,24 @@ Das generierte Bild soll als **Beitragsbild (Hero Image)** für diesen Artikel d
 {complete_article}
 """
 
-INSTA_CAPTION_PROMPT = """
-**Wichtig: Antworte AUSSCHLIESSLICH mit der generierten Instagram-Caption. KEINE Einleitung, Bestätigung der Rolle oder andere Zusatztexte.**
+SHORT_ARTICLE_PROMPT = """
+Du bist ein erfahrener Lokalredakteur mit einer spitzen Feder. Deine Aufgabe ist es, den bereitgestellten Artikel aus einer Gemeinde prägnant zusammenzufassen.
 
-**Rolle und Ziel:**
+**Inhalts-Vorgaben:**
+- Fasse alle wesentlichen Fakten des Artikels zusammen.
+- Bleibe absolut faktentreu; erfinde nichts hinzu.
+- Sprache: Deutsch.
+- Stil: Einfach, direkt und nicht geschwollen. Eine pointierte Ausdrucksweise sowie ein Hauch von Ironie sind ausdrücklich erwünscht – der Leser darf an passenden Stellen schmunzeln.
 
-Du bist ein präziser Content Editor, dessen Aufgabe es ist, Instagram-Usern komplexe kommunale Themen kurz und fesselnd näherzubringen. Dein Ziel ist es, eine extrem kurze Caption zu erstellen, die in **ein bis zwei Sätzen** das Kernthema des Artikels klar benennt und sofort das Interesse der Leser weckt.
+**Format-Vorgaben (Strikt einzuhalten):**
+- Gib ausschließlich HTML-Code aus. 
+- Kein Einleitungstext, kein "Hier ist die Zusammenfassung", kein abschließender Satz.
+- Struktur: 
+  <h2>Eine prägnante Überschrift</h2>
+  <p>Der gesamte zusammenfassende Text in genau einem Absatz.</p>
+- Es darf exakt eine h2-Überschrift und exakt einen p-Tag geben.
+- Zeichenbegrenzung: Der sichtbare Text (Inhalt von h2 und p) darf insgesamt maximal 450 Zeichen lang sein. Die HTML-Tags selbst zählen nicht in dieses Limit.
 
-**Anweisungen für die Caption:**
-
-1. **Tonfall:** Der Tonfall muss informativ, neutral und spannend sein. Er soll die Dringlichkeit oder Wichtigkeit des Themas hervorheben, ohne zu übertreiben oder Emotionen zu dramatisieren.
-2. **Länge:** Die Caption muss extrem kurz sein: **maximal 1 bis 2 prägnante Sätze.**
-3. **Inhalt & Fokus:** Benenne das zentrale Thema oder die neueste Entwicklung aus dem Artikel klar und fasse die Relevanz kurz zusammen, um zum Weiterlesen anzuregen.
-4. **Struktur:** Beginne direkt mit der wichtigsten Information.
-5. **Vermeidung:** Es darf **keine explizite Fragestellung** (z.B. Wie geht es weiter?) oder Call to Action (CTA) verwendet werden.
-6. **Emojis:** Emojis sind nur sehr sparsam einzusetzen (maximal 1), um den Fokus zu unterstreichen.
-7. **Hashtags:** Füge am Ende der Caption **2** sachliche und thematisch relevante Hashtags hinzu (z.B. #Kommunalpolitik, #Gemeinderat, #Ort). Füge als dritten Hashstag immer #Rosdorf hinzu.
-
-Hier ist der Artikel:
+**Zu verarbeitender Artikel:**
 {complete_article}
 """
