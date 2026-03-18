@@ -221,8 +221,8 @@ class TestGenerateShortArticle:
         assert len(calls) == 2
         # First call: temperature = 1.0
         assert calls[0].kwargs["config"].temperature == 1.0
-        # Second call: temperature = 0.85 (1.0 - 0.15)
-        assert calls[1].kwargs["config"].temperature == 0.85
+        # Second call: temperature = 0.7 (_shorten_article uses fixed temperature)
+        assert calls[1].kwargs["config"].temperature == 0.7
 
 
 class TestStripHtmlTags:
@@ -368,7 +368,7 @@ class TestShortenArticle:
 
         # First attempt returns something, second returns final short version
         response1 = MagicMock()
-        response1.text = "<h2>Med</h2><p>" + "c" * 400 + "</p>"  # Still too long
+        response1.text = "<h2>Med</h2><p>" + "c" * 500 + "</p>"  # Still too long (over 480 chars)
         response2 = MagicMock()
         response2.text = "<h2>Short</h2><p>Final.</p>"
 
@@ -385,6 +385,31 @@ class TestShortenArticle:
 
 class TestLengthValidationRetryFlow:
     """Tests for length validation and retry flow in generate_short_article."""
+
+    @pytest.fixture
+    def mock_genai_client(self):
+        """Fixture to create a mock GenAI client."""
+        with patch("app.services.short_article_generator.genai.Client") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+            yield mock_client
+
+    @pytest.fixture
+    def mock_config(self):
+        """Fixture to mock configuration."""
+        with patch("app.services.short_article_generator.config") as mock_config:
+            mock_config.load_google_api_key.return_value = "test-api-key"
+            mock_config.GENAI_IMAGE_PROMPT_MODEL = "gemini-2.5-flash"
+            mock_config.API_CALL_DELAY_SECONDS = 0  # Speed up tests
+            yield mock_config
+
+    @pytest.fixture
+    def mock_prompts(self):
+        """Fixture to mock prompts module."""
+        with patch("app.services.short_article_generator.prompts") as mock_prompts:
+            mock_prompts.SHORT_ARTICLE_PROMPT = "Short article prompt: {complete_article}"
+            mock_prompts.SHORT_ARTICLE_RETRY_PROMPT = "Retry prompt: {short_article}"
+            yield mock_prompts
 
     def test_accept_article_within_limit(self, mock_genai_client, mock_config, mock_prompts):
         """Test that article within limit is accepted without shortening."""
