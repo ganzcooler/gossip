@@ -94,7 +94,7 @@ class TestCreateInstaImagesForProtocol:
         )
 
         # Check that summary image was saved
-        summary_path = temp_protocol_folder / "insta_1_summary.png"
+        summary_path = temp_protocol_folder / "insta_1_summary.jpg"
         # The save method should be called on the mock image
         mock_instance = mock_image.open.return_value.__enter__.return_value
         assert mock_instance.copy.called or True  # Image operations were performed
@@ -102,7 +102,7 @@ class TestCreateInstaImagesForProtocol:
     def test_does_not_overwrite_existing_summary_image(self, temp_protocol_folder, mock_image, mock_image_draw, mock_font):
         """Test that summary image is NOT overwritten if it already exists (REQ-013)."""
         # Create an existing summary image
-        summary_path = temp_protocol_folder / "insta_1_summary.png"
+        summary_path = temp_protocol_folder / "insta_1_summary.jpg"
         summary_path.write_bytes(b"existing summary image")
 
         articles_data = [
@@ -165,7 +165,7 @@ class TestCreateInstaImagesForProtocol:
         )
 
         # Summary image path should not exist
-        summary_path = temp_protocol_folder / "insta_1_summary.png"
+        summary_path = temp_protocol_folder / "insta_1_summary.jpg"
         assert not summary_path.exists()
 
     def test_handles_malformed_short_article_html(self, temp_protocol_folder, mock_image, mock_image_draw, mock_font):
@@ -437,3 +437,95 @@ class TestExtractArticleContent:
         h2_blocks = [b for b in result.content_blocks if b.headline == "Standalone H2"]
         assert len(h2_blocks) == 1
         assert h2_blocks[0].paragraph is None
+
+
+class TestSaveJpegWithExif:
+    """Tests for save_jpeg_with_exif function."""
+
+    def test_save_jpeg_with_exif_saves_with_correct_format(self, tmp_path):
+        """Test that save_jpeg_with_exif saves a JPEG file."""
+        from datetime import datetime
+        from PIL import Image
+        from app.services.insta_generator import save_jpeg_with_exif
+        
+        # Create a test image
+        img = Image.new('RGB', (100, 100), color='red')
+        
+        # Save with EXIF
+        output_path = tmp_path / "test_image.jpg"
+        test_timestamp = datetime(2024, 1, 15, 10, 30, 45)
+        save_jpeg_with_exif(img, output_path, test_timestamp, quality=95)
+        
+        # Verify file was created
+        assert output_path.exists()
+        
+        # Verify it can be opened and has EXIF data
+        with Image.open(output_path) as saved_img:
+            exif = saved_img.getexif()
+            # Check that EXIF date tags are present
+            assert 36867 in exif  # DateTimeOriginal
+            assert exif[36867] == "2024:01:15 10:30:45"
+
+    def test_save_jpeg_with_exif_increments_timestamp(self, tmp_path):
+        """Test that different images get different timestamps."""
+        from datetime import datetime, timedelta
+        from PIL import Image
+        from app.services.insta_generator import save_jpeg_with_exif
+        
+        base_time = datetime(2024, 1, 15, 10, 30, 45)
+        
+        # Create and save first image
+        img1 = Image.new('RGB', (100, 100), color='red')
+        path1 = tmp_path / "image1.jpg"
+        save_jpeg_with_exif(img1, path1, base_time, quality=95)
+        
+        # Create and save second image with +1 second
+        img2 = Image.new('RGB', (100, 100), color='blue')
+        path2 = tmp_path / "image2.jpg"
+        save_jpeg_with_exif(img2, path2, base_time + timedelta(seconds=1), quality=95)
+        
+        # Verify both files have different EXIF dates
+        with Image.open(path1) as saved_img1:
+            exif1 = saved_img1.getexif()
+            assert exif1[36867] == "2024:01:15 10:30:45"
+        
+        with Image.open(path2) as saved_img2:
+            exif2 = saved_img2.getexif()
+            assert exif2[36867] == "2024:01:15 10:30:46"
+
+
+class TestJpgOutputFormat:
+    """Tests for JPG output format instead of PNG."""
+
+    def test_output_files_have_jpg_extension(self, tmp_path):
+        """Test that output files use JPG extension."""
+        # This test verifies the code generates .jpg paths
+        from app.services.insta_generator import create_insta_images_for_protocol
+        
+        # Create a simple test to verify path generation
+        protocol_folder = tmp_path / "test_protocol"
+        protocol_folder.mkdir()
+        
+        # Create sample image
+        from PIL import Image
+        img = Image.new('RGB', (100, 100))
+        img.save(protocol_folder / "image_01.png")
+        
+        articles_data = [
+            {
+                "index": 1,
+                "content": "<h1>Test Title</h1><p>Test content</p>",
+                "title": "Test Title"
+            }
+        ]
+        
+        # This will generate the paths and attempt to save
+        # We just verify no errors occur
+        create_insta_images_for_protocol(
+            protocol_folder,
+            articles_data,
+            "Test Protocol"
+        )
+        
+        # Verify JPG files were created
+        assert (protocol_folder / "insta_1_main.jpg").exists()
