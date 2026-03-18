@@ -127,3 +127,19 @@ Der vorhandene Kurzartikel ist leider zu lang und muss gekürzt werden.
 Zu kürzender Kurzartikel:
 {short_article}
 """
+
+# --- Image Prompt Validation Prompts ---
+
+GENAI_IMAGE_PROMPT_VALIDATION_PROMPT = """
+Does this prompt request a realistic looking image (not comic or animation style)? Answer only 'YES' or 'NO', DO NOT add additional explanations, introductions, or farewell phrases.
+
+Prompt: {image_prompt}
+"""
+
+GENAI_IMAGE_PROMPT_REALISTIC_REWRITE_PROMPT = """
+Rewrite this prompt to request a realistic image style instead of comic or animation. Keep all other content.
+
+**Reply ONLY with the generated image prompt in English. DO NOT add additional explanations, introductions, or farewell phrases.**
+
+Prompt: {image_prompt}
+"""
