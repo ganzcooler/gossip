@@ -5,8 +5,8 @@ services:
     image: postgres:16-alpine
     container_name: gossip-postgres-local
     environment:
-      POSTGRES_USER: gossip
-      POSTGRES_PASSWORD: gossip
+      POSTGRES_USER: gossip_user
+      POSTGRES_PASSWORD: secure_password
       POSTGRES_DB: gossip
     ports:
       - "5432:5432"

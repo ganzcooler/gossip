@@ -17,7 +17,7 @@ docker compose up -d
 ```
 
 Dies startet:
-- **PostgreSQL** auf Port `5432` (Datenbank: `gossip`, Benutzer: `gossip`, Passwort: `gossip`)
+- **PostgreSQL** auf Port `5432` (Datenbank: `gossip`, Benutzer: `gossip_user`, Passwort: `secure_password`)
 - **Adminer** auf Port `http://localhost:8080` für Datenbankverwaltung
 
 ## Schritt 2: .env Datei konfigurieren
@@ -26,11 +26,15 @@ Kopieren Sie `.env.example` nach `.env` und passen Sie die Pfade für `articles`
 
 ```env
 # Datenbank
-DATABASE_URL=postgresql+asyncpg://gossip:gossip@localhost:5432/gossip
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=gossip
+DB_USER=gossip_user
+DB_PASSWORD=secure_password
 
 # Verzeichnisse - Lokale Pfade statt Docker-Pfade
-ARTICLES_DIR=./articles/
-LOGS_DIR=./logs/
+ARTICLES_DIR=./articles
+LOGS_DIR=./logs
 
 # Weitere Variablen (aus .env.example übernehmen)
 SESSIONNET_URL=...
@@ -49,7 +53,7 @@ pip install -r requirements.txt
 ## Schritt 4: Anwendung starten
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app
 ```
 
 Die Anwendung ist dann unter http://localhost:8000 verfügbar.
@@ -60,8 +64,8 @@ Die Anwendung ist dann unter http://localhost:8000 verfügbar.
 2. Anmeldung:
    - System: PostgreSQL
    - Server: postgres
-   - Benutzer: gossip
-   - Passwort: gossip
+   - Benutzer: gossip_user
+   - Passwort: secure_password
    - Datenbank: gossip
 
 ## Container stoppen
