@@ -63,8 +63,7 @@ def _shorten_article(client: genai.Client, short_article: str, article_title: st
                 shortened_article = response.text.strip()
                 text_length = _get_text_length_without_html(shortened_article)
                 if text_length <= 480:
-                    preview = shortened_article[:50] + "..." if len(shortened_article) > 50 else shortened_article
-                    logger.debug(f"Successfully shortened article for: '{article_title}' - Short Article: {preview}")
+                    logger.debug(f"Successfully shortened article for: '{article_title[:20]}'")
                     return shortened_article
                 else:
                     logger.warning(f"Shortened article still too long ({text_length} chars). Retry {attempt + 1}/{max_shorten_retries}.")

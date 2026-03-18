@@ -18,6 +18,7 @@ def validate_image_prompt(prompt: str, client: genai.Client) -> Tuple[bool, str]
         Tuple of (is_realistic: bool, prompt: str)
     """
     try:
+        logger.debug(f"Validating image prompt: {prompt[:50]}...")
         response = client.models.generate_content(
             model=config.GENAI_CLASSIFICATION_MODEL,
             contents=prompts.GENAI_IMAGE_PROMPT_VALIDATION_PROMPT.format(image_prompt=prompt),
