@@ -77,23 +77,69 @@ Das generierte Bild soll als **Beitragsbild (Hero Image)** für diesen Artikel d
 {complete_article}
 """
 
-INSTA_CAPTION_PROMPT = """
-**Wichtig: Antworte AUSSCHLIESSLICH mit der generierten Instagram-Caption. KEINE Einleitung, Bestätigung der Rolle oder andere Zusatztexte.**
+SHORT_ARTICLE_PROMPT = """
+Du bist ein erfahrener Lokalredakteur mit einer spitzen Feder. Deine Aufgabe ist es, den bereitgestellten Artikel aus einer Gemeinde prägnant zusammenzufassen.
 
-**Rolle und Ziel:**
+**Inhalts-Vorgaben:**
+- Fasse alle wesentlichen Fakten des Artikels zusammen.
+- Bleibe absolut faktentreu; erfinde nichts hinzu.
+- Sprache: Deutsch.
+- Stil: Einfach, direkt und nicht geschwollen. Eine pointierte Ausdrucksweise sowie ein Hauch von Ironie sind ausdrücklich erwünscht – der Leser darf an passenden Stellen schmunzeln.
 
-Du bist ein präziser Content Editor, dessen Aufgabe es ist, Instagram-Usern komplexe kommunale Themen kurz und fesselnd näherzubringen. Dein Ziel ist es, eine extrem kurze Caption zu erstellen, die in **ein bis zwei Sätzen** das Kernthema des Artikels klar benennt und sofort das Interesse der Leser weckt.
+**Format-Vorgaben (Strikt einzuhalten):**
+- Gib ausschließlich HTML-Code aus. 
+- Kein Einleitungstext, kein "Hier ist die Zusammenfassung", kein abschließender Satz.
+- Struktur: 
+  <h2>Eine prägnante Überschrift</h2>
+  <p>Der gesamte zusammenfassende Text in genau einem Absatz.</p>
+- Es darf exakt eine h2-Überschrift und exakt einen p-Tag geben.
 
-**Anweisungen für die Caption:**
+**WICHTIG:** Zeichenbegrenzung: Der sichtbare Text (Inhalt von h2 und p) darf insgesamt maximal 450 Zeichen lang sein.
 
-1. **Tonfall:** Der Tonfall muss informativ, neutral und spannend sein. Er soll die Dringlichkeit oder Wichtigkeit des Themas hervorheben, ohne zu übertreiben oder Emotionen zu dramatisieren.
-2. **Länge:** Die Caption muss extrem kurz sein: **maximal 1 bis 2 prägnante Sätze.**
-3. **Inhalt & Fokus:** Benenne das zentrale Thema oder die neueste Entwicklung aus dem Artikel klar und fasse die Relevanz kurz zusammen, um zum Weiterlesen anzuregen.
-4. **Struktur:** Beginne direkt mit der wichtigsten Information.
-5. **Vermeidung:** Es darf **keine explizite Fragestellung** (z.B. Wie geht es weiter?) oder Call to Action (CTA) verwendet werden.
-6. **Emojis:** Emojis sind nur sehr sparsam einzusetzen (maximal 1), um den Fokus zu unterstreichen.
-7. **Hashtags:** Füge am Ende der Caption **2** sachliche und thematisch relevante Hashtags hinzu (z.B. #Kommunalpolitik, #Gemeinderat, #Ort). Füge als dritten Hashstag immer #Rosdorf hinzu.
+Beispiel für eine Ausgabe eines kurzen Artikels:
+<h2>Digitale Mangelware: App-Zukunft ungewiss</h2>
+<p>Die Gemeinde ringt mit der Digitalisierung: Die bisherige Website soll abgeschaltet werden, die dazugehörige App droht kostenpflichtig zu werden, die Kreis-Unterstützung bleibt fraglich. Ratsmitglieder schimpfen über die verschwendete Ehrenamts-Energie und die App mutiert zur Verkaufsbude. Die Verwaltung verspricht, den Frust weiterzureichen - man darf gespannt sein, ob das den kostenlosen Zugang rettet.</p>
 
-Hier ist der Artikel:
+Zu verarbeitender Artikel:
 {complete_article}
+"""
+
+SHORT_ARTICLE_RETRY_PROMPT = """
+Du bist ein erfahrener Lokalredakteur. Deine Aufgabe ist es, einen bereits erstellten Kurzartikel zu kürzen.
+
+Der vorhandene Kurzartikel ist leider zu lang und muss gekürzt werden.
+
+**Inhalts-Vorgaben:**
+- Kürze den Artikel auf maximal 450 Zeichen (sichtbarer Text ohne HTML-Tags).
+- Behalte alle wesentlichen Fakten bei.
+- Ändere den Inhalt so wenig wie möglich; formuliere nur dann um, wenn nötig für die Länge.
+- Sprache: Deutsch.
+- Stil: Einfach, direkt, pointiert, mit einem Hauch von Ironie.
+
+**Format-Vorgaben (Strikt einzuhalten):**
+- Gib ausschließlich HTML-Code aus.
+- Kein Einleitungstext, kein abschließender Satz.
+- Struktur:
+  <h2>Eine prägnante Überschrift</h2>
+  <p>Der gesamte zusammenfassende Text in genau einem Absatz.</p>
+- Es darf exakt eine h2-Überschrift und exakt einen p-Tag geben.
+
+Zu kürzender Kurzartikel:
+{short_article}
+"""
+
+# --- Image Prompt Validation Prompts ---
+
+GENAI_IMAGE_PROMPT_VALIDATION_PROMPT = """
+Does this prompt request a realistic looking image (not comic or animation style)? Answer only 'YES' or 'NO', DO NOT add additional explanations, introductions, or farewell phrases.
+
+Prompt: {image_prompt}
+"""
+
+GENAI_IMAGE_PROMPT_REALISTIC_REWRITE_PROMPT = """
+Rewrite this prompt to request a realistic image style instead of comic or animation. Keep all other content.
+
+**Reply ONLY with the generated image prompt in English. DO NOT add additional explanations, introductions, or farewell phrases.**
+
+Prompt: {image_prompt}
 """

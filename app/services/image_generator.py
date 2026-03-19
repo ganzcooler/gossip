@@ -11,6 +11,60 @@ from app.core.models import SingleArticle
 logger = logging.getLogger(__name__)
 
 
+def validate_image_prompt(prompt: str, client: genai.Client) -> Tuple[bool, str]:
+    """Validates if an image prompt requests a realistic style (not comic/animation).
+    
+    Returns:
+        Tuple of (is_realistic: bool, prompt: str)
+    """
+    try:
+        logger.debug(f"Validating image prompt: {prompt[:50]}...")
+        response = client.models.generate_content(
+            model=config.GENAI_CLASSIFICATION_MODEL,
+            contents=prompts.GENAI_IMAGE_PROMPT_VALIDATION_PROMPT.format(image_prompt=prompt),
+            config=types.GenerateContentConfig(
+                temperature=0.0
+            )
+        )
+        
+        if response.text:
+            answer = response.text.strip().upper()
+            is_realistic = answer == "YES"
+            logger.debug(f"Prompt validation result: {answer} (realistic: {is_realistic})")
+            return is_realistic, prompt
+        
+        logger.warning("Prompt validation returned empty response, treating as not realistic")
+        return False, prompt
+        
+    except Exception as e:
+        logger.error(f"Error validating image prompt: {e}", exc_info=True)
+        return False, prompt
+
+
+def make_prompt_realistic(prompt: str, client: genai.Client) -> str:
+    """Rewrites a non-realistic prompt to request realistic image style."""
+    try:
+        response = client.models.generate_content(
+            model=config.GENAI_CLASSIFICATION_MODEL,
+            contents=prompts.GENAI_IMAGE_PROMPT_REALISTIC_REWRITE_PROMPT.format(image_prompt=prompt),
+            config=types.GenerateContentConfig(
+                temperature=0.2
+            )
+        )
+        
+        if response.text:
+            rewritten_prompt = response.text.strip()
+            logger.debug(f"Rewrote prompt to realistic style. Original: {prompt[:50]}... New: {rewritten_prompt[:50]}...")
+            return rewritten_prompt
+        
+        logger.warning("Prompt rewrite returned empty response, keeping original")
+        return prompt
+        
+    except Exception as e:
+        logger.error(f"Error making prompt realistic: {e}", exc_info=True)
+        return prompt
+
+
 def generate_image_prompt(article: SingleArticle) -> str:
     """Generates an image prompt for an article using a direct Google GenAI API call with retries."""
     logger.debug(f"Generating image prompt for article: '{article.ueberschrift}'")
@@ -85,6 +139,22 @@ def generate_image_for_article(article: SingleArticle) -> Tuple[str, bytes]:
     prompt = generate_image_prompt(article)
     if not prompt:
         return "", b""
+
+    # Validate and potentially rewrite prompt to be realistic (max 3 iterations)
+    client = genai.Client(api_key=config.load_google_api_key())
+    max_validation_attempts = 3
+    
+    for attempt in range(max_validation_attempts):
+        is_realistic, prompt = validate_image_prompt(prompt, client)
+        if is_realistic:
+            logger.debug(f"Prompt validated as realistic on attempt {attempt + 1}")
+            break
+        
+        if attempt < max_validation_attempts - 1:
+            logger.debug(f"Prompt not realistic, rewriting (attempt {attempt + 1}/{max_validation_attempts})")
+            prompt = make_prompt_realistic(prompt, client)
+        else:
+            logger.warning(f"Prompt still not realistic after {max_validation_attempts} attempts, using last version anyway")
 
     image_bytes = generate_image(prompt)
     return prompt, image_bytes

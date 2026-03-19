@@ -35,7 +35,7 @@ class Article(Base):
     protocol_id = Column(Integer, ForeignKey("protocols.id", ondelete="CASCADE"), nullable=False)
     article_index = Column(Integer, nullable=True)
     content = Column(Text, nullable=False)
-    caption = Column(Text, nullable=True)
+    short_article = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
