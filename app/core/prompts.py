@@ -59,7 +59,7 @@ Das generierte Bild soll als **Beitragsbild (Hero Image)** für diesen Artikel d
  * Sicherheit: Das Bild muss zu 100% mit den Inhaltsrichtlinien für Bildgenerierung vereinbar sein.
  * Richtlinien: Keine Darstellung von Gewalt, sexuellen Inhalten, Hass, politischen Symbolen, Marken oder urheberrechtlich geschützten Figuren.
  * Thema: Das Bild muss das zentrale Thema des Artikels visuell aufgreifen. **Konzentriere dich bei der visuellen Darstellung primär auf die Auswirkungen des Themas, Konzepte oder symbolische Darstellungen, anstatt wiederholt Politiker in Anzügen abzubilden, die etwas verbieten oder vorschreiben.** Wähle Elemente, die direkt mit dem Inhalt in Verbindung stehen und diesen visuell repräsentieren. Vermeide irreführende oder zu allgemeine Darstellungen.
- * Stil: Das Bild soll einen realistischen Stil haben. Der Stil darf nicht animiert oder comic-ähnlich sein.
+ * Stil: Das Bild soll einen fotorealistischen Stil haben. Der Stil darf nicht animiert oder comic-ähnlich sein.
  * Wirkung: Das Bild muss ein Eye-Catcher sein und darf auf keinen Fall langweilig wirken.
  * Tonalität: Das Bild soll das Thema des Artikels auf eine leicht sarkastische, überzogene und humorvolle Weise darstellen. Denke an visuelle Metaphern oder absurde Situationen, die die Kernaussage des Artikels auf humorvolle Weise unterstreichen.
  * Inhalt: Personen sind im Bild erlaubt, sofern sie die sarkastische/überzogene Darstellung unterstützen und nicht das Hauptaugenmerk sind.
