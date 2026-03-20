@@ -45,8 +45,12 @@ async def process_protocols_job(db_session: AsyncSession):
         except Exception as e:
             logger.error(f"Error processing protocol {protocol.id}: {e}")
             continue
+    
+    if processed_count > 0:
+        logger.info(f"Protocol processing job completed. Processed {processed_count} protocols")
+    else:
+        logger.info(f"No new protocols to process.")
 
-    logger.info(f"Protocol processing job completed. Processed {processed_count} protocols")
     return processed_count
 
 
