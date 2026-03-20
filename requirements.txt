@@ -15,7 +15,4 @@ lxml
 # Testing dependencies
 pytest
 pytest-asyncio
-pytest-cov
 coverage
-httpx
-aiosqlite
