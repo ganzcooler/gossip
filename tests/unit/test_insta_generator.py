@@ -439,59 +439,50 @@ class TestExtractArticleContent:
         assert h2_blocks[0].paragraph is None
 
 
-class TestSaveJpegWithExif:
-    """Tests for save_jpeg_with_exif function."""
+class TestSaveJpeg:
+    """Tests for save_jpeg function."""
 
-    def test_save_jpeg_with_exif_saves_with_correct_format(self, tmp_path):
-        """Test that save_jpeg_with_exif saves a JPEG file."""
-        from datetime import datetime
+    def test_save_jpeg_saves_with_correct_format(self, tmp_path):
+        """Test that save_jpeg saves a JPEG file without EXIF date data."""
         from PIL import Image
-        from app.services.insta_generator import save_jpeg_with_exif
+        from app.services.insta_generator import save_jpeg
         
         # Create a test image
         img = Image.new('RGB', (100, 100), color='red')
         
-        # Save with EXIF
+        # Save without EXIF date data
         output_path = tmp_path / "test_image.jpg"
-        test_timestamp = datetime(2024, 1, 15, 10, 30, 45)
-        save_jpeg_with_exif(img, output_path, test_timestamp, quality=95)
+        save_jpeg(img, output_path, quality=95)
         
         # Verify file was created
         assert output_path.exists()
         
-        # Verify it can be opened and has EXIF data
+        # Verify it can be opened and does NOT have EXIF date data
         with Image.open(output_path) as saved_img:
             exif = saved_img.getexif()
-            # Check that EXIF date tags are present
-            assert 36867 in exif  # DateTimeOriginal
-            assert exif[36867] == "2024:01:15 10:30:45"
+            # Check that EXIF date tags are NOT present
+            assert 36867 not in exif  # DateTimeOriginal
+            assert 36868 not in exif  # DateTimeDigitized
+            assert 306 not in exif   # DateTime
 
-    def test_save_jpeg_with_exif_increments_timestamp(self, tmp_path):
-        """Test that different images get different timestamps."""
-        from datetime import datetime, timedelta
+    def test_save_jpeg_handles_rgba_images(self, tmp_path):
+        """Test that RGBA images are converted to RGB correctly."""
         from PIL import Image
-        from app.services.insta_generator import save_jpeg_with_exif
+        from app.services.insta_generator import save_jpeg
         
-        base_time = datetime(2024, 1, 15, 10, 30, 45)
+        # Create an RGBA test image
+        img = Image.new('RGBA', (100, 100), color='red')
         
-        # Create and save first image
-        img1 = Image.new('RGB', (100, 100), color='red')
-        path1 = tmp_path / "image1.jpg"
-        save_jpeg_with_exif(img1, path1, base_time, quality=95)
+        # Save without EXIF date data
+        output_path = tmp_path / "test_rgba.jpg"
+        save_jpeg(img, output_path, quality=95)
         
-        # Create and save second image with +1 second
-        img2 = Image.new('RGB', (100, 100), color='blue')
-        path2 = tmp_path / "image2.jpg"
-        save_jpeg_with_exif(img2, path2, base_time + timedelta(seconds=1), quality=95)
+        # Verify file was created
+        assert output_path.exists()
         
-        # Verify both files have different EXIF dates
-        with Image.open(path1) as saved_img1:
-            exif1 = saved_img1.getexif()
-            assert exif1[36867] == "2024:01:15 10:30:45"
-        
-        with Image.open(path2) as saved_img2:
-            exif2 = saved_img2.getexif()
-            assert exif2[36867] == "2024:01:15 10:30:46"
+        # Verify it can be opened as RGB (JPEG doesn't support RGBA)
+        with Image.open(output_path) as saved_img:
+            assert saved_img.mode == 'RGB'
 
 
 class TestJpgOutputFormat:
