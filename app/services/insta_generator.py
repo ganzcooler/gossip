@@ -2,7 +2,6 @@ import pathlib
 import re
 import textwrap
 import logging
-from datetime import datetime, timedelta
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -16,18 +15,14 @@ logger = logging.getLogger(__name__)
 MAX_PARAGRAPH_LENGTH = 450
 
 
-def save_jpeg_with_exif(img: Image.Image, path: Path, timestamp: datetime, quality: int = 95) -> None:
-    """Save a PIL Image as JPEG with EXIF date metadata.
+def save_jpeg(img: Image.Image, path: Path, quality: int = 95) -> None:
+    """Save a PIL Image as JPEG without EXIF metadata.
     
     Args:
         img: The PIL Image to save
         path: The file path to save to
-        timestamp: The datetime to set in EXIF DateTimeOriginal
         quality: JPEG quality (default 95)
     """
-    # Convert datetime to EXIF format: "YYYY:MM:DD HH:MM:SS"
-    exif_date = timestamp.strftime("%Y:%m:%d %H:%M:%S")
-    
     # Convert RGBA to RGB if necessary (JPEG doesn't support RGBA)
     if img.mode == 'RGBA':
         # Create a white background and paste the RGBA image on it
@@ -35,19 +30,8 @@ def save_jpeg_with_exif(img: Image.Image, path: Path, timestamp: datetime, quali
         background.paste(img, mask=img.split()[3])  # Use alpha channel as mask
         img = background
     
-    try:
-        exif_data = img.getexif()
-        # EXIF tag 36867 is DateTimeOriginal
-        exif_data[36867] = exif_date
-        # EXIF tag 36868 is DateTimeDigitized
-        exif_data[36868] = exif_date
-        # EXIF tag 306 is DateTime
-        exif_data[306] = exif_date
-        img.save(path, 'JPEG', quality=quality, exif=exif_data)
-    except Exception as e:
-        # Fallback: save without EXIF if there's an issue
-        logger.warning(f"Failed to save EXIF data for {path}, saving without: {e}")
-        img.save(path, 'JPEG', quality=quality)
+    # Save without EXIF date data
+    img.save(path, 'JPEG', quality=quality)
 
 
 def find_tag(protocol_title: str) -> str | None:
@@ -447,9 +431,6 @@ def create_insta_images_for_protocol(
     # Create a lookup for articles_data by index
     articles_by_index = {str(article["index"]): article for article in articles_data}
 
-    # Initialize timestamp counter for EXIF dates - each image gets a unique timestamp
-    current_timestamp = datetime.now()
-
     for image_path in image_files:
         # Find corresponding article index from image filename
         # Normalize the index to handle leading zeros (e.g., "01" -> "1")
@@ -477,8 +458,7 @@ def create_insta_images_for_protocol(
                 with Image.open(image_path) as img:
                     base_img = img.copy()
                     final_img = create_main_image(base_img, article_content.h1, protocol_title, res_dir)
-                    save_jpeg_with_exif(final_img, insta_main_path, current_timestamp, quality=95)
-                    current_timestamp += timedelta(seconds=1)
+                    save_jpeg(final_img, insta_main_path, quality=95)
                     logger.debug(f"Created Instagram main image: {insta_main_path}")
             except Exception as e:
                 logger.error(f"Failed to create main Instagram image: {e}")
@@ -503,8 +483,7 @@ def create_insta_images_for_protocol(
                         base_img = img.copy()
                         blurred_img = base_img.filter(ImageFilter.GaussianBlur(radius=3))
                         summary_img = create_content_image(blurred_img, summary_block, res_dir)
-                        save_jpeg_with_exif(summary_img, summary_image_path, current_timestamp, quality=95)
-                        current_timestamp += timedelta(seconds=1)
+                        save_jpeg(summary_img, summary_image_path, quality=95)
                         logger.debug(f"Created Instagram summary image: {summary_image_path}")
             except Exception as e:
                 logger.error(f"Failed to create summary Instagram image: {e}")
@@ -564,8 +543,7 @@ def create_insta_images_for_protocol(
                     base_img = img.copy()
                     blurred_img = base_img.filter(ImageFilter.GaussianBlur(radius=3))
                     final_part_img = create_content_image(blurred_img, block, res_dir)
-                    save_jpeg_with_exif(final_part_img, insta_part_path, current_timestamp, quality=95)
-                    current_timestamp += timedelta(seconds=1)
+                    save_jpeg(final_part_img, insta_part_path, quality=95)
                     logger.debug(f"Created Instagram part image: {insta_part_path}")
             except Exception as e:
                 logger.error(f"Failed to create part Instagram image: {e}")

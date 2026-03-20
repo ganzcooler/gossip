@@ -1,10 +1,12 @@
 """
 Unit tests for app/services/protocol_processor.py
 """
+import io
 import pytest
 from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch, AsyncMock
+from PIL import Image
 
 from app.services.protocol_processor import (
     sanitize_filename,
@@ -12,6 +14,14 @@ from app.services.protocol_processor import (
     process_protocols_job,
 )
 from app.services import AuthenticationError
+
+
+def create_test_png_bytes() -> bytes:
+    """Create a minimal valid PNG for testing."""
+    img = Image.new('RGB', (10, 10), color='red')
+    buffer = io.BytesIO()
+    img.save(buffer, format='PNG')
+    return buffer.getvalue()
 
 
 class TestSanitizeFilename:
@@ -71,20 +81,20 @@ class TestSanitizeFilename:
 class TestSaveImageToFile:
     """Tests for save_image_to_file function."""
 
-    def test_creates_png_file(self, temp_directory):
-        """Test that PNG file is created."""
-        image_bytes = b"\x89PNG\r\n\x1a\n"  # PNG magic bytes
+    def test_creates_jpg_file(self, temp_directory):
+        """Test that JPG file is created."""
+        image_bytes = create_test_png_bytes()
         session_date = date(2024, 1, 15)
         title = "Test Protocol"
 
         result = save_image_to_file(image_bytes, temp_directory, 1, session_date, title)
 
         assert result.exists()
-        assert result.suffix == ".png"
+        assert result.suffix == ".jpg"
 
     def test_filename_contains_index(self, temp_directory):
         """Test that filename contains article index."""
-        image_bytes = b"fake image data"
+        image_bytes = create_test_png_bytes()
         session_date = date(2024, 1, 15)
         title = "Test Protocol"
 
@@ -94,7 +104,7 @@ class TestSaveImageToFile:
 
     def test_filename_with_suffix(self, temp_directory):
         """Test that suffix is added to filename."""
-        image_bytes = b"fake image data"
+        image_bytes = create_test_png_bytes()
         session_date = date(2024, 1, 15)
         title = "Test Protocol"
 
@@ -102,21 +112,22 @@ class TestSaveImageToFile:
 
         assert "_main" in result.name
 
-    def test_saves_correct_content(self, temp_directory):
-        """Test that correct bytes are saved."""
-        image_bytes = b"\x89PNG\r\n\x1a\nfake image content"
+    def test_saves_valid_jpg(self, temp_directory):
+        """Test that valid JPG is saved."""
+        image_bytes = create_test_png_bytes()
         session_date = date(2024, 1, 15)
         title = "Test Protocol"
 
         result = save_image_to_file(image_bytes, temp_directory, 1, session_date, title)
 
-        saved_content = result.read_bytes()
-        assert saved_content == image_bytes
+        # Verify it's a valid JPEG by opening it
+        saved_image = Image.open(result)
+        assert saved_image.format == 'JPEG'
 
     def test_creates_folder_when_none_provided(self, temp_directory):
         """Test that folder is created when protocol_folder is None."""
         import time
-        image_bytes = b"\x89PNG\r\n\x1a\n"
+        image_bytes = create_test_png_bytes()
         session_date = date(2024, 1, 15)
         # Use timestamp to avoid folder name collision with previous test runs
         title = f"Test Protocol Lazy {int(time.time() * 1000)}"
@@ -132,7 +143,7 @@ class TestSaveImageToFile:
 
     def test_reuses_existing_folder(self, temp_directory):
         """Test that existing folder path is reused when it exists."""
-        image_bytes = b"\x89PNG\r\n\x1a\n"
+        image_bytes = create_test_png_bytes()
         session_date = date(2024, 3, 10)
         title = "Existing Folder Test"
         
@@ -152,7 +163,7 @@ class TestSaveImageToFile:
         from unittest.mock import patch
         from app.core.config import ARTICLES_DIR
         
-        image_bytes = b"\x89PNG\r\n\x1a\n"
+        image_bytes = create_test_png_bytes()
         session_date = date(2024, 1, 15)
         # Use timestamp to avoid folder name collision with previous test runs
         title = f"Test Protocol Retry {int(time.time() * 1000)}"

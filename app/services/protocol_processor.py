@@ -1,8 +1,10 @@
 import asyncio
+import io
 import logging
 import re
 from datetime import date
 from pathlib import Path
+from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -43,8 +45,12 @@ async def process_protocols_job(db_session: AsyncSession):
         except Exception as e:
             logger.error(f"Error processing protocol {protocol.id}: {e}")
             continue
+    
+    if processed_count > 0:
+        logger.info(f"Protocol processing job completed. Processed {processed_count} protocols")
+    else:
+        logger.info(f"No new protocols to process.")
 
-    logger.info(f"Protocol processing job completed. Processed {processed_count} protocols")
     return processed_count
 
 
@@ -220,12 +226,16 @@ def save_image_to_file(
             logger.error(f"Failed to create protocol folder for '{title}': {e}")
             raise
 
-    filename = f"image_{article_index:02d}{suffix}.png"
+    filename = f"image_{article_index:02d}{suffix}.jpg"
     filepath = protocol_folder / filename
 
     try:
-        with open(filepath, "wb") as f:
-            f.write(image_bytes)
+        # Decode PNG bytes and save as JPG with 95% quality
+        image = Image.open(io.BytesIO(image_bytes))
+        # Convert to RGB to handle PNG with alpha channel
+        if image.mode in ("RGBA", "P", "LA", "PA"):
+            image = image.convert("RGB")
+        image.save(filepath, "JPEG", quality=95)
         logger.debug(f"Saved image to: {filepath}")
         return filepath
     except IOError as e:
