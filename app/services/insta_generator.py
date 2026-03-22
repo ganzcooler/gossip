@@ -443,6 +443,37 @@ def crop_to_4_5(img: Image.Image) -> Image.Image:
     return img.crop(crop_box)
 
 
+def crop_to_5_4(img: Image.Image) -> Image.Image:
+    """
+    Crop an image to 5:4 aspect ratio (landscape-ish but nearly square).
+    Width remains unchanged, top and bottom are cropped equally (center crop).
+    
+    This is designed to work with portrait images from GenAI,
+    cropping them to 5:4 aspect ratio for Instagram posts.
+    
+    Args:
+        img: Input image (e.g., 9:16 portrait from GenAI)
+        
+    Returns:
+        Cropped image with 5:4 aspect ratio
+    """
+    width, height = img.size
+    # Calculate target height for 5:4 aspect ratio
+    # 5:4 = width:height => height = width * 4/5
+    target_height = int(width * 4 / 5)
+    
+    if target_height >= height:
+        # Image is already 5:4 or shorter, return as-is
+        return img
+    
+    # Calculate crop box (center crop)
+    top_crop = (height - target_height) // 2
+    bottom_crop = height - target_height - top_crop
+    
+    crop_box = (0, top_crop, width, height - bottom_crop)
+    return img.crop(crop_box)
+
+
 def instagram_images_exist(protocol_folder: Path, articles_data: list[dict]) -> bool:
     """
     Check if Instagram images already exist in the new folder structure.
