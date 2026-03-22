@@ -361,7 +361,8 @@ def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Pa
         total_combined_block_height = p_height
 
     # --- Positioning and Drawing ---
-    block_y_start = (img_height - total_combined_block_height) / 2
+    # Position text with 10% margin from top instead of vertical centering
+    block_y_start = int(img_height * 0.1)
     block_x_start = padding_x  # Align to the left with padding
 
     # Draw a blurred, transparent background rectangle for the text
