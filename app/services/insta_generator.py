@@ -221,7 +221,7 @@ def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res
     if tag_text:
         try:
             tag_font_path = str(res_dir / "Oswald-Bold.ttf")
-            tag_font_size = int(base_img.height * 0.03)
+            tag_font_size = int(base_img.width * 0.0375)
             tag_font = ImageFont.truetype(tag_font_path, size=tag_font_size)
         except IOError:
             logger.warning("Oswald-Bold.ttf not found for tag. Using default font.")
@@ -262,7 +262,7 @@ def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res
     # --- Text ---
     try:
         font_path = str(res_dir / "Oswald-Bold.ttf")
-        font_size = int(base_img.height * 0.05)
+        font_size = int(base_img.width * 0.0625)
         font = ImageFont.truetype(font_path, size=font_size)
     except IOError:
         logger.warning("Oswald-Bold.ttf not found for main image. Using default font.")
@@ -296,8 +296,8 @@ def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Pa
     try:
         font_path_bold = str(res_dir / "Oswald-Bold.ttf")
         font_path_regular = str(res_dir / "RobotoCondensed-Regular.ttf")
-        h2_font_size = int(img_height * 0.04)
-        p_font_size = int(img_height * 0.04)
+        h2_font_size = int(img_width * 0.05)
+        p_font_size = int(img_width * 0.05)
         h2_font = ImageFont.truetype(font_path_bold, size=h2_font_size)
         p_font = ImageFont.truetype(font_path_regular, size=p_font_size)
     except IOError:
