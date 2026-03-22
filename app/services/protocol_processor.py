@@ -272,7 +272,7 @@ async def _process_existing_protocol(
     protocol: Protocol,
     existing_articles: list[Article],
     db_session: AsyncSession
-):
+) -> None:
     """
     Process a protocol that already has articles in the database.
     Checks for missing images and regenerates them if needed, then creates Instagram images.
@@ -309,12 +309,10 @@ async def _process_existing_protocol(
                 # Parse article content to get the data needed for image generation
                 content = article.content
                 # Extract title from h1 tag
-                import re
                 h1_match = re.search(r'<h1>(.*?)</h1>', content)
                 title = h1_match.group(1) if h1_match else f"Article {article.article_index}"
 
                 # Create SingleArticle for image generation
-                from app.core.models import SingleArticle
                 article_data = SingleArticle(ueberschrift=title, inhalt=content)
 
                 # Generate image
