@@ -111,7 +111,6 @@ async def process_protocol(protocol: Protocol, db_session: AsyncSession):
     if protocol_folder is not None and protocol_folder.exists():
         try:
             # Fetch articles from database to get short_article field
-            from sqlalchemy import select
             result = await db_session.execute(
                 select(Article).where(Article.protocol_id == protocol.id).order_by(Article.article_index)
             )
