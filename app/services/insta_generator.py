@@ -403,27 +403,27 @@ def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Pa
     return Image.alpha_composite(base_img.convert('RGBA'), overlay)
 
 
-def crop_to_5_4(img: Image.Image) -> Image.Image:
+def crop_to_4_5(img: Image.Image) -> Image.Image:
     """
-    Crop an image to 5:4 aspect ratio.
+    Crop an image to 4:5 aspect ratio (portrait).
     Width remains unchanged, top and bottom are cropped equally (center crop).
     
     This is designed to work with 9:16 portrait images from GenAI,
-    cropping them to 5:4 landscape for Instagram posts.
+    cropping them to 4:5 portrait for Instagram posts.
     
     Args:
         img: Input image (e.g., 9:16 portrait from GenAI)
         
     Returns:
-        Cropped image with 5:4 aspect ratio
+        Cropped image with 4:5 aspect ratio
     """
     width, height = img.size
-    # Calculate target height for 5:4 aspect ratio
-    # 5:4 = width:height => height = width * 4/5
-    target_height = int(width * 4 / 5)
+    # Calculate target height for 4:5 aspect ratio
+    # 4:5 = width:height => height = width * 5/4
+    target_height = int(width * 5 / 4)
     
     if target_height >= height:
-        # Image is already 5:4 or shorter, return as-is
+        # Image is already 4:5 or shorter, return as-is
         return img
     
     # Calculate crop box (center crop)
@@ -602,13 +602,13 @@ def create_insta_images_for_protocol(
             except Exception as e:
                 logger.error(f"Failed to create story main Instagram image: {e}")
 
-        # Create main Instagram image (5:4 cropped for posts folder)
+        # Create main Instagram image (4:5 cropped for posts folder)
         post_main_path = posts_folder / f"insta_{article_index}_main.jpg"
         if not post_main_path.exists():
             try:
                 with Image.open(image_path) as img:
-                    # Crop to 5:4 aspect ratio
-                    cropped_img = crop_to_5_4(img)
+                    # Crop to 4:5 aspect ratio
+                    cropped_img = crop_to_4_5(img)
                     final_img = create_main_image(cropped_img, article_content.h1, protocol_title, res_dir)
                     save_jpeg(final_img, post_main_path, quality=95)
                     logger.debug(f"Created Instagram post main image: {post_main_path}")
@@ -644,7 +644,7 @@ def create_insta_images_for_protocol(
         raw_blocks = article_content.content_blocks
         processed_blocks = _process_content_blocks(raw_blocks)
 
-        # Create content images for each block (5:4 cropped for posts folder)
+        # Create content images for each block (4:5 cropped for posts folder)
         for block_idx, block in enumerate(processed_blocks):
             insta_part_path = posts_folder / f"insta_{article_index}_part{block_idx+1}.jpg"
             if insta_part_path.exists():
@@ -652,8 +652,8 @@ def create_insta_images_for_protocol(
 
             try:
                 with Image.open(image_path) as img:
-                    # Crop to 5:4 aspect ratio
-                    cropped_img = crop_to_5_4(img)
+                    # Crop to 4:5 aspect ratio
+                    cropped_img = crop_to_4_5(img)
                     blurred_img = cropped_img.filter(ImageFilter.GaussianBlur(radius=3))
                     final_part_img = create_content_image(blurred_img, block, res_dir)
                     save_jpeg(final_part_img, insta_part_path, quality=95)
