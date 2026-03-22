@@ -290,8 +290,15 @@ def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res
     return Image.alpha_composite(base_img.convert('RGBA'), overlay)
 
 
-def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Path) -> Image.Image:
-    """Creates a blurred content image with a smaller logo and text from a ContentBlock."""
+def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Path, center_vertically: bool = False) -> Image.Image:
+    """Creates a blurred content image with a smaller logo and text from a ContentBlock.
+    
+    Args:
+        base_img: The base image to overlay text on
+        block: The ContentBlock containing headline and/or paragraph text
+        res_dir: Path to resources directory (fonts, logo)
+        center_vertically: If True, vertically center the text block. If False, position at 10% from top.
+    """
     overlay = Image.new('RGBA', base_img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     img_width, img_height = base_img.size
@@ -361,8 +368,13 @@ def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Pa
         total_combined_block_height = p_height
 
     # --- Positioning and Drawing ---
-    # Position text with 10% margin from top instead of vertical centering
-    block_y_start = int(img_height * 0.1)
+    # Position text based on center_vertically parameter
+    if center_vertically:
+        # Vertically center the text block
+        block_y_start = (img_height - total_combined_block_height) // 2
+    else:
+        # Position text with 10% margin from top (for story summary images)
+        block_y_start = int(img_height * 0.1)
     block_x_start = padding_x  # Align to the left with padding
 
     # Draw a blurred, transparent background rectangle for the text
@@ -695,7 +707,7 @@ def create_insta_images_for_protocol(
                     # Crop to 4:5 aspect ratio
                     cropped_img = crop_to_4_5(img)
                     blurred_img = cropped_img.filter(ImageFilter.GaussianBlur(radius=3))
-                    final_part_img = create_content_image(blurred_img, block, res_dir)
+                    final_part_img = create_content_image(blurred_img, block, res_dir, center_vertically=True)
                     save_jpeg(final_part_img, insta_part_path, quality=95)
                     logger.debug(f"Created Instagram post part image: {insta_part_path}")
             except Exception as e:
