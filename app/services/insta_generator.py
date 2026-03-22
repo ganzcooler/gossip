@@ -195,15 +195,23 @@ def draw_logo(overlay: Image.Image, img_height: int, img_width: int, top_gradien
         logger.warning(f"Logo file not found at {res_dir / 'logo-gossip.png'}, skipping logo.")
 
 
-def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res_dir: Path) -> Image.Image:
-    """Creates the main, non-blurred image with gradients, logo, and headline."""
+def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res_dir: Path, bottom_gradient_ratio: float = 0.4) -> Image.Image:
+    """Creates the main, non-blurred image with gradients, logo, and headline.
+    
+    Args:
+        base_img: The base image to overlay gradients on
+        text: The headline text to display
+        protocol_title: The protocol title (used for tag matching)
+        res_dir: Path to resources directory (fonts, logo)
+        bottom_gradient_ratio: The ratio of the bottom gradient height to total image height (default 0.4 = 40%)
+    """
     overlay = Image.new('RGBA', base_img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
 
     gradient_width, gradient_height = base_img.size
 
     # --- Gradients ---
-    bottom_gradient_height = int(gradient_height * 0.4)
+    bottom_gradient_height = int(gradient_height * bottom_gradient_ratio)
     for y in range(bottom_gradient_height):
         alpha = int(230 * (y / bottom_gradient_height))
         draw.line([(0, gradient_height - bottom_gradient_height + y), (gradient_width, gradient_height - bottom_gradient_height + y)], fill=(0, 0, 0, alpha))
@@ -596,7 +604,7 @@ def create_insta_images_for_protocol(
             try:
                 with Image.open(image_path) as img:
                     base_img = img.copy()
-                    final_img = create_main_image(base_img, article_content.h1, protocol_title, res_dir)
+                    final_img = create_main_image(base_img, article_content.h1, protocol_title, res_dir, bottom_gradient_ratio=0.5)
                     save_jpeg(final_img, story_main_path, quality=95)
                     logger.debug(f"Created Instagram story main image: {story_main_path}")
             except Exception as e:
