@@ -195,7 +195,7 @@ def draw_logo(overlay: Image.Image, img_height: int, img_width: int, top_gradien
         logger.warning(f"Logo file not found at {res_dir / 'logo-gossip.png'}, skipping logo.")
 
 
-def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res_dir: Path, bottom_gradient_ratio: float = 0.5) -> Image.Image:
+def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res_dir: Path, bottom_gradient_ratio: float = 0.5, font_scale_factor: float = 1.0) -> Image.Image:
     """Creates the main, non-blurred image with gradients, logo, and headline.
     
     Args:
@@ -204,6 +204,7 @@ def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res
         protocol_title: The protocol title (used for tag matching)
         res_dir: Path to resources directory (fonts, logo)
         bottom_gradient_ratio: The ratio of the bottom gradient height to total image height (default 0.5 = 50%)
+        font_scale_factor: Factor to scale font sizes (default 1.0). Use 1.2 for story images to make fonts 20% larger.
     """
     overlay = Image.new('RGBA', base_img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -270,7 +271,7 @@ def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res
     # --- Text ---
     try:
         font_path = str(res_dir / "Oswald-Bold.ttf")
-        font_size = int(base_img.width * 0.075)
+        font_size = int(base_img.width * 0.075 * font_scale_factor)
         font = ImageFont.truetype(font_path, size=font_size)
     except IOError:
         logger.warning("Oswald-Bold.ttf not found for main image. Using default font.")
@@ -290,7 +291,7 @@ def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res
     return Image.alpha_composite(base_img.convert('RGBA'), overlay)
 
 
-def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Path, center_vertically: bool = False) -> Image.Image:
+def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Path, center_vertically: bool = False, font_scale_factor: float = 1.0) -> Image.Image:
     """Creates a blurred content image with a smaller logo and text from a ContentBlock.
     
     Args:
@@ -298,6 +299,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Pa
         block: The ContentBlock containing headline and/or paragraph text
         res_dir: Path to resources directory (fonts, logo)
         center_vertically: If True, vertically center the text block. If False, position at 10% from top.
+        font_scale_factor: Factor to scale font sizes (default 1.0). Use 1.2 for story images to make fonts 20% larger.
     """
     overlay = Image.new('RGBA', base_img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -311,8 +313,8 @@ def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Pa
     try:
         font_path_bold = str(res_dir / "Oswald-Bold.ttf")
         font_path_regular = str(res_dir / "RobotoCondensed-Regular.ttf")
-        h2_font_size = int(img_width * 0.06)
-        p_font_size = int(img_width * 0.06)
+        h2_font_size = int(img_width * 0.06 * font_scale_factor)
+        p_font_size = int(img_width * 0.06 * font_scale_factor)
         h2_font = ImageFont.truetype(font_path_bold, size=h2_font_size)
         p_font = ImageFont.truetype(font_path_regular, size=p_font_size)
     except IOError:
@@ -648,7 +650,7 @@ def create_insta_images_for_protocol(
             try:
                 with Image.open(image_path) as img:
                     base_img = img.copy()
-                    final_img = create_main_image(base_img, article_content.h1, protocol_title, res_dir, bottom_gradient_ratio=0.5)
+                    final_img = create_main_image(base_img, article_content.h1, protocol_title, res_dir, bottom_gradient_ratio=0.5, font_scale_factor=1.2)
                     save_jpeg(final_img, story_main_path, quality=95)
                     logger.debug(f"Created Instagram story main image: {story_main_path}")
             except Exception as e:
@@ -661,7 +663,7 @@ def create_insta_images_for_protocol(
                 with Image.open(image_path) as img:
                     # Crop to 4:5 aspect ratio
                     cropped_img = crop_to_4_5(img)
-                    final_img = create_main_image(cropped_img, article_content.h1, protocol_title, res_dir)
+                    final_img = create_main_image(cropped_img, article_content.h1, protocol_title, res_dir, font_scale_factor=1.0)
                     save_jpeg(final_img, post_main_path, quality=95)
                     logger.debug(f"Created Instagram post main image: {post_main_path}")
             except Exception as e:
@@ -686,7 +688,7 @@ def create_insta_images_for_protocol(
                     with Image.open(image_path) as img:
                         base_img = img.copy()
                         blurred_img = base_img.filter(ImageFilter.GaussianBlur(radius=3))
-                        summary_img = create_content_image(blurred_img, summary_block, res_dir)
+                        summary_img = create_content_image(blurred_img, summary_block, res_dir, font_scale_factor=1.2)
                         save_jpeg(summary_img, summary_image_path, quality=95)
                         logger.debug(f"Created Instagram summary image: {summary_image_path}")
             except Exception as e:
@@ -707,7 +709,7 @@ def create_insta_images_for_protocol(
                     # Crop to 4:5 aspect ratio
                     cropped_img = crop_to_4_5(img)
                     blurred_img = cropped_img.filter(ImageFilter.GaussianBlur(radius=3))
-                    final_part_img = create_content_image(blurred_img, block, res_dir, center_vertically=True)
+                    final_part_img = create_content_image(blurred_img, block, res_dir, center_vertically=True, font_scale_factor=1.0)
                     save_jpeg(final_part_img, insta_part_path, quality=95)
                     logger.debug(f"Created Instagram post part image: {insta_part_path}")
             except Exception as e:
