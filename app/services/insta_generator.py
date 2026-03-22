@@ -195,7 +195,7 @@ def draw_logo(overlay: Image.Image, img_height: int, img_width: int, top_gradien
         logger.warning(f"Logo file not found at {res_dir / 'logo-gossip.png'}, skipping logo.")
 
 
-def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res_dir: Path, bottom_gradient_ratio: float = 0.4) -> Image.Image:
+def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res_dir: Path, bottom_gradient_ratio: float = 0.5) -> Image.Image:
     """Creates the main, non-blurred image with gradients, logo, and headline.
     
     Args:
@@ -203,7 +203,7 @@ def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res
         text: The headline text to display
         protocol_title: The protocol title (used for tag matching)
         res_dir: Path to resources directory (fonts, logo)
-        bottom_gradient_ratio: The ratio of the bottom gradient height to total image height (default 0.4 = 40%)
+        bottom_gradient_ratio: The ratio of the bottom gradient height to total image height (default 0.5 = 50%)
     """
     overlay = Image.new('RGBA', base_img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -270,7 +270,7 @@ def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res
     # --- Text ---
     try:
         font_path = str(res_dir / "Oswald-Bold.ttf")
-        font_size = int(base_img.width * 0.0625)
+        font_size = int(base_img.width * 0.075)
         font = ImageFont.truetype(font_path, size=font_size)
     except IOError:
         logger.warning("Oswald-Bold.ttf not found for main image. Using default font.")
@@ -304,8 +304,8 @@ def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Pa
     try:
         font_path_bold = str(res_dir / "Oswald-Bold.ttf")
         font_path_regular = str(res_dir / "RobotoCondensed-Regular.ttf")
-        h2_font_size = int(img_width * 0.05)
-        p_font_size = int(img_width * 0.05)
+        h2_font_size = int(img_width * 0.06)
+        p_font_size = int(img_width * 0.06)
         h2_font = ImageFont.truetype(font_path_bold, size=h2_font_size)
         p_font = ImageFont.truetype(font_path_regular, size=p_font_size)
     except IOError:
