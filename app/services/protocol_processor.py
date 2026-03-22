@@ -60,10 +60,21 @@ async def process_protocol(protocol: Protocol, db_session: AsyncSession):
     """
     logger.debug(f"Processing protocol: {protocol.title} (ID: {protocol.id})")
 
+    # Check if articles already exist for this protocol
+    existing_articles_result = await db_session.execute(
+        select(Article).where(Article.protocol_id == protocol.id).order_by(Article.article_index)
+    )
+    existing_articles = existing_articles_result.scalars().all()
+
+    if existing_articles:
+        logger.info(f"Articles already exist for protocol {protocol.id}. Skipping article generation.")
+        await _process_existing_protocol(protocol, existing_articles, db_session)
+        return
+
     # Step 1: Generate articles from PDF text (sync function in thread pool)
     logger.debug(f"Generating articles for protocol {protocol.id}...")
     loop = asyncio.get_event_loop()
-    
+
     try:
         articles = await loop.run_in_executor(None, generate_articles, protocol.pdf_text)
     except ArticleGenerationError as e:
@@ -255,6 +266,98 @@ def sanitize_filename(name: str) -> str:
     # Remove multiple underscores
     name = re.sub(r'_+', '_', name)
     return name.strip("_.-")
+
+
+async def _process_existing_protocol(
+    protocol: Protocol,
+    existing_articles: list[Article],
+    db_session: AsyncSession
+):
+    """
+    Process a protocol that already has articles in the database.
+    Checks for missing images and regenerates them if needed, then creates Instagram images.
+    """
+    logger.debug(f"Processing existing protocol {protocol.id} with {len(existing_articles)} articles")
+
+    # Get or create the protocol folder
+    try:
+        protocol_folder = create_protocol_folder(
+            ARTICLES_DIR,
+            protocol.session_date,
+            protocol.title
+        )
+    except FileExistsError:
+        # Folder exists - reconstruct path
+        normalized = protocol.title
+        for umlaut, replacement in [('ä', 'ae'), ('ö', 'oe'), ('ü', 'ue'), ('ß', 'ss'), ('Ä', 'Ae'), ('Ö', 'Oe'), ('Ü', 'Ue')]:
+            normalized = normalized.replace(umlaut, replacement)
+        normalized = normalized.replace(' ', '_').lower()
+        normalized = ''.join(c for c in normalized if c.isalnum() or c == '_')[:80]
+        folder_name = f"{protocol.session_date.strftime('%y%m%d')}_{normalized}"
+        protocol_folder = ARTICLES_DIR / folder_name
+
+    # Check if images exist in the folder
+    existing_images = list(protocol_folder.glob("image_*.jpg")) + list(protocol_folder.glob("image_*.png"))
+
+    if not existing_images:
+        logger.info(f"No images found for protocol {protocol.id}. Regenerating images...")
+        loop = asyncio.get_event_loop()
+
+        # Regenerate images for each article
+        for article in existing_articles:
+            try:
+                # Parse article content to get the data needed for image generation
+                content = article.content
+                # Extract title from h1 tag
+                import re
+                h1_match = re.search(r'<h1>(.*?)</h1>', content)
+                title = h1_match.group(1) if h1_match else f"Article {article.article_index}"
+
+                # Create SingleArticle for image generation
+                from app.core.models import SingleArticle
+                article_data = SingleArticle(ueberschrift=title, inhalt=content)
+
+                # Generate image
+                prompt, image_bytes = await loop.run_in_executor(
+                    None, generate_image_for_article, article_data
+                )
+
+                if image_bytes:
+                    save_image_to_file(
+                        image_bytes,
+                        protocol_folder,
+                        article.article_index,
+                        protocol.session_date,
+                        protocol.title
+                    )
+                    logger.debug(f"Regenerated image for article {article.article_index}")
+
+            except Exception as e:
+                logger.error(f"Error regenerating image for article {article.article_index}: {e}")
+                continue
+    else:
+        logger.debug(f"Found {len(existing_images)} existing images for protocol {protocol.id}")
+
+    # Create Instagram images for all articles
+    if protocol_folder.exists():
+        try:
+            articles_data = [
+                {
+                    "index": article.article_index,
+                    "content": article.content,
+                    "title": article.content.split('</h1>')[0].replace('<h1>', ''),
+                    "short_article": article.short_article
+                }
+                for article in existing_articles
+            ]
+            await create_insta_images_for_protocol_async(protocol_folder, articles_data, protocol.title)
+        except Exception as e:
+            logger.error(f"Error creating Instagram images for protocol {protocol.id}: {e}")
+
+    # Mark protocol as processed
+    protocol.processed = True
+    await db_session.commit()
+    logger.debug(f"Successfully processed existing protocol: {protocol.title}")
 
 
 async def create_insta_images_for_protocol_async(

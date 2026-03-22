@@ -403,6 +403,130 @@ def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Pa
     return Image.alpha_composite(base_img.convert('RGBA'), overlay)
 
 
+def crop_to_5_4(img: Image.Image) -> Image.Image:
+    """
+    Crop an image to 5:4 aspect ratio.
+    Width remains unchanged, top and bottom are cropped equally (center crop).
+    
+    This is designed to work with 9:16 portrait images from GenAI,
+    cropping them to 5:4 landscape for Instagram posts.
+    
+    Args:
+        img: Input image (e.g., 9:16 portrait from GenAI)
+        
+    Returns:
+        Cropped image with 5:4 aspect ratio
+    """
+    width, height = img.size
+    # Calculate target height for 5:4 aspect ratio
+    # 5:4 = width:height => height = width * 4/5
+    target_height = int(width * 4 / 5)
+    
+    if target_height >= height:
+        # Image is already 5:4 or shorter, return as-is
+        return img
+    
+    # Calculate crop box (center crop)
+    top_crop = (height - target_height) // 2
+    bottom_crop = height - target_height - top_crop
+    
+    crop_box = (0, top_crop, width, height - bottom_crop)
+    return img.crop(crop_box)
+
+
+def instagram_images_exist(protocol_folder: Path, articles_data: list[dict]) -> bool:
+    """
+    Check if Instagram images already exist in the new folder structure.
+    
+    Args:
+        protocol_folder: Path to the protocol folder
+        articles_data: List of article data
+        
+    Returns:
+        True if all expected Instagram images exist, False otherwise
+    """
+    storys_folder = protocol_folder / "storys"
+    posts_folder = protocol_folder / "posts"
+    
+    # Check if folders exist
+    if not storys_folder.exists() or not posts_folder.exists():
+        return False
+    
+    for article_data in articles_data:
+        article_index = str(article_data["index"])
+        
+        # Check storys folder for main and summary images
+        story_main = storys_folder / f"insta_{article_index}_main.jpg"
+        if not story_main.exists():
+            return False
+        
+        # Check posts folder for main image
+        post_main = posts_folder / f"insta_{article_index}_main.jpg"
+        if not post_main.exists():
+            return False
+        
+        # Check for content images in posts folder
+        # Count how many part images should exist based on content blocks
+        article_content = extract_article_content(article_data["content"])
+        if article_content and article_content.content_blocks:
+            raw_blocks = article_content.content_blocks
+            processed_blocks = _process_content_blocks(raw_blocks)
+            
+            for block_idx in range(len(processed_blocks)):
+                part_path = posts_folder / f"insta_{article_index}_part{block_idx + 1}.jpg"
+                if not part_path.exists():
+                    return False
+    
+    return True
+
+
+def _process_content_blocks(raw_blocks: list[ContentBlock]) -> list[ContentBlock]:
+    """Process content blocks with merging and splitting logic."""
+    processed_blocks = []
+    i = 0
+    while i < len(raw_blocks):
+        current_block = raw_blocks[i]
+        next_block = raw_blocks[i+1] if (i + 1) < len(raw_blocks) else None
+
+        # --- MERGE 1: H2+P followed by P ---
+        if (current_block.headline is not None and current_block.paragraph is not None and
+            next_block and next_block.headline is None and next_block.paragraph is not None and
+            len(current_block.paragraph) + len(next_block.paragraph) <= MAX_PARAGRAPH_LENGTH):
+
+            merged_paragraph = current_block.paragraph + "\n\n" + next_block.paragraph
+            merged_block = ContentBlock(headline=current_block.headline, paragraph=merged_paragraph)
+            processed_blocks.append(merged_block)
+            i += 2
+
+        # --- MERGE 2: Two consecutive P's ---
+        elif (current_block.headline is None and current_block.paragraph is not None and
+              next_block and next_block.headline is None and next_block.paragraph is not None and
+              len(current_block.paragraph) + len(next_block.paragraph) <= MAX_PARAGRAPH_LENGTH):
+
+            merged_paragraph = current_block.paragraph + "\n\n" + next_block.paragraph
+            merged_block = ContentBlock(paragraph=merged_paragraph)
+            processed_blocks.append(merged_block)
+            i += 2
+
+        # --- SPLIT: Handle splitting long paragraphs ---
+        elif current_block.paragraph is not None and len(current_block.paragraph) > MAX_PARAGRAPH_LENGTH:
+            chunks = split_text_into_chunks(current_block.paragraph, MAX_PARAGRAPH_LENGTH)
+
+            first_chunk_block = ContentBlock(headline=current_block.headline, paragraph=chunks[0])
+            processed_blocks.append(first_chunk_block)
+
+            for chunk in chunks[1:]:
+                processed_blocks.append(ContentBlock(paragraph=chunk))
+            i += 1
+
+        # --- DEFAULT: Keep block as is ---
+        else:
+            processed_blocks.append(current_block)
+            i += 1
+    
+    return processed_blocks
+
+
 def create_insta_images_for_protocol(
     protocol_folder: Path,
     articles_data: list[dict],
@@ -413,6 +537,10 @@ def create_insta_images_for_protocol(
     Create Instagram-formatted images for all articles in a protocol folder.
     Iterates through images, creates a primary image with headline, and then
     creates additional blurred images for each content block in the article.
+    
+    New folder structure:
+    - storys/: Contains 16:9 format images (insta_{index}_main.jpg, insta_{index}_summary.jpg)
+    - posts/: Contains 5:4 format images (insta_{index}_main.jpg, insta_{index}_part{1,2,3}.jpg)
 
     Note: Articles are passed via articles_data from the database, not read from files.
     Only image files (image_*.png) are read from the protocol_folder.
@@ -425,6 +553,17 @@ def create_insta_images_for_protocol(
     """
     if res_dir is None:
         res_dir = Path(__file__).parent.parent / "res"
+    
+    # REQ-005: Check if Instagram images already exist
+    if instagram_images_exist(protocol_folder, articles_data):
+        logger.info(f"Instagram images already exist in {protocol_folder}. Skipping generation.")
+        return
+    
+    # Create new folder structure
+    storys_folder = protocol_folder / "storys"
+    posts_folder = protocol_folder / "posts"
+    storys_folder.mkdir(exist_ok=True)
+    posts_folder.mkdir(exist_ok=True)
 
     image_files = list(protocol_folder.glob("image_*.png")) + list(protocol_folder.glob("image_*.jpg"))
 
@@ -451,21 +590,34 @@ def create_insta_images_for_protocol(
             logger.warning(f"Could not extract content from article index {article_index}")
             continue
 
-        # Create main Instagram image
-        insta_main_path = protocol_folder / f"insta_{article_index}_main.jpg"
-        if not insta_main_path.exists():
+        # Create main Instagram image (16:9 for storys folder)
+        story_main_path = storys_folder / f"insta_{article_index}_main.jpg"
+        if not story_main_path.exists():
             try:
                 with Image.open(image_path) as img:
                     base_img = img.copy()
                     final_img = create_main_image(base_img, article_content.h1, protocol_title, res_dir)
-                    save_jpeg(final_img, insta_main_path, quality=95)
-                    logger.debug(f"Created Instagram main image: {insta_main_path}")
+                    save_jpeg(final_img, story_main_path, quality=95)
+                    logger.debug(f"Created Instagram story main image: {story_main_path}")
             except Exception as e:
-                logger.error(f"Failed to create main Instagram image: {e}")
+                logger.error(f"Failed to create story main Instagram image: {e}")
 
-        # Create summary image from short_article (REQ-009 to REQ-013)
+        # Create main Instagram image (5:4 cropped for posts folder)
+        post_main_path = posts_folder / f"insta_{article_index}_main.jpg"
+        if not post_main_path.exists():
+            try:
+                with Image.open(image_path) as img:
+                    # Crop to 5:4 aspect ratio
+                    cropped_img = crop_to_5_4(img)
+                    final_img = create_main_image(cropped_img, article_content.h1, protocol_title, res_dir)
+                    save_jpeg(final_img, post_main_path, quality=95)
+                    logger.debug(f"Created Instagram post main image: {post_main_path}")
+            except Exception as e:
+                logger.error(f"Failed to create post main Instagram image: {e}")
+
+        # Create summary image from short_article (16:9 for storys folder)
         short_article = article_data.get("short_article")
-        summary_image_path = protocol_folder / f"insta_{article_index}_summary.jpg"
+        summary_image_path = storys_folder / f"insta_{article_index}_summary.jpg"
         if short_article and not summary_image_path.exists():
             try:
                 # Parse short_article HTML to extract h2 and p content
@@ -490,60 +642,21 @@ def create_insta_images_for_protocol(
 
         # Process content blocks
         raw_blocks = article_content.content_blocks
-        processed_blocks = []
-        i = 0
-        while i < len(raw_blocks):
-            current_block = raw_blocks[i]
-            next_block = raw_blocks[i+1] if (i + 1) < len(raw_blocks) else None
+        processed_blocks = _process_content_blocks(raw_blocks)
 
-            # --- MERGE 1: H2+P followed by P ---
-            if (current_block.headline is not None and current_block.paragraph is not None and
-                next_block and next_block.headline is None and next_block.paragraph is not None and
-                len(current_block.paragraph) + len(next_block.paragraph) <= MAX_PARAGRAPH_LENGTH):
-
-                merged_paragraph = current_block.paragraph + "\n\n" + next_block.paragraph
-                merged_block = ContentBlock(headline=current_block.headline, paragraph=merged_paragraph)
-                processed_blocks.append(merged_block)
-                i += 2
-
-            # --- MERGE 2: Two consecutive P's ---
-            elif (current_block.headline is None and current_block.paragraph is not None and
-                  next_block and next_block.headline is None and next_block.paragraph is not None and
-                  len(current_block.paragraph) + len(next_block.paragraph) <= MAX_PARAGRAPH_LENGTH):
-
-                merged_paragraph = current_block.paragraph + "\n\n" + next_block.paragraph
-                merged_block = ContentBlock(paragraph=merged_paragraph)
-                processed_blocks.append(merged_block)
-                i += 2
-
-            # --- SPLIT: Handle splitting long paragraphs ---
-            elif current_block.paragraph is not None and len(current_block.paragraph) > MAX_PARAGRAPH_LENGTH:
-                chunks = split_text_into_chunks(current_block.paragraph, MAX_PARAGRAPH_LENGTH)
-
-                first_chunk_block = ContentBlock(headline=current_block.headline, paragraph=chunks[0])
-                processed_blocks.append(first_chunk_block)
-
-                for chunk in chunks[1:]:
-                    processed_blocks.append(ContentBlock(paragraph=chunk))
-                i += 1
-
-            # --- DEFAULT: Keep block as is ---
-            else:
-                processed_blocks.append(current_block)
-                i += 1
-
-        # Create content images for each block
+        # Create content images for each block (5:4 cropped for posts folder)
         for block_idx, block in enumerate(processed_blocks):
-            insta_part_path = protocol_folder / f"insta_{article_index}_part{block_idx+1}.jpg"
+            insta_part_path = posts_folder / f"insta_{article_index}_part{block_idx+1}.jpg"
             if insta_part_path.exists():
                 continue
 
             try:
                 with Image.open(image_path) as img:
-                    base_img = img.copy()
-                    blurred_img = base_img.filter(ImageFilter.GaussianBlur(radius=3))
+                    # Crop to 5:4 aspect ratio
+                    cropped_img = crop_to_5_4(img)
+                    blurred_img = cropped_img.filter(ImageFilter.GaussianBlur(radius=3))
                     final_part_img = create_content_image(blurred_img, block, res_dir)
                     save_jpeg(final_part_img, insta_part_path, quality=95)
-                    logger.debug(f"Created Instagram part image: {insta_part_path}")
+                    logger.debug(f"Created Instagram post part image: {insta_part_path}")
             except Exception as e:
-                logger.error(f"Failed to create part Instagram image: {e}")
+                logger.error(f"Failed to create post part Instagram image: {e}")
