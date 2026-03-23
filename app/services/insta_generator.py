@@ -204,7 +204,7 @@ def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res
         protocol_title: The protocol title (used for tag matching)
         res_dir: Path to resources directory (fonts, logo)
         bottom_gradient_ratio: The ratio of the bottom gradient height to total image height (default 0.5 = 50%)
-        font_scale_factor: Factor to scale font sizes (default 1.0). Use 1.2 for story images to make fonts 20% larger.
+        font_scale_factor: Factor to scale font sizes (default 1.0). Use 1.1 for story images to make fonts 20% larger.
     """
     overlay = Image.new('RGBA', base_img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -271,7 +271,7 @@ def create_main_image(base_img: Image.Image, text: str, protocol_title: str, res
     # --- Text ---
     try:
         font_path = str(res_dir / "Oswald-Bold.ttf")
-        font_size = int(base_img.width * 0.075 * font_scale_factor)
+        font_size = int(base_img.width * 0.0625 * font_scale_factor)
         font = ImageFont.truetype(font_path, size=font_size)
     except IOError:
         logger.warning("Oswald-Bold.ttf not found for main image. Using default font.")
@@ -299,7 +299,7 @@ def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Pa
         block: The ContentBlock containing headline and/or paragraph text
         res_dir: Path to resources directory (fonts, logo)
         center_vertically: If True, vertically center the text block. If False, position at 10% from top.
-        font_scale_factor: Factor to scale font sizes (default 1.0). Use 1.2 for story images to make fonts 20% larger.
+        font_scale_factor: Factor to scale font sizes (default 1.0). Use larger value for story images to make fonts larger.
     """
     overlay = Image.new('RGBA', base_img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -313,8 +313,8 @@ def create_content_image(base_img: Image.Image, block: ContentBlock, res_dir: Pa
     try:
         font_path_bold = str(res_dir / "Oswald-Bold.ttf")
         font_path_regular = str(res_dir / "RobotoCondensed-Regular.ttf")
-        h2_font_size = int(img_width * 0.06 * font_scale_factor)
-        p_font_size = int(img_width * 0.06 * font_scale_factor)
+        h2_font_size = int(img_width * 0.05 * font_scale_factor)
+        p_font_size = int(img_width * 0.05 * font_scale_factor)
         h2_font = ImageFont.truetype(font_path_bold, size=h2_font_size)
         p_font = ImageFont.truetype(font_path_regular, size=p_font_size)
     except IOError:
@@ -688,7 +688,7 @@ def create_insta_images_for_protocol(
                     with Image.open(image_path) as img:
                         base_img = img.copy()
                         blurred_img = base_img.filter(ImageFilter.GaussianBlur(radius=3))
-                        summary_img = create_content_image(blurred_img, summary_block, res_dir, font_scale_factor=1.2)
+                        summary_img = create_content_image(blurred_img, summary_block, res_dir, font_scale_factor=1.1)
                         save_jpeg(summary_img, summary_image_path, quality=95)
                         logger.debug(f"Created Instagram summary image: {summary_image_path}")
             except Exception as e:
