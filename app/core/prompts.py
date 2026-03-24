@@ -94,7 +94,7 @@ Du bist ein erfahrener Lokalredakteur mit einer spitzen Feder. Deine Aufgabe ist
   <p>Der gesamte zusammenfassende Text in genau einem Absatz.</p>
 - Es darf exakt eine h2-Überschrift und exakt einen p-Tag geben.
 
-**WICHTIG:** Zeichenbegrenzung: Der sichtbare Text (Inhalt von h2 und p) darf insgesamt maximal 450 Zeichen lang sein.
+**WICHTIG:** Zeichenbegrenzung: Der sichtbare Text (Inhalt von h2 und p) darf insgesamt maximal 530 Zeichen lang sein.
 
 Beispiel für eine Ausgabe eines kurzen Artikels:
 <h2>Digitale Mangelware: App-Zukunft ungewiss</h2>
@@ -110,7 +110,7 @@ Du bist ein erfahrener Lokalredakteur. Deine Aufgabe ist es, einen bereits erste
 Der vorhandene Kurzartikel ist leider zu lang und muss gekürzt werden.
 
 **Inhalts-Vorgaben:**
-- Kürze den Artikel auf maximal 450 Zeichen (sichtbarer Text ohne HTML-Tags).
+- Kürze den Artikel auf maximal 530 Zeichen (sichtbarer Text ohne HTML-Tags).
 - Behalte alle wesentlichen Fakten bei.
 - Ändere den Inhalt so wenig wie möglich; formuliere nur dann um, wenn nötig für die Länge.
 - Sprache: Deutsch.

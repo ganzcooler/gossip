@@ -686,19 +686,30 @@ def create_insta_images_for_protocol(
                 soup = BeautifulSoup(short_article, "html.parser")
                 h2_tag = soup.find("h2")
                 p_tag = soup.find("p")
-                
+
                 if h2_tag and p_tag:
                     summary_block = ContentBlock(
                         headline=h2_tag.get_text(strip=True),
                         paragraph=p_tag.get_text(strip=True)[:MAX_PARAGRAPH_LENGTH]
                     )
-                    
+
                     with Image.open(image_path) as img:
                         base_img = img.copy()
                         blurred_img = base_img.filter(ImageFilter.GaussianBlur(radius=3))
                         summary_img = create_content_image(blurred_img, summary_block, res_dir, center_vertically=True, min_top_margin_ratio=0.12, font_scale_factor=1.1)
                         save_jpeg(summary_img, summary_image_path, quality=95)
                         logger.debug(f"Created Instagram summary image: {summary_image_path}")
+                else:
+                    missing_tags = []
+                    if not h2_tag:
+                        missing_tags.append("h2")
+                    if not p_tag:
+                        missing_tags.append("p")
+                    logger.warning(
+                        f"Short article for article {article_index} is incomplete "
+                        f"(missing {', '.join(missing_tags)} tags). "
+                        f"Skipping summary image creation."
+                    )
             except Exception as e:
                 logger.error(f"Failed to create summary Instagram image: {e}")
 
