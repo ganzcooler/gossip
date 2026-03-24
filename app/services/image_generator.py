@@ -112,7 +112,7 @@ def generate_image(prompt: str) -> bytes:
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     image_config=types.ImageConfig(
-                        aspect_ratio="4:5"
+                        aspect_ratio="9:16"
                     )
                 )
             )

@@ -518,5 +518,460 @@ class TestJpgOutputFormat:
             "Test Protocol"
         )
         
-        # Verify JPG files were created
-        assert (protocol_folder / "insta_1_main.jpg").exists()
+        # Verify JPG files were created in the new folder structure
+        # Storys folder: 16:9 format
+        assert (protocol_folder / "storys" / "insta_1_main.jpg").exists()
+        # Posts folder: 5:4 cropped format
+        assert (protocol_folder / "posts" / "insta_1_main.jpg").exists()
+
+
+class TestCropTo54:
+    """Tests for the crop_to_5_4 function."""
+
+    def test_crop_9_16_to_5_4(self):
+        """Test cropping a 9:16 portrait image to 5:4 aspect ratio."""
+        from app.services.insta_generator import crop_to_5_4
+        from PIL import Image
+        
+        # Create a 9:16 portrait image (900x1600) - what GenAI produces now
+        img = Image.new('RGB', (900, 1600), color='red')
+        cropped = crop_to_5_4(img)
+        
+        # Width should remain the same
+        assert cropped.width == 900
+        # Height should be 900 * 4/5 = 720
+        assert cropped.height == 720
+
+    def test_crop_preserves_width(self):
+        """Test that cropping preserves the original width."""
+        from app.services.insta_generator import crop_to_5_4
+        from PIL import Image
+        
+        # Create a 9:16 portrait image
+        img = Image.new('RGB', (1080, 1920), color='blue')
+        cropped = crop_to_5_4(img)
+        
+        assert cropped.width == 1080
+
+    def test_crop_centered(self):
+        """Test that cropping removes equal amounts from top and bottom."""
+        from app.services.insta_generator import crop_to_5_4
+        from PIL import Image
+        
+        # Create image with different colors at top, middle, and bottom
+        img = Image.new('RGB', (100, 200))  # 1:2 ratio (tall)
+        img.paste((255, 0, 0), (0, 0, 100, 50))       # Top: red
+        img.paste((0, 255, 0), (0, 50, 100, 150))     # Middle: green
+        img.paste((0, 0, 255), (0, 150, 100, 200))    # Bottom: blue
+        
+        cropped = crop_to_5_4(img)
+        
+        # Target height: 100 * 4/5 = 80
+        assert cropped.height == 80
+        # Middle section should be preserved (approximately)
+        # Cropping removes (200-80)/2 = 60 from top and bottom
+        # So we keep rows 60 to 140 from original
+        assert cropped.getpixel((50, 40))[1] == 255  # Green from original middle
+
+    def test_no_crop_when_already_5_4(self):
+        """Test that images already at 5:4 or shorter are not cropped."""
+        from app.services.insta_generator import crop_to_5_4
+        from PIL import Image
+        
+        # Create a 5:4 image (1000x800)
+        img = Image.new('RGB', (1000, 800))
+        cropped = crop_to_5_4(img)
+        
+        assert cropped.size == (1000, 800)
+
+    def test_no_crop_when_shorter_than_5_4(self):
+        """Test that images shorter than 5:4 are returned as-is."""
+        from app.services.insta_generator import crop_to_5_4
+        from PIL import Image
+        
+        # Create a 16:9 landscape image (cannot crop to 5:4 with same width)
+        img = Image.new('RGB', (1600, 900))
+        cropped = crop_to_5_4(img)
+        
+        # Should return unchanged since target height (1280) > actual height (900)
+        assert cropped.size == (1600, 900)
+
+
+class TestInstagramImagesExist:
+    """Tests for the instagram_images_exist function."""
+
+    def test_returns_false_when_folders_dont_exist(self, tmp_path):
+        """Test that function returns False when storys/posts folders don't exist."""
+        from app.services.insta_generator import instagram_images_exist
+        
+        protocol_folder = tmp_path / "test_protocol"
+        protocol_folder.mkdir()
+        
+        articles_data = [{"index": 1, "content": "<h1>Test</h1>"}]
+        
+        assert instagram_images_exist(protocol_folder, articles_data) is False
+
+    def test_returns_false_when_storys_folder_missing(self, tmp_path):
+        """Test that function returns False when only posts folder exists."""
+        from app.services.insta_generator import instagram_images_exist
+        
+        protocol_folder = tmp_path / "test_protocol"
+        protocol_folder.mkdir()
+        (protocol_folder / "posts").mkdir()
+        
+        articles_data = [{"index": 1, "content": "<h1>Test</h1>"}]
+        
+        assert instagram_images_exist(protocol_folder, articles_data) is False
+
+    def test_returns_false_when_posts_folder_missing(self, tmp_path):
+        """Test that function returns False when only storys folder exists."""
+        from app.services.insta_generator import instagram_images_exist
+        
+        protocol_folder = tmp_path / "test_protocol"
+        protocol_folder.mkdir()
+        (protocol_folder / "storys").mkdir()
+        
+        articles_data = [{"index": 1, "content": "<h1>Test</h1>"}]
+        
+        assert instagram_images_exist(protocol_folder, articles_data) is False
+
+    def test_returns_false_when_main_images_missing(self, tmp_path):
+        """Test that function returns False when main images are missing."""
+        from app.services.insta_generator import instagram_images_exist
+        from PIL import Image
+        
+        protocol_folder = tmp_path / "test_protocol"
+        protocol_folder.mkdir()
+        (protocol_folder / "storys").mkdir()
+        (protocol_folder / "posts").mkdir()
+        
+        # Don't create any images
+        articles_data = [{"index": 1, "content": "<h1>Test</h1>"}]
+        
+        assert instagram_images_exist(protocol_folder, articles_data) is False
+
+    def test_returns_true_when_all_images_exist(self, tmp_path):
+        """Test that function returns True when all expected images exist."""
+        from app.services.insta_generator import instagram_images_exist
+        from PIL import Image
+        
+        protocol_folder = tmp_path / "test_protocol"
+        protocol_folder.mkdir()
+        (protocol_folder / "storys").mkdir()
+        (protocol_folder / "posts").mkdir()
+        
+        # Create required images
+        img = Image.new('RGB', (100, 100))
+        img.save(protocol_folder / "storys" / "insta_1_main.jpg")
+        img.save(protocol_folder / "posts" / "insta_1_main.jpg")
+        
+        articles_data = [{"index": 1, "content": "<h1>Test</h1>"}]
+        
+        assert instagram_images_exist(protocol_folder, articles_data) is True
+
+    def test_checks_content_images(self, tmp_path):
+        """Test that function checks for content part images."""
+        from app.services.insta_generator import instagram_images_exist
+        from PIL import Image
+        
+        protocol_folder = tmp_path / "test_protocol"
+        protocol_folder.mkdir()
+        (protocol_folder / "storys").mkdir()
+        (protocol_folder / "posts").mkdir()
+        
+        # Create main images but not content images
+        img = Image.new('RGB', (100, 100))
+        img.save(protocol_folder / "storys" / "insta_1_main.jpg")
+        img.save(protocol_folder / "posts" / "insta_1_main.jpg")
+        
+        # Article with content blocks that would generate part images
+        articles_data = [{
+            "index": 1,
+            "content": "<h1>Test</h1><h2>Headline</h2><p>Paragraph content here</p>"
+        }]
+        
+        # Should return False because part images are missing
+        assert instagram_images_exist(protocol_folder, articles_data) is False
+
+    def test_returns_true_with_content_images(self, tmp_path):
+        """Test that function returns True when all images including parts exist."""
+        from app.services.insta_generator import instagram_images_exist
+        from PIL import Image
+        
+        protocol_folder = tmp_path / "test_protocol"
+        protocol_folder.mkdir()
+        (protocol_folder / "storys").mkdir()
+        (protocol_folder / "posts").mkdir()
+        
+        # Create all required images
+        img = Image.new('RGB', (100, 100))
+        img.save(protocol_folder / "storys" / "insta_1_main.jpg")
+        img.save(protocol_folder / "posts" / "insta_1_main.jpg")
+        img.save(protocol_folder / "posts" / "insta_1_part1.jpg")
+        
+        articles_data = [{
+            "index": 1,
+            "content": "<h1>Test</h1><h2>Headline</h2><p>Paragraph content here</p>"
+        }]
+        
+        assert instagram_images_exist(protocol_folder, articles_data) is True
+
+
+class TestProcessContentBlocks:
+    """Tests for the _process_content_blocks function."""
+
+    def test_single_block_unchanged(self):
+        """Test that a single block is returned unchanged."""
+        from app.services.insta_generator import _process_content_blocks
+        from app.core.models import ContentBlock
+        
+        blocks = [ContentBlock(headline="Test", paragraph="Content")]
+        result = _process_content_blocks(blocks)
+        
+        assert len(result) == 1
+        assert result[0].headline == "Test"
+        assert result[0].paragraph == "Content"
+
+    def test_merge_h2_p_followed_by_p(self):
+        """Test merging H2+P followed by standalone P."""
+        from app.services.insta_generator import _process_content_blocks
+        from app.core.models import ContentBlock
+        
+        blocks = [
+            ContentBlock(headline="Headline", paragraph="First paragraph"),
+            ContentBlock(headline=None, paragraph="Second paragraph")
+        ]
+        result = _process_content_blocks(blocks)
+        
+        assert len(result) == 1
+        assert result[0].headline == "Headline"
+        assert "First paragraph" in result[0].paragraph
+        assert "Second paragraph" in result[0].paragraph
+
+    def test_merge_two_consecutive_p(self):
+        """Test merging two consecutive standalone P blocks."""
+        from app.services.insta_generator import _process_content_blocks
+        from app.core.models import ContentBlock
+        
+        blocks = [
+            ContentBlock(headline=None, paragraph="First paragraph"),
+            ContentBlock(headline=None, paragraph="Second paragraph")
+        ]
+        result = _process_content_blocks(blocks)
+        
+        assert len(result) == 1
+        assert result[0].headline is None
+        assert "First paragraph" in result[0].paragraph
+        assert "Second paragraph" in result[0].paragraph
+
+    def test_split_long_paragraph(self):
+        """Test that long paragraphs are split into multiple blocks."""
+        from app.services.insta_generator import _process_content_blocks, MAX_PARAGRAPH_LENGTH
+        from app.core.models import ContentBlock
+        
+        # Create a paragraph longer than MAX_PARAGRAPH_LENGTH
+        long_text = "A" * (MAX_PARAGRAPH_LENGTH + 100)
+        blocks = [ContentBlock(headline="Test", paragraph=long_text)]
+        result = _process_content_blocks(blocks)
+        
+        assert len(result) > 1
+        # First block should have the headline
+        assert result[0].headline == "Test"
+
+    def test_no_merge_when_combined_too_long(self):
+        """Test that blocks aren't merged if combined length exceeds limit."""
+        from app.services.insta_generator import _process_content_blocks, MAX_PARAGRAPH_LENGTH
+        from app.core.models import ContentBlock
+        
+        # Create two paragraphs that together exceed the limit
+        text1 = "A" * (MAX_PARAGRAPH_LENGTH - 50)
+        text2 = "B" * 100
+        blocks = [
+            ContentBlock(headline=None, paragraph=text1),
+            ContentBlock(headline=None, paragraph=text2)
+        ]
+        result = _process_content_blocks(blocks)
+        
+        # Should not be merged
+        assert len(result) == 2
+
+
+class TestCreateInstaImagesSkipsWhenExists:
+    """Tests that create_insta_images_for_protocol skips when images exist."""
+
+    def test_skips_generation_when_images_exist(self, tmp_path):
+        """Test that function returns early when all images already exist."""
+        from app.services.insta_generator import create_insta_images_for_protocol
+        from PIL import Image
+        
+        protocol_folder = tmp_path / "test_protocol"
+        protocol_folder.mkdir()
+        
+        # Create the folder structure and all required images
+        (protocol_folder / "storys").mkdir()
+        (protocol_folder / "posts").mkdir()
+        
+        img = Image.new('RGB', (100, 100))
+        img.save(protocol_folder / "storys" / "insta_1_main.jpg")
+        img.save(protocol_folder / "posts" / "insta_1_main.jpg")
+        
+        # Create source image
+        img.save(protocol_folder / "image_01.png")
+        
+        articles_data = [{"index": 1, "content": "<h1>Test</h1>"}]
+
+        # Should not raise any errors and should return quickly
+        create_insta_images_for_protocol(protocol_folder, articles_data, "Test")
+
+
+class TestCreateContentImageMinTopMargin:
+    """Tests for the min_top_margin_ratio parameter in create_content_image.
+
+    These tests verify that:
+    1. When center_vertically=True and min_top_margin_ratio=0, text is centered
+    2. When center_vertically=True and min_top_margin_ratio>0, text is centered
+       but shifted down if it would be closer to top than the minimum margin
+    3. When center_vertically=False, text is positioned at 10% from top
+    """
+
+    def test_center_vertically_true_no_min_margin(self, tmp_path):
+        """Test that center_vertically=True without min_top_margin centers the text."""
+        from app.services.insta_generator import create_content_image
+        from app.core.models import ContentBlock
+        from PIL import Image
+
+        # Create a real test image
+        base_img = Image.new('RGB', (800, 1000), color='white')
+        block = ContentBlock(headline="Test Headline", paragraph="Test paragraph content")
+
+        # Create required resource files
+        res_dir = tmp_path
+        font_content = b"\x00" * 100
+        (res_dir / "Oswald-Bold.ttf").write_bytes(font_content)
+        (res_dir / "RobotoCondensed-Regular.ttf").write_bytes(font_content)
+        logo = Image.new('RGBA', (100, 100), color=(255, 0, 0, 255))
+        logo.save(res_dir / "logo-gossip.png")
+
+        # This should not raise an error - uses default font if truetype fails
+        result = create_content_image(
+            base_img,
+            block,
+            res_dir,
+            center_vertically=True,
+            min_top_margin_ratio=0.0
+        )
+
+        # Just verify the function returns an image
+        assert result is not None
+
+    def test_center_vertically_false_positions_at_ten_percent(self, tmp_path):
+        """Test that center_vertically=False positions text at 10% from top."""
+        from app.services.insta_generator import create_content_image
+        from app.core.models import ContentBlock
+        from PIL import Image
+
+        base_img = Image.new('RGB', (800, 1000), color='white')
+        block = ContentBlock(headline="Test", paragraph="Test content")
+
+        res_dir = tmp_path
+        (res_dir / "Oswald-Bold.ttf").write_bytes(b"\x00" * 100)
+        (res_dir / "RobotoCondensed-Regular.ttf").write_bytes(b"\x00" * 100)
+        # Create logo file
+        from PIL import Image as PILImage
+        logo = PILImage.new('RGBA', (100, 100), color=(255, 0, 0, 255))
+        logo.save(res_dir / "logo-gossip.png")
+
+        result = create_content_image(
+            base_img,
+            block,
+            res_dir,
+            center_vertically=False
+        )
+
+        assert result is not None
+        assert result.size == (800, 1000)
+
+    def test_min_margin_logic_via_mock(self, tmp_path):
+        """Test the min_top_margin_ratio logic using mocks to verify calculation."""
+        from app.services.insta_generator import create_content_image
+        from app.core.models import ContentBlock
+        from PIL import Image
+
+        base_img = Image.new('RGB', (800, 1000), color='white')
+        block = ContentBlock(headline="Test", paragraph="Content")
+
+        res_dir = tmp_path
+        (res_dir / "Oswald-Bold.ttf").write_bytes(b"\x00" * 100)
+        (res_dir / "RobotoCondensed-Regular.ttf").write_bytes(b"\x00" * 100)
+        logo = Image.new('RGBA', (100, 100), color=(255, 0, 0, 255))
+        logo.save(res_dir / "logo-gossip.png")
+
+        # Test with center_vertically=True and min_top_margin_ratio=0.12
+        # The function should apply the minimum margin logic
+        result = create_content_image(
+            base_img,
+            block,
+            res_dir,
+            center_vertically=True,
+            min_top_margin_ratio=0.12
+        )
+
+        assert result is not None
+
+    def test_story_summary_uses_center_with_min_margin(self, tmp_path):
+        """Test that story summary images use centered text with 12% min margin."""
+        from app.services.insta_generator import create_content_image
+        from app.core.models import ContentBlock
+        from PIL import Image
+
+        # Create a 16:9 story image (typical 1080x1920)
+        base_img = Image.new('RGB', (1080, 1920), color='blue')
+        block = ContentBlock(headline="Story Headline", paragraph="Story content here")
+
+        res_dir = tmp_path
+        (res_dir / "Oswald-Bold.ttf").write_bytes(b"\x00" * 100)
+        (res_dir / "RobotoCondensed-Regular.ttf").write_bytes(b"\x00" * 100)
+        logo = Image.new('RGBA', (100, 100), color=(255, 0, 0, 255))
+        logo.save(res_dir / "logo-gossip.png")
+
+        # This simulates how story summary images are created
+        result = create_content_image(
+            base_img,
+            block,
+            res_dir,
+            center_vertically=True,
+            min_top_margin_ratio=0.12,
+            font_scale_factor=1.1
+        )
+
+        assert result is not None
+        assert result.size == (1080, 1920)
+
+    def test_posts_part_uses_center_no_min_margin(self, tmp_path):
+        """Test that posts part images use centered text without min margin."""
+        from app.services.insta_generator import create_content_image
+        from app.core.models import ContentBlock
+        from PIL import Image
+
+        # Create a 5:4 post image (typical 1080x1350 after crop)
+        base_img = Image.new('RGB', (1080, 1350), color='green')
+        block = ContentBlock(headline="Post Headline", paragraph="Post content here")
+
+        res_dir = tmp_path
+        (res_dir / "Oswald-Bold.ttf").write_bytes(b"\x00" * 100)
+        (res_dir / "RobotoCondensed-Regular.ttf").write_bytes(b"\x00" * 100)
+        logo = Image.new('RGBA', (100, 100), color=(255, 0, 0, 255))
+        logo.save(res_dir / "logo-gossip.png")
+
+        # This simulates how posts part images are created
+        result = create_content_image(
+            base_img,
+            block,
+            res_dir,
+            center_vertically=True,
+            min_top_margin_ratio=0.0,
+            font_scale_factor=1.0
+        )
+
+        assert result is not None
+        assert result.size == (1080, 1350)

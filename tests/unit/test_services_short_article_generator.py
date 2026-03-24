@@ -199,30 +199,41 @@ class TestGenerateShortArticle:
 
     def test_temperature_config(self, mock_genai_client, mock_config, mock_prompts):
         """Test that temperature starts at 1.0 and decays on retries."""
-        # First call returns too long article, retry succeeds
+        # First call returns too long article, shortening fails (returns None)
+        # Second call with lower temperature succeeds
         mock_response_long = MagicMock()
-        mock_response_long.text = "<h2>Title</h2><p>" + "a" * 500 + "</p>"  # Too long
+        mock_response_long.text = "<h2>Title</h2><p>" + "a" * 600 + "</p>"  # Too long (600 chars)
 
         mock_response_short = MagicMock()
-        mock_response_short.text = "<h2>Title</h2><p>Short article.</p>"
+        mock_response_short.text = "<h2>Title</h2><p>Short.</p>"  # Short enough
 
+        # First: too long, shortening 3x fails (still too long), then retry with lower temp succeeds
         mock_genai_client.models.generate_content.side_effect = [
-            mock_response_long,  # First attempt - too long, shortening fails
-            mock_response_short,  # Second attempt with lower temperature
+            mock_response_long,    # First attempt - too long
+            mock_response_long,    # Shortening attempt 1 - still too long
+            mock_response_long,    # Shortening attempt 2 - still too long
+            mock_response_long,    # Shortening attempt 3 - still too long
+            mock_response_short,   # Second full generation with lower temp - success
         ]
 
         article_title = "Test Article"
         article_content = "<p>Test content</p>"
 
-        generate_short_article(article_title, article_content)
+        result = generate_short_article(article_title, article_content)
 
+        # Verify we got the short result from the second full generation
+        assert result == "<h2>Title</h2><p>Short.</p>"
+        
         # Verify temperature decays on retry
         calls = mock_genai_client.models.generate_content.call_args_list
-        assert len(calls) == 2
+        # Should have 5 calls: initial + 3 shortening retries + final retry with lower temp
+        assert len(calls) == 5
         # First call: temperature = 1.0
         assert calls[0].kwargs["config"].temperature == 1.0
-        # Second call: temperature = 0.7 (_shorten_article uses fixed temperature)
+        # Second call (shortening): temperature = 0.7
         assert calls[1].kwargs["config"].temperature == 0.7
+        # Last call (retry): temperature = 0.85
+        assert calls[4].kwargs["config"].temperature == 0.85
 
 
 class TestStripHtmlTags:
@@ -327,14 +338,15 @@ class TestShortenArticle:
         """Test shortening when result is still too long triggers retry."""
         mock_client = MagicMock()
         mock_response = MagicMock()
-        # Return content that's still too long twice, then acceptable
-        mock_response.text = "<h2>Title</h2><p>" + "b" * 500 + "</p>"
+        # Return content that's still too long (over 530 chars without HTML)
+        # The content "<h2>Title</h2><p>" + "b" * 500 + "</p>" has ~520 chars without HTML
+        mock_response.text = "<h2>Title</h2><p>" + "b" * 600 + "</p>"  # ~620 chars without HTML
         mock_client.models.generate_content.return_value = mock_response
 
         long_article = "<h2>Long Title</h2><p>" + "a" * 500 + "</p>"
         result = _shorten_article(mock_client, long_article, "Test Article")
 
-        # Should retry 3 times then give up
+        # Should retry 3 times then give up and return None
         assert result is None
         assert mock_client.models.generate_content.call_count == 3
 
@@ -366,9 +378,10 @@ class TestShortenArticle:
         """Test that progressively shorter inputs are used on each retry."""
         mock_client = MagicMock()
 
-        # First attempt returns something, second returns final short version
+        # First attempt returns still too long content (600 chars)
         response1 = MagicMock()
-        response1.text = "<h2>Med</h2><p>" + "c" * 500 + "</p>"  # Still too long (over 480 chars)
+        response1.text = "<h2>Med</h2><p>" + "c" * 600 + "</p>"  # Still too long
+        # Second returns final short version
         response2 = MagicMock()
         response2.text = "<h2>Short</h2><p>Final.</p>"
 
@@ -378,6 +391,7 @@ class TestShortenArticle:
         result = _shorten_article(mock_client, long_article, "Test Article")
 
         assert result is not None
+        assert result == "<h2>Short</h2><p>Final.</p>"
         # Verify second call used the output from first call
         calls = mock_client.models.generate_content.call_args_list
         assert len(calls) == 2
@@ -428,17 +442,17 @@ class TestLengthValidationRetryFlow:
 
     def test_shorten_article_too_long_success(self, mock_genai_client, mock_config, mock_prompts):
         """Test that too-long article triggers shortening and succeeds."""
-        # First generate_content returns too-long article
+        # First generate_content returns too-long article (over 530 chars)
         response_long = MagicMock()
-        response_long.text = "<h2>Title</h2><p>" + "a" * 500 + "</p>"
+        response_long.text = "<h2>Title</h2><p>" + "a" * 600 + "</p>"
 
         # Second generate_content (in _shorten_article) returns acceptable length
         response_short = MagicMock()
         response_short.text = "<h2>Title</h2><p>Shortened.</p>"
 
         mock_genai_client.models.generate_content.side_effect = [
-            response_long,  # Initial generation
-            response_short,  # Shortening attempt
+            response_long,  # Initial generation - too long
+            response_short,  # Shortening attempt - success
         ]
 
         article_title = "Test Article"
@@ -452,24 +466,24 @@ class TestLengthValidationRetryFlow:
 
     def test_shorten_article_too_long_failure_triggers_regeneration(self, mock_genai_client, mock_config, mock_prompts):
         """Test that failed shortening triggers regeneration with lower temperature."""
-        # First attempt: too long, shortening fails
+        # First attempt: too long, shortening fails (content stays over 530 chars)
         response_long1 = MagicMock()
-        response_long1.text = "<h2>Title1</h2><p>" + "a" * 500 + "</p>"
+        response_long1.text = "<h2>Title1</h2><p>" + "a" * 600 + "</p>"
 
         # Shortening attempts all return too-long content
         response_short_fail = MagicMock()
-        response_short_fail.text = "<h2>Title</h2><p>" + "b" * 500 + "</p>"
+        response_short_fail.text = "<h2>Title</h2><p>" + "b" * 600 + "</p>"
 
         # Second full generation: success
         response_success = MagicMock()
         response_success.text = "<h2>Title2</h2><p>Short enough.</p>"
 
         mock_genai_client.models.generate_content.side_effect = [
-            response_long1,      # First generation - too long
-            response_short_fail,  # Shortening retry 1
-            response_short_fail,  # Shortening retry 2
-            response_short_fail,  # Shortening retry 3
-            response_success,    # Second full generation - success
+            response_long1,       # First generation - too long (600 chars)
+            response_short_fail,  # Shortening retry 1 - still too long
+            response_short_fail,  # Shortening retry 2 - still too long
+            response_short_fail,  # Shortening retry 3 - still too long
+            response_success,     # Second full generation - success
         ]
 
         article_title = "Test Article"
@@ -481,7 +495,10 @@ class TestLengthValidationRetryFlow:
         assert result == "<h2>Title2</h2><p>Short enough.</p>"
         # Verify temperature is lower on retry
         calls = mock_genai_client.models.generate_content.call_args_list
+        assert len(calls) == 5
         # First generation: temp = 1.0
         assert calls[0].kwargs["config"].temperature == 1.0
+        # Shortening attempts: temp = 0.7
+        assert calls[1].kwargs["config"].temperature == 0.7
         # Second generation: temp = 0.85
         assert calls[4].kwargs["config"].temperature == 0.85

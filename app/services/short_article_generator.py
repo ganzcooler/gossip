@@ -9,6 +9,9 @@ from app.core import prompts
 
 logger = logging.getLogger(__name__)
 
+# Maximum allowed length for short articles (without HTML tags)
+MAX_SHORT_ARTICLE_LENGTH = 530
+
 
 def _strip_html_tags(html_text: str) -> str:
     """Remove HTML tags from text.
@@ -62,8 +65,8 @@ def _shorten_article(client: genai.Client, short_article: str, article_title: st
             if response.text:
                 shortened_article = response.text.strip()
                 text_length = _get_text_length_without_html(shortened_article)
-                if text_length <= 480:
-                    logger.debug(f"Successfully shortened article for: '{article_title[:20]}'")
+                if text_length <= MAX_SHORT_ARTICLE_LENGTH:
+                    logger.debug(f"Successfully shortened article for: '{article_title[:20]}' ({text_length} chars)")
                     return shortened_article
                 else:
                     logger.warning(f"Shortened article still too long ({text_length} chars). Retry {attempt + 1}/{max_shorten_retries}.")
@@ -118,12 +121,12 @@ def generate_short_article(article_title: str, article_content: str) -> str | No
 
                 # Validate length (without HTML tags)
                 text_length = _get_text_length_without_html(short_article)
-                if text_length <= 480:
+                if text_length <= MAX_SHORT_ARTICLE_LENGTH:
                     preview = short_article[:50] + "..." if len(short_article) > 50 else short_article
-                    logger.debug(f"Successfully generated short article for article: '{article_title}' - Short Article: {preview}")
+                    logger.debug(f"Successfully validated and generated short article for article: '{article_title}' - Short Article: {preview}")
                     return short_article
                 else:
-                    logger.warning(f"Short article too long ({text_length} chars without HTML, max 480). Attempting to shorten.")
+                    logger.warning(f"Short article too long ({text_length} chars without HTML, max {MAX_SHORT_ARTICLE_LENGTH}). Attempting to shorten.")
                     # Try to shorten the article
                     shortened_article = _shorten_article(client, short_article, article_title)
                     if shortened_article:

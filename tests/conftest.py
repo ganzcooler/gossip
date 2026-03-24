@@ -104,3 +104,16 @@ def sample_html_content():
     </body>
     </html>
     """
+
+
+@pytest.fixture
+def mock_db_session():
+    """Fixture to create a mock async database session for tests."""
+    session = AsyncMock()
+    session.execute = AsyncMock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    session.add = MagicMock()
+    session.flush = AsyncMock()
+    session.close = AsyncMock()
+    return session

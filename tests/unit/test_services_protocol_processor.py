@@ -270,3 +270,95 @@ class TestProcessProtocolsJobAuthError:
             # The error should be re-raised
             with pytest.raises(AuthenticationError, match="API key expired"):
                 await process_protocols_job(mock_session)
+
+
+class TestProcessExistingProtocol:
+    """Tests for the _process_existing_protocol function."""
+
+    @pytest.mark.asyncio
+    async def test_regenerates_images_when_missing(self, tmp_path):
+        """Test that images are regenerated when they don't exist."""
+        from app.services.protocol_processor import _process_existing_protocol
+        from app.models import Article
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from datetime import date
+
+        # Create mock protocol
+        mock_protocol = MagicMock()
+        mock_protocol.id = 1
+        mock_protocol.title = "Test Protocol"
+        mock_protocol.session_date = date(2024, 1, 1)
+        mock_protocol.processed = False
+
+        # Create mock existing article
+        mock_article = MagicMock(spec=Article)
+        mock_article.id = 1
+        mock_article.protocol_id = 1
+        mock_article.article_index = 1
+        mock_article.content = "<h1>Test Article</h1><p>Content</p>"
+        mock_article.short_article = None
+
+        # Create mock session
+        mock_session = AsyncMock()
+
+        # Create protocol folder (no images)
+        protocol_folder = tmp_path / "240101_test_protocol"
+        protocol_folder.mkdir()
+
+        with patch('app.services.protocol_processor.create_protocol_folder') as mock_create_folder:
+            mock_create_folder.return_value = protocol_folder
+            
+            with patch('app.services.protocol_processor.generate_image_for_article') as mock_gen_img:
+                mock_gen_img.return_value = ("prompt", create_test_png_bytes())
+                
+                with patch('app.services.protocol_processor.save_image_to_file') as mock_save:
+                    with patch('app.services.protocol_processor.create_insta_images_for_protocol_async'):
+                        # Process existing protocol
+                        await _process_existing_protocol(mock_protocol, [mock_article], mock_session)
+
+                        # Image generation should be called since no images exist
+                        mock_gen_img.assert_called_once()
+                        mock_save.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_skips_image_regeneration_when_images_exist(self, tmp_path):
+        """Test that image regeneration is skipped when images already exist."""
+        from app.services.protocol_processor import _process_existing_protocol
+        from app.models import Article
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from datetime import date
+        from PIL import Image
+
+        # Create mock protocol
+        mock_protocol = MagicMock()
+        mock_protocol.id = 1
+        mock_protocol.title = "Test Protocol"
+        mock_protocol.session_date = date(2024, 1, 1)
+        mock_protocol.processed = False
+
+        # Create mock existing article
+        mock_article = MagicMock(spec=Article)
+        mock_article.id = 1
+        mock_article.article_index = 1
+        mock_article.content = "<h1>Test Article</h1>"
+        mock_article.short_article = None
+
+        # Create mock session
+        mock_session = AsyncMock()
+
+        # Create protocol folder with existing image
+        protocol_folder = tmp_path / "240101_test_protocol"
+        protocol_folder.mkdir()
+        img = Image.new('RGB', (100, 100))
+        img.save(protocol_folder / "image_01.jpg")
+
+        with patch('app.services.protocol_processor.create_protocol_folder') as mock_create_folder:
+            mock_create_folder.return_value = protocol_folder
+            
+            with patch('app.services.protocol_processor.generate_image_for_article') as mock_gen_img:
+                with patch('app.services.protocol_processor.create_insta_images_for_protocol_async'):
+                    # Process existing protocol
+                    await _process_existing_protocol(mock_protocol, [mock_article], mock_session)
+
+                    # Image generation should NOT be called since images exist
+                    mock_gen_img.assert_not_called()
