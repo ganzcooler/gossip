@@ -66,7 +66,7 @@ def _shorten_article(client: genai.Client, short_article: str, article_title: st
                 shortened_article = response.text.strip()
                 text_length = _get_text_length_without_html(shortened_article)
                 if text_length <= MAX_SHORT_ARTICLE_LENGTH:
-                    logger.debug(f"Successfully shortened article for: '{article_title[:20]}'")
+                    logger.debug(f"Successfully shortened article for: '{article_title[:20]}' ({text_length} chars)")
                     return shortened_article
                 else:
                     logger.warning(f"Shortened article still too long ({text_length} chars). Retry {attempt + 1}/{max_shorten_retries}.")
@@ -123,7 +123,7 @@ def generate_short_article(article_title: str, article_content: str) -> str | No
                 text_length = _get_text_length_without_html(short_article)
                 if text_length <= MAX_SHORT_ARTICLE_LENGTH:
                     preview = short_article[:50] + "..." if len(short_article) > 50 else short_article
-                    logger.debug(f"Successfully generated short article for article: '{article_title}' - Short Article: {preview}")
+                    logger.debug(f"Successfully validated and generated short article for article: '{article_title}' - Short Article: {preview}")
                     return short_article
                 else:
                     logger.warning(f"Short article too long ({text_length} chars without HTML, max {MAX_SHORT_ARTICLE_LENGTH}). Attempting to shorten.")
