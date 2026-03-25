@@ -690,7 +690,7 @@ def create_insta_images_for_protocol(
                 if h2_tag and p_tag:
                     summary_block = ContentBlock(
                         headline=h2_tag.get_text(strip=True),
-                        paragraph=p_tag.get_text(strip=True)[:MAX_PARAGRAPH_LENGTH]
+                        paragraph=p_tag.get_text(strip=True)
                     )
 
                     with Image.open(image_path) as img:
