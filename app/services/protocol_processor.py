@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app.models import Protocol, Article
 from app.core.config import ARTICLES_DIR
 from app.core.models import SingleArticle
-from app.utils.folder_utils import create_protocol_folder
+from app.utils.folder_utils import create_protocol_folder, normalize_for_folder_name
 from app.services.article_generator import generate_articles
 from app.services import ArticleGenerationError
 from app.services.image_generator import generate_image_for_article
@@ -222,12 +222,8 @@ def save_image_to_file(
             logger.debug(f"Created protocol folder: {protocol_folder}")
         except FileExistsError:
             # Folder exists from a previous run - reuse it
-            # Reconstruct the folder path using the same naming logic as create_protocol_folder
-            normalized = title
-            for umlaut, replacement in [('ä', 'ae'), ('ö', 'oe'), ('ü', 'ue'), ('ß', 'ss'), ('Ä', 'Ae'), ('Ö', 'Oe'), ('Ü', 'Ue')]:
-                normalized = normalized.replace(umlaut, replacement)
-            normalized = normalized.replace(' ', '_').lower()
-            normalized = ''.join(c for c in normalized if c.isalnum() or c == '_')[:80]
+            # Reconstruct the folder path using the shared normalization utility
+            normalized = normalize_for_folder_name(title)
             folder_name = f"{session_date.strftime('%y%m%d')}_{normalized}"
             protocol_folder = ARTICLES_DIR / folder_name
             logger.debug(f"Reusing existing protocol folder: {protocol_folder}")
@@ -286,12 +282,8 @@ async def _process_existing_protocol(
             protocol.title
         )
     except FileExistsError:
-        # Folder exists - reconstruct path
-        normalized = protocol.title
-        for umlaut, replacement in [('ä', 'ae'), ('ö', 'oe'), ('ü', 'ue'), ('ß', 'ss'), ('Ä', 'Ae'), ('Ö', 'Oe'), ('Ü', 'Ue')]:
-            normalized = normalized.replace(umlaut, replacement)
-        normalized = normalized.replace(' ', '_').lower()
-        normalized = ''.join(c for c in normalized if c.isalnum() or c == '_')[:80]
+        # Folder exists - reconstruct path using shared normalization utility
+        normalized = normalize_for_folder_name(protocol.title)
         folder_name = f"{protocol.session_date.strftime('%y%m%d')}_{normalized}"
         protocol_folder = ARTICLES_DIR / folder_name
 
