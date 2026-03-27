@@ -21,25 +21,25 @@ def _get_protocol_folder(protocol: Protocol) -> Path:
 
 
 def _check_protocol_folder_exists(protocol_folder: Path) -> bool:
-    """REQ-008: Check if protocol folder exists."""
+    """Check if protocol folder exists."""
     return protocol_folder.exists()
 
 
 def _check_source_images_exist(protocol_folder: Path) -> bool:
-    """REQ-009: Check if at least one image_*.jpg or image_*.png exists."""
+    """Check if at least one image_*.jpg or image_*.png exists."""
     existing_images = list(protocol_folder.glob("image_*.jpg")) + list(protocol_folder.glob("image_*.png"))
     return len(existing_images) > 0
 
 
 def _check_articles_with_content_exist(articles: list[Article]) -> bool:
-    """REQ-010: Check if articles with content exist in database."""
+    """Check if articles with content exist in database."""
     if not articles:
         return False
     return any(article.content for article in articles)
 
 
 def _check_all_articles_have_short_article(articles: list[Article]) -> bool:
-    """REQ-011: Check if ALL articles have short_article."""
+    """Check if ALL articles have short_article."""
     if not articles:
         return False
     return all(article.short_article for article in articles)
@@ -96,24 +96,24 @@ async def generate_insta_images_job(db_session, protocol_id=None):
             
             # === VALIDATION PHASE (ALL must pass before deletion) ===
             
-            # REQ-008: Check if protocol folder exists
+            # Check if protocol folder exists
             if not _check_protocol_folder_exists(protocol_folder):
                 reason = "Protocol folder not found"
                 logger.debug(f"Protocol {protocol.id}: {reason}")
                 protocol_detail["reason"] = reason
                 details.append(protocol_detail)
                 failed_count += 1
-                logger.warning(f"Protocol {protocol.id}: {reason}")
+                logger.debug(f"Protocol {protocol.id}: {reason}")
                 continue
             
-            # REQ-009: Check if source images exist
+            # Check if source images exist
             if not _check_source_images_exist(protocol_folder):
                 reason = "No source images found"
                 logger.debug(f"Protocol {protocol.id}: {reason}")
                 protocol_detail["reason"] = reason
                 details.append(protocol_detail)
                 failed_count += 1
-                logger.warning(f"Protocol {protocol.id}: {reason}")
+                logger.debug(f"Protocol {protocol.id}: {reason}")
                 continue
             
             # Fetch articles from database
@@ -124,24 +124,24 @@ async def generate_insta_images_job(db_session, protocol_id=None):
             )
             articles = result.scalars().all()
             
-            # REQ-010: Check if articles with content exist
+            # Check if articles with content exist
             if not _check_articles_with_content_exist(articles):
                 reason = "No articles in database"
                 logger.debug(f"Protocol {protocol.id}: {reason}")
                 protocol_detail["reason"] = reason
                 details.append(protocol_detail)
                 failed_count += 1
-                logger.warning(f"Protocol {protocol.id}: {reason}")
+                logger.debug(f"Protocol {protocol.id}: {reason}")
                 continue
             
-            # REQ-011: Check if ALL articles have short_article
+            # Check if ALL articles have short_article
             if not _check_all_articles_have_short_article(articles):
                 reason = "No short_article in database"
                 logger.debug(f"Protocol {protocol.id}: {reason}")
                 protocol_detail["reason"] = reason
                 details.append(protocol_detail)
                 failed_count += 1
-                logger.warning(f"Protocol {protocol.id}: {reason}")
+                logger.debug(f"Protocol {protocol.id}: {reason}")
                 continue
             
             # All validations passed - proceed with deletion
