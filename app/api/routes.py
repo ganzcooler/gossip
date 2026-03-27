@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from typing import List
+from typing import List, Optional
 
 from app.database import get_db
 from app.models import Protocol, Article
 from app.services.protocol_fetcher import fetch_protocols_job
 from app.services.protocol_processor import process_protocols_job
+from app.services import generate_insta_images_job
 
 router = APIRouter()
 
@@ -178,6 +179,46 @@ async def trigger_pipeline_run(db: AsyncSession = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Pipeline run failed: {str(e)}")
+
+
+@router.post("/pipeline/generate-insta")
+async def trigger_generate_insta(
+    protocol_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Manually trigger Instagram image generation.
+    
+    Args:
+        protocol_id: Optional specific protocol ID to process.
+                    If not provided, processes all eligible protocols.
+    """
+    # Check if specific protocol exists (404 case)
+    if protocol_id is not None:
+        result = await db.execute(
+            select(Protocol).where(Protocol.id == protocol_id)
+        )
+        protocol = result.scalar_one_or_none()
+        if not protocol:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Protocol {protocol_id} not found"
+            )
+    
+    # Run the job
+    result = await generate_insta_images_job(db, protocol_id)
+    
+    # Handle validation failure for specific protocol (400 case)
+    if protocol_id is not None and result["failed"] == 1:
+        # Find the failed protocol detail
+        for detail in result.get("details", []):
+            if detail.get("protocol_id") == protocol_id and detail.get("reason"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Validation failed: {detail['reason']}"
+                )
+    
+    return result
 
 
 @router.get("/pipeline/status")

@@ -616,7 +616,7 @@ def create_insta_images_for_protocol(
     if res_dir is None:
         res_dir = Path(__file__).parent.parent / "res"
     
-    # REQ-005: Check if Instagram images already exist
+    # Check if Instagram images already exist
     if instagram_images_exist(protocol_folder, articles_data):
         logger.info(f"Instagram images already exist in {protocol_folder}. Skipping generation.")
         return
