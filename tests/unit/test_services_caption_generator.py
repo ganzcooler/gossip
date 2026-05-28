@@ -18,7 +18,7 @@ class TestGenerateInstaCaption:
     def mock_config(self):
         with patch("app.services.caption_generator.config") as mock_config:
             mock_config.load_google_api_key.return_value = "test-api-key"
-            mock_config.GENAI_IMAGE_PROMPT_MODEL = "gemini-2.5-flash"
+            mock_config.GENAI_IMAGE_PROMPT_MODEL = "gemini-3.5-flash"
             mock_config.API_CALL_DELAY_SECONDS = 0
             yield mock_config
 
@@ -150,4 +150,4 @@ class TestGenerateInstaCaption:
 
         calls = mock_genai_client.models.generate_content.call_args_list
         assert len(calls) == 1
-        assert calls[0].kwargs["config"].temperature == 1
+        assert calls[0].kwargs["config"].temperature == 1.0

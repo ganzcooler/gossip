@@ -30,7 +30,7 @@ def generate_insta_caption(article_title: str, article_content: str) -> str | No
                     complete_article=article_content
                 ),
                 config=types.GenerateContentConfig(
-                    temperature=1,
+                    temperature=1.0,
                 )
             )
 
