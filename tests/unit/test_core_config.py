@@ -97,7 +97,7 @@ class TestConfig:
         """Test that AI model names are configured."""
         from app.core import config
         
-        assert config.GENAI_ARTICLE_GENERATION_MODEL == "gemini-3-pro-preview"
+        assert config.GENAI_ARTICLE_GENERATION_MODEL == "gemini-3.5-flash"
         assert config.GENAI_IMAGE_PROMPT_MODEL == "gemini-2.5-flash"
         assert config.GENAI_IMAGE_GENERATION_MODEL == "gemini-2.5-flash-image"
 

@@ -40,7 +40,7 @@ def _is_auth_error(exception: Exception) -> bool:
 def generate_articles(text: str) -> List[SingleArticle]:
     """Generates articles from text using a direct Google GenAI API call with retries."""
     logger.debug("Generating articles...")
-    max_retries = 5
+    max_retries = 3
     last_error = None
     for attempt in range(max_retries):
         try:
@@ -50,7 +50,10 @@ def generate_articles(text: str) -> List[SingleArticle]:
                 contents=prompts.GENAI_JOURNALISTIC_ARTICLE_PROMPT.replace("{PROTOCOL_TEXT}", text),
                 config=types.GenerateContentConfig(
                     response_mime_type='application/json',
-                    response_schema=LLMGeneratedArticles
+                    response_schema=LLMGeneratedArticles,
+                    thinking_config=types.ThinkingConfig(
+                        thinking_level="high"
+                    )
                 )
             )
 
