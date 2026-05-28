@@ -15,7 +15,7 @@ from app.utils.folder_utils import create_protocol_folder, normalize_for_folder_
 from app.services.article_generator import generate_articles
 from app.services import ArticleGenerationError
 from app.services.image_generator import generate_image_for_article
-from app.services.short_article_generator import generate_short_article
+from app.services.caption_generator import generate_insta_caption
 from app.services.insta_generator import create_insta_images_for_protocol
 from app.services import AuthenticationError
 
@@ -110,7 +110,7 @@ async def process_protocol(protocol: Protocol, db_session: AsyncSession):
     # Only if we have a valid protocol_folder (at least one image was generated)
     if protocol_folder is not None and protocol_folder.exists():
         try:
-            # Fetch articles from database to get short_article field
+            # Fetch articles from database to get caption field
             result = await db_session.execute(
                 select(Article).where(Article.protocol_id == protocol.id).order_by(Article.article_index)
             )
@@ -122,7 +122,7 @@ async def process_protocol(protocol: Protocol, db_session: AsyncSession):
                     "index": article.article_index,
                     "content": article.content,
                     "title": article.content.split('</h1>')[0].replace('<h1>', ''),
-                    "short_article": article.short_article
+                    "caption": article.caption
                 }
                 for article in article_records
             ]
@@ -184,15 +184,15 @@ async def process_single_article(
     protocol_folder = image_path.parent
     logger.debug(f"Saved image to: {image_path}")
 
-    # Step 2d: Generate short article (sync function in thread pool)
-    short_article = await loop.run_in_executor(
-        None, generate_short_article, article_data.ueberschrift, article_data.inhalt
+    # Step 2d: Generate caption (sync function in thread pool)
+    caption = await loop.run_in_executor(
+        None, generate_insta_caption, article_data.ueberschrift, article_data.inhalt
     )
 
-    # Save short article to database if generated successfully
-    if short_article:
-        article_record.short_article = short_article
-        logger.debug(f"Saved short article to database for article {article_index}")
+    # Save caption to database if generated successfully
+    if caption:
+        article_record.caption = caption
+        logger.debug(f"Saved caption to database for article {article_index}")
 
     logger.debug(f"Successfully processed article {article_index}: {article_data.ueberschrift}")
     return protocol_folder
@@ -335,7 +335,7 @@ async def _process_existing_protocol(
                     "index": article.article_index,
                     "content": article.content,
                     "title": article.content.split('</h1>')[0].replace('<h1>', ''),
-                    "short_article": article.short_article
+                    "caption": article.caption
                 }
                 for article in existing_articles
             ]

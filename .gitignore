@@ -1,6 +1,7 @@
 # User
 AGENTS.md
 .kilocode/
+.kilo/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

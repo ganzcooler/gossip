@@ -296,7 +296,7 @@ class TestProcessExistingProtocol:
         mock_article.protocol_id = 1
         mock_article.article_index = 1
         mock_article.content = "<h1>Test Article</h1><p>Content</p>"
-        mock_article.short_article = None
+        mock_article.caption = None
 
         # Create mock session
         mock_session = AsyncMock()
@@ -341,7 +341,7 @@ class TestProcessExistingProtocol:
         mock_article.id = 1
         mock_article.article_index = 1
         mock_article.content = "<h1>Test Article</h1>"
-        mock_article.short_article = None
+        mock_article.caption = None
 
         # Create mock session
         mock_session = AsyncMock()
