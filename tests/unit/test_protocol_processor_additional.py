@@ -242,7 +242,7 @@ class TestProcessExistingProtocol:
         mock_article = MagicMock()
         mock_article.article_index = 1
         mock_article.content = "<h1>Title</h1><p>Content</p>"
-        mock_article.short_article = "Short"
+        mock_article.caption = "Caption"
 
         existing_articles = [mock_article]
 
@@ -273,7 +273,7 @@ class TestProcessExistingProtocol:
         mock_article = MagicMock()
         mock_article.article_index = 1
         mock_article.content = "<h1>Title</h1><p>Content</p>"
-        mock_article.short_article = "Short"
+        mock_article.caption = "Caption"
 
         existing_articles = [mock_article]
 

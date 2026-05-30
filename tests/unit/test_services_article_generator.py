@@ -167,5 +167,5 @@ class TestGenerateArticlesAuthError:
         with pytest.raises(ArticleGenerationError):
             generate_articles("Some protocol text")
 
-        # Should retry 5 times (max_retries)
-        assert mock_client.models.generate_content.call_count == 5
+        # Should retry 3 times (max_retries)
+        assert mock_client.models.generate_content.call_count == 3

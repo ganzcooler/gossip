@@ -23,7 +23,7 @@ def validate_image_prompt(prompt: str, client: genai.Client) -> Tuple[bool, str]
             model=config.GENAI_CLASSIFICATION_MODEL,
             contents=prompts.GENAI_IMAGE_PROMPT_VALIDATION_PROMPT.format(image_prompt=prompt),
             config=types.GenerateContentConfig(
-                temperature=0.0
+                temperature=1.0
             )
         )
         
@@ -48,7 +48,7 @@ def make_prompt_realistic(prompt: str, client: genai.Client) -> str:
             model=config.GENAI_CLASSIFICATION_MODEL,
             contents=prompts.GENAI_IMAGE_PROMPT_REALISTIC_REWRITE_PROMPT.format(image_prompt=prompt),
             config=types.GenerateContentConfig(
-                temperature=0.2
+                temperature=1.0
             )
         )
         
@@ -79,7 +79,7 @@ def generate_image_prompt(article: SingleArticle) -> str:
                     complete_article=full_article
                 ),
                 config=types.GenerateContentConfig(
-                    temperature=0.2
+                    temperature=1.0
                 )
             )
 

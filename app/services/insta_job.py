@@ -1,5 +1,4 @@
 import logging
-import shutil
 from pathlib import Path
 from sqlalchemy import select
 from app.core.config import ARTICLES_DIR
@@ -38,13 +37,6 @@ def _check_articles_with_content_exist(articles: list[Article]) -> bool:
     return any(article.content for article in articles)
 
 
-def _check_all_articles_have_short_article(articles: list[Article]) -> bool:
-    """Check if ALL articles have short_article."""
-    if not articles:
-        return False
-    return all(article.short_article for article in articles)
-
-
 async def generate_insta_images_job(db_session, protocol_id=None):
     """
     Job to generate Instagram images for protocols.
@@ -59,15 +51,12 @@ async def generate_insta_images_job(db_session, protocol_id=None):
     """
     logger.info(f"Starting Instagram image generation job (protocol_id={protocol_id})")
     
-    # Build protocol query
     if protocol_id is not None:
-        # Single protocol mode
         result = await db_session.execute(
             select(Protocol).where(Protocol.id == protocol_id)
         )
         protocols = result.scalars().all()
     else:
-        # Batch mode: select all protocols where processed=True and have articles
         result = await db_session.execute(
             select(Protocol)
             .where(Protocol.processed == True)
@@ -90,13 +79,9 @@ async def generate_insta_images_job(db_session, protocol_id=None):
         try:
             logger.debug(f"Processing protocol {protocol.id}: {protocol.title}")
             
-            # Reconstruct folder path
             protocol_folder = _get_protocol_folder(protocol)
             logger.debug(f"Protocol {protocol.id}: folder path = {protocol_folder}")
             
-            # === VALIDATION PHASE (ALL must pass before deletion) ===
-            
-            # Check if protocol folder exists
             if not _check_protocol_folder_exists(protocol_folder):
                 reason = "Protocol folder not found"
                 logger.debug(f"Protocol {protocol.id}: {reason}")
@@ -106,7 +91,6 @@ async def generate_insta_images_job(db_session, protocol_id=None):
                 logger.debug(f"Protocol {protocol.id}: {reason}")
                 continue
             
-            # Check if source images exist
             if not _check_source_images_exist(protocol_folder):
                 reason = "No source images found"
                 logger.debug(f"Protocol {protocol.id}: {reason}")
@@ -116,7 +100,6 @@ async def generate_insta_images_job(db_session, protocol_id=None):
                 logger.debug(f"Protocol {protocol.id}: {reason}")
                 continue
             
-            # Fetch articles from database
             result = await db_session.execute(
                 select(Article)
                 .where(Article.protocol_id == protocol.id)
@@ -124,7 +107,6 @@ async def generate_insta_images_job(db_session, protocol_id=None):
             )
             articles = result.scalars().all()
             
-            # Check if articles with content exist
             if not _check_articles_with_content_exist(articles):
                 reason = "No articles in database"
                 logger.debug(f"Protocol {protocol.id}: {reason}")
@@ -134,47 +116,19 @@ async def generate_insta_images_job(db_session, protocol_id=None):
                 logger.debug(f"Protocol {protocol.id}: {reason}")
                 continue
             
-            # Check if ALL articles have short_article
-            if not _check_all_articles_have_short_article(articles):
-                reason = "No short_article in database"
-                logger.debug(f"Protocol {protocol.id}: {reason}")
-                protocol_detail["reason"] = reason
-                details.append(protocol_detail)
-                failed_count += 1
-                logger.debug(f"Protocol {protocol.id}: {reason}")
-                continue
-            
-            # All validations passed - proceed with deletion
-            logger.debug(f"Protocol {protocol.id}: All validations passed, proceeding with deletion")
-            
-            # Delete storys/ and posts/ folders recursively
-            storys_folder = protocol_folder / "storys"
-            posts_folder = protocol_folder / "posts"
-            
-            if storys_folder.exists():
-                shutil.rmtree(storys_folder)
-                logger.debug(f"Protocol {protocol.id}: Deleted {storys_folder}")
-            
-            if posts_folder.exists():
-                shutil.rmtree(posts_folder)
-                logger.debug(f"Protocol {protocol.id}: Deleted {posts_folder}")
-            
-            # Prepare articles data
             articles_data = [
                 {
                     "index": article.article_index,
                     "content": article.content,
                     "title": article.content.split('</h1>')[0].replace('<h1>', ''),
-                    "short_article": article.short_article
+                    "caption": article.caption
                 }
                 for article in articles
             ]
             logger.debug(f"Protocol {protocol.id}: Prepared {len(articles_data)} articles for generation")
             
-            # Generate Instagram images
             await create_insta_images_for_protocol_async(protocol_folder, articles_data, protocol.title)
             
-            # Success
             protocol_detail["status"] = "success"
             protocol_detail["reason"] = None
             details.append(protocol_detail)
@@ -189,7 +143,6 @@ async def generate_insta_images_job(db_session, protocol_id=None):
             failed_count += 1
             continue
     
-    # Determine overall status
     if failed_count == 0:
         status = "success"
     elif processed_count > 0:
