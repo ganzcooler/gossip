@@ -87,6 +87,7 @@ async def fetch_and_parse_protocols(params: dict, db_session: AsyncSession) -> i
 def parse_protocol_list(soup: BeautifulSoup) -> list[dict]:
     """Parse the protocol list from SessionNet HTML."""
     protocols = []
+    last_date = None
 
     # Find all table rows with protocol data
     # This is a placeholder - actual parsing depends on SessionNet HTML structure
@@ -107,10 +108,15 @@ def parse_protocol_list(soup: BeautifulSoup) -> list[dict]:
             date_text = date_cell.get_text(strip=True)
             import re
             date_match = re.search(r'(\d{2}\.\d{2}\.\d{4})', date_text)
-            if not date_match:
+            if date_match:
+                date_str = date_match.group(1)
+                session_date = datetime.strptime(date_str, '%d.%m.%Y').date()
+                last_date = session_date
+            elif last_date is not None:
+                session_date = last_date
+                logger.debug(f"Using inherited date {session_date} for row without date")
+            else:
                 continue
-            date_str = date_match.group(1)
-            session_date = datetime.strptime(date_str, '%d.%m.%Y').date()
 
             # Extract title from link in title_cell, fallback to cell text
             link = title_cell.find("a", href=True)
