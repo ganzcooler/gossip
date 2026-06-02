@@ -38,7 +38,7 @@ LOGS_DIR = Path(os.getenv("LOGS_DIR", "/app/logs"))
 
 
 # --- Model Names ---
-GENAI_ARTICLE_GENERATION_MODEL = "gemini-3.5-flash"
+GENAI_ARTICLE_GENERATION_MODEL = "gemini-3.1-pro-preview"
 GENAI_IMAGE_PROMPT_MODEL = "gemini-3.5-flash"
 GENAI_CLASSIFICATION_MODEL = "gemini-3.1-flash-lite"
 GENAI_IMAGE_GENERATION_MODEL = "gemini-2.5-flash-image"
