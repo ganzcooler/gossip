@@ -9,7 +9,7 @@ from app.services.protocol_processor import process_protocols_job
 logger = logging.getLogger(__name__)
 
 # Global scheduler instance
-scheduler = AsyncIOScheduler()
+scheduler = AsyncIOScheduler(timezone="Europe/Berlin")
 
 
 async def fetch_protocols_wrapper():
