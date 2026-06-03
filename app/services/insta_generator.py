@@ -33,9 +33,9 @@ def save_jpeg(img: Image.Image, path: Path, quality: int = 95) -> None:
 
 def find_tag(protocol_title: str) -> str | None:
     """Finds a tag for the protocol based on its title."""
-    lower_stem = protocol_title.lower()
+    lower_stem = protocol_title.lower().replace('_', ' ')
     for key, value in tags_module.TAGS.items():
-        if key.lower() in lower_stem:
+        if key.lower().replace('_', ' ') in lower_stem:
             return value.upper()
     return None
 
