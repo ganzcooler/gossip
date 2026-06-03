@@ -188,6 +188,9 @@ async def trigger_generate_insta(
 ):
     """
     Manually trigger Instagram image generation.
+    - Gate 1: Folder exists on disk	({ARTICLES_DIR}/{session_date}_{normalized_title})
+    - Gate 2: Source images exist (image_*.jpg or image_*.png)
+    - Gate 3: Articles with content (articles with non-empty content in SQL-DB)
     
     Args:
         protocol_id: Optional specific protocol ID to process.
