@@ -41,7 +41,7 @@ def setup_scheduler():
     # Job 1: Fetch protocols (10:00 & 17:00)
     scheduler.add_job(
         fetch_protocols_wrapper,
-        trigger=CronTrigger(hour="10,17", minute="0"),
+        trigger=CronTrigger(hour="10,17", minute="0", timezone="Europe/Berlin"),
         id="fetch_protocols",
         name="Fetch Protocols from SessionNet",
         replace_existing=True
@@ -50,7 +50,7 @@ def setup_scheduler():
     # Job 2: Process protocols (10:30 & 17:30)
     scheduler.add_job(
         process_protocols_wrapper,
-        trigger=CronTrigger(hour="10,17", minute="30"),
+        trigger=CronTrigger(hour="10,17", minute="30", timezone="Europe/Berlin"),
         id="process_protocols",
         name="Process Unprocessed Protocols",
         replace_existing=True
