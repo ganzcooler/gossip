@@ -111,9 +111,13 @@ def generate_image(prompt: str) -> bytes:
                 model=config.GENAI_IMAGE_GENERATION_MODEL,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    image_config=types.ImageConfig(
-                        aspect_ratio="9:16"
-                    )
+                    response_modalities=["TEXT", "IMAGE"],
+                    response_format={
+                        "image": {
+                            "aspect_ratio": "9:16"
+                        }
+                    },
+                    thinking_config=types.ThinkingConfig(include_thoughts=False)
                 )
             )
 
