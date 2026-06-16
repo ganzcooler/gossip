@@ -110,11 +110,11 @@ def generate_image(prompt: str) -> bytes:
             response = client.models.generate_content(
                 model=config.GENAI_IMAGE_GENERATION_MODEL,
                 contents=prompt,
-                config=types.GenerateContentConfig(
-                    image_config=types.ImageConfig(
-                        aspect_ratio="9:16"
-                    )
-                )
+            config=types.GenerateContentConfig(
+                response_modalities=["TEXT", "IMAGE"],
+                image_config=types.ImageConfig(aspect_ratio="9:16"),
+                thinking_config=types.ThinkingConfig(include_thoughts=False)
+            )
             )
 
             for part in response.parts:
