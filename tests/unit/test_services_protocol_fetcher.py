@@ -2,8 +2,6 @@
 Unit tests for app/services/protocol_fetcher.py
 """
 import pytest
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
 from bs4 import BeautifulSoup
 
 from app.services.protocol_fetcher import (

@@ -1,5 +1,4 @@
 import os
-import sys
 from pathlib import Path
 
 project_root = Path(__file__).parent.parent.parent
@@ -10,6 +9,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import date
 
+from app.utils.folder_utils import normalize_for_folder_name
 from app.services.insta_job import (
     generate_insta_images_job,
     _get_protocol_folder,
@@ -18,7 +18,6 @@ from app.services.insta_job import (
     _check_articles_with_content_exist,
 )
 from app.api.routes import trigger_generate_insta
-from app.models import Protocol, Article
 from fastapi import HTTPException
 
 
@@ -96,7 +95,7 @@ class TestGenerateInstaImagesJob:
         self, mock_db_session, mock_protocol, mock_articles_complete, tmp_path
     ):
         """Single protocol, all data present - Success."""
-        protocol_folder = await self._setup_protocol_folder(tmp_path, mock_protocol, with_images=True)
+        await self._setup_protocol_folder(tmp_path, mock_protocol, with_images=True)
 
         protocol_result = MagicMock()
         protocol_scalars = MagicMock()
@@ -161,7 +160,7 @@ class TestGenerateInstaImagesJob:
         self, mock_db_session, mock_protocol, mock_articles_complete, tmp_path
     ):
         """Single protocol, no images - Error."""
-        protocol_folder = await self._setup_protocol_folder(tmp_path, mock_protocol, with_images=False)
+        await self._setup_protocol_folder(tmp_path, mock_protocol, with_images=False)
 
         protocol_result = MagicMock()
         protocol_scalars = MagicMock()
@@ -201,7 +200,7 @@ class TestGenerateInstaImagesJob:
         article.caption = "Caption"
         mock_articles_no_content.append(article)
 
-        protocol_folder = await self._setup_protocol_folder(tmp_path, mock_protocol, with_images=True)
+        await self._setup_protocol_folder(tmp_path, mock_protocol, with_images=True)
 
         protocol_result = MagicMock()
         protocol_scalars = MagicMock()
@@ -252,9 +251,9 @@ class TestGenerateInstaImagesJob:
 
         protocols = [protocol_valid, protocol_no_folder, protocol_no_images]
 
-        valid_folder = await self._setup_protocol_folder(tmp_path, protocol_valid, with_images=True)
+        await self._setup_protocol_folder(tmp_path, protocol_valid, with_images=True)
 
-        no_images_folder = await self._setup_protocol_folder(tmp_path, protocol_no_images, with_images=False)
+        await self._setup_protocol_folder(tmp_path, protocol_no_images, with_images=False)
 
         articles_valid = [MagicMock(article_index=0, content="<h1>Title</h1>", caption="Caption")]
         articles_no_folder = [MagicMock(article_index=0, content="<h1>Title</h1>", caption="Caption")]
@@ -339,7 +338,7 @@ class TestGenerateInstaImagesJobEdgeCases:
         protocol.session_date = date(2024, 1, 15)
         protocol.processed = True
 
-        normalized = "Moeting_mit_Aenderungen_und_Uebersicht"
+        normalized = normalize_for_folder_name(protocol.title)
         folder_name = f"240115_{normalized}"
         protocol_folder = tmp_path / folder_name
         protocol_folder.mkdir(parents=True, exist_ok=True)

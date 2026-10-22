@@ -1,7 +1,6 @@
 """
 Unit tests for app/core/tags.py
 """
-import pytest
 
 from app.core import tags as tags_module
 

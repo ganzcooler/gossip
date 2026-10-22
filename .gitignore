@@ -129,3 +129,7 @@ insta_images/
 
 # Obsolete directories (if any remnants)
 # chroma_db/ # ChromaDB has been removed
+
+# Agent skills (installed locally, not committed)
+.agents/
+skills-lock.json

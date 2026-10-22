@@ -1,6 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch, mock_open
-from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from app.services.insta_generator import (
     find_tag,
@@ -8,7 +7,7 @@ from app.services.insta_generator import (
     extract_article_content,
     create_insta_images_for_protocol,
 )
-from app.core.models import ArticleContent, ContentBlock
+from app.core.models import ContentBlock
 
 
 @pytest.fixture
@@ -84,7 +83,6 @@ class TestCreateInstaImagesForProtocol:
             "Test Protocol"
         )
 
-        caption_path = temp_protocol_folder / "caption_1.txt"
         mock_instance = mock_image.open.return_value.__enter__.return_value
         assert mock_instance.copy.called or True
 
@@ -401,7 +399,6 @@ class TestInstagramImagesExist:
 
     def test_returns_false_when_main_image_missing(self, tmp_path):
         from app.services.insta_generator import instagram_images_exist
-        from PIL import Image
         
         protocol_folder = tmp_path / "test_protocol"
         protocol_folder.mkdir()
@@ -465,7 +462,6 @@ class TestProcessContentBlocks:
 
     def test_single_block_unchanged(self):
         from app.services.insta_generator import _process_content_blocks
-        from app.core.models import ContentBlock
         
         blocks = [ContentBlock(headline="Test", paragraph="Content")]
         result = _process_content_blocks(blocks)
@@ -476,7 +472,6 @@ class TestProcessContentBlocks:
 
     def test_merge_h2_p_followed_by_p(self):
         from app.services.insta_generator import _process_content_blocks
-        from app.core.models import ContentBlock
         
         blocks = [
             ContentBlock(headline="Headline", paragraph="First paragraph"),
@@ -491,7 +486,6 @@ class TestProcessContentBlocks:
 
     def test_merge_two_consecutive_p(self):
         from app.services.insta_generator import _process_content_blocks
-        from app.core.models import ContentBlock
         
         blocks = [
             ContentBlock(headline=None, paragraph="First paragraph"),
@@ -506,7 +500,6 @@ class TestProcessContentBlocks:
 
     def test_split_long_paragraph(self):
         from app.services.insta_generator import _process_content_blocks, MAX_PARAGRAPH_LENGTH
-        from app.core.models import ContentBlock
         
         long_text = "A" * (MAX_PARAGRAPH_LENGTH + 100)
         blocks = [ContentBlock(headline="Test", paragraph=long_text)]
@@ -517,7 +510,6 @@ class TestProcessContentBlocks:
 
     def test_no_merge_when_combined_too_long(self):
         from app.services.insta_generator import _process_content_blocks, MAX_PARAGRAPH_LENGTH
-        from app.core.models import ContentBlock
         
         text1 = "A" * (MAX_PARAGRAPH_LENGTH - 50)
         text2 = "B" * 100
@@ -554,7 +546,6 @@ class TestCreateContentImageMinTopMargin:
 
     def test_center_vertically_true_no_min_margin(self, tmp_path):
         from app.services.insta_generator import create_content_image
-        from app.core.models import ContentBlock
         from PIL import Image
 
         base_img = Image.new('RGB', (800, 1000), color='white')
@@ -579,7 +570,6 @@ class TestCreateContentImageMinTopMargin:
 
     def test_center_vertically_false_positions_at_ten_percent(self, tmp_path):
         from app.services.insta_generator import create_content_image
-        from app.core.models import ContentBlock
         from PIL import Image
 
         base_img = Image.new('RGB', (800, 1000), color='white')
@@ -604,7 +594,6 @@ class TestCreateContentImageMinTopMargin:
 
     def test_min_margin_logic_via_mock(self, tmp_path):
         from app.services.insta_generator import create_content_image
-        from app.core.models import ContentBlock
         from PIL import Image
 
         base_img = Image.new('RGB', (800, 1000), color='white')
@@ -628,7 +617,6 @@ class TestCreateContentImageMinTopMargin:
 
     def test_posts_part_uses_center_no_min_margin(self, tmp_path):
         from app.services.insta_generator import create_content_image
-        from app.core.models import ContentBlock
         from PIL import Image
 
         base_img = Image.new('RGB', (1080, 1350), color='green')

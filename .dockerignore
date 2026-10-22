@@ -1,9 +1,13 @@
 .git
 .env
 .env.*
+.agents/
+skills-lock.json
 articles/
 logs/
 tests/
+docs/
+.github/
 local-testing/
 __pycache__/
 *.py[cod]

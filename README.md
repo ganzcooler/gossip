@@ -1,198 +1,206 @@
-# Gossip Project
+# Gossip
 
-This project is a Python-based pipeline designed to automate the creation of journalistic-style blog posts and associated images from PDF documents. It is tailored for generating local news content from official documents like city council meeting minutes.
+Gossip is a Python pipeline that turns municipal council protocols from
+[SessionNet](https://sessionnet.owl-it.de/) into local-news articles, images,
+and Instagram assets. It runs as a containerized FastAPI application with
+PostgreSQL and an in-process APScheduler.
 
-The system now runs as a containerized FastAPI application with automated scheduling, PostgreSQL database, and web-based API.
+## What it does
+
+1. **Fetch** — reads the SessionNet protocol list, downloads new PDFs, and
+   extracts their text with PyMuPDF.
+2. **Deduplicate** — compares new protocols against the previous 90 days using
+   a 95% text-similarity threshold.
+3. **Generate articles** — sends protocol text to Google Gemini and validates
+   the response against a structured article schema.
+4. **Generate images** — creates an image prompt, verifies/rewrites it for a
+   realistic style, and generates the image with Gemini's image model.
+5. **Render Instagram assets** — generates captions and 4:5 images with the
+   headline, logo, and protocol tag overlaid.
+6. **Persist and serve** — stores protocols/articles in PostgreSQL, writes
+   images and HTML to the articles directory, and exposes the results through
+   a REST API.
+
+The workflow is triggered by APScheduler and can also be started manually
+through the API.
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────────────────────────────┐
-│  Cloudflare     │────▶│  Traefik Reverse Proxy (HTTPS)          │
-│  Tunnel         │     └─────────────────────────────────────────┘
-└─────────────────┘                          │
-                                             ▼
-                              ┌──────────────────────────────┐
-                              │  FastAPI Application         │
-                              │  - APScheduler (Cron Jobs)   │
-                              │  - Protocol Fetcher          │
-                              │  - Protocol Processor        │
-                              │  - REST API                  │
-                              └──────────────────────────────┘
-                                             │
-                    ┌────────────────────────┼────────────────────────┐
-                    ▼                        ▼                        ▼
-           ┌─────────────┐         ┌─────────────────┐    ┌─────────────────┐
-           │  PostgreSQL │         │  Bind Mounts    │    │  SessionNet     │
-           │  Database   │         │  - articles/    │    │  (External)     │
-           └─────────────┘         │  - generated_   │    └─────────────────┘
-                                   │    images/      │
-                                   │  - insta_images/│
-                                   │  - logs/        │
-                                   └─────────────────┘
+SessionNet ──▶ Protocol fetcher ──▶ PostgreSQL
+                                      │
+                                      ▼
+                              Article generator ──▶ Gemini
+                                      │
+                                      ▼
+                              Image generator ─────▶ Gemini image model
+                                      │
+                                      ▼
+                              Instagram renderer ──▶ articles/ + DB
+                                      │
+                                      ▼
+                                   FastAPI
 ```
 
-## Core Workflow
+The FastAPI process starts the scheduler during application startup. There is
+currently no separate worker process, so run a single application replica.
 
-### Automated Pipeline (Scheduled)
-1. **Protocol Fetching** (10:00 & 17:00 daily): Fetches new protocols from SessionNet
-2. **Duplicate Detection**: Checks for similar protocols (95% similarity threshold) in the last 3 months
-3. **Protocol Processing** (10:30 & 17:30 daily): Generates articles, images, and Instagram posts
-
-### Manual Pipeline (Legacy)
-The original standalone pipeline is still available:
-1. **PDF Ingestion:** Processes PDF files from the `pdf_files/` directory
-2. **Text Extraction:** Text is extracted using `PyMuPDF`
-3. **AI Article Generation:** Google GenAI (`gemini-2.5-pro`) generates journalistic articles
-4. **AI Image Generation:** `gemini-2.5-flash` creates prompts, `imagen-3.0-generate-002` generates images
-5. **Instagram Formatting:** Images cropped to 4:5 with headline overlay and logo
-
-## Key Technologies
-- **Backend:** Python, FastAPI, SQLAlchemy (async)
-- **Database:** PostgreSQL 16 with Alembic migrations
-- **Scheduler:** APScheduler (cron-based)
-- **Containerization:** Docker, Docker Compose, Traefik
-- **AI:** Google GenAI (Gemini & Imagen)
-- **PDF Processing:** PyMuPDF
-- **Image Manipulation:** Pillow
-- **HTTP Client:** httpx
-
-## Project Structure
+## Project structure
 
 ```
-.
-├── app/                          # FastAPI Application
-│   ├── main.py                   # Entry point with lifespan events
-│   ├── config.py                 # Configuration management
-│   ├── database.py               # SQLAlchemy async setup
-│   ├── models.py                 # Database models (Protocol, Article)
-│   ├── scheduler.py              # APScheduler configuration
-│   ├── logging_config.py         # Logging setup
-│   ├── api/
-│   │   └── routes.py             # REST API endpoints
-│   ├── services/
-│   │   ├── protocol_fetcher.py   # SessionNet integration
-│   │   ├── protocol_processor.py # Article generation
-│   │   └── duplicate_detector.py # Similarity detection
-│   └── utils/
-│       ├── folder_utils.py       # Directory management
-│       └── sessionnet.py         # SessionNet utilities
-├── src/                          # Legacy pipeline (still functional)
-├── alembic/                      # Database migrations
-├── Dockerfile
-├── docker-compose.yaml
-├── requirements.txt
-└── .env.example
+app/
+├── api/routes.py              REST endpoints and manual pipeline triggers
+├── core/
+│   ├── config.py              Environment-backed settings
+│   ├── models.py              Pydantic response models
+│   ├── prompts.py             Gemini prompts
+│   └── tags.py                Protocol-to-tag mapping
+├── database.py                Async SQLAlchemy engine/session
+├── main.py                    FastAPI entry point and lifespan
+├── models.py                  SQLAlchemy models (Protocol, Article)
+├── scheduler.py               APScheduler cron jobs
+├── services/
+│   ├── protocol_fetcher.py    SessionNet scraping and PDF ingestion
+│   ├── protocol_processor.py  Orchestrates article/image/Instagram creation
+│   ├── article_generator.py   Gemini article generation
+│   ├── image_generator.py     Gemini image generation
+│   ├── caption_generator.py   Instagram captions
+│   ├── insta_generator.py     Instagram image rendering
+│   ├── insta_job.py           Batch Instagram generation
+│   └── duplicate_detector.py  Protocol similarity check
+├── utils/                     Folder and SessionNet helpers
+└── res/                       Logo and fonts used by the renderer
+
+tests/
+├── unit/                      Fast unit tests
+├── integration/               Integration test package
+└── manual/                    Real-API tests (not run by default)
+
+docs/agents/                   Agent workflow configuration (Pocock skills)
+local-testing/                 Local compose file and database dump
 ```
 
-## Deployment (Docker)
+`src/`, `alembic/`, and a root `main.py` no longer exist. Database tables are
+created with SQLAlchemy `create_all()` on startup; migrations have not been
+introduced yet.
 
-### 1. Prerequisites
-- Docker and Docker Compose installed
-- External Traefik network created:
-  ```bash
-  docker network create traefik
-  ```
+## Quick start (Docker)
 
-### 2. Configuration
-Copy `.env.example` to `.env` and configure:
+Prerequisites: Docker, Docker Compose, and the external networks used by
+`docker-compose.yaml`.
+
 ```bash
 cp .env.example .env
-# Edit .env with your values
+# Edit .env: at minimum set GOOGLE_API_KEY and a real DB_PASSWORD.
+
+docker network create traefik-proxy   # skip if it already exists
+docker network create gossip-net      # skip if it already exists
+docker compose up -d --build
 ```
 
-Required environment variables:
-```
-# Database
-DB_HOST=postgres
-DB_PORT=5432
-DB_NAME=gossip
-DB_USER=gossip_user
-DB_PASSWORD=secure_password
+The application listens on port 8000 inside the Compose network and is routed
+by Traefik at the configured host. The host paths for article and log output
+are set in `docker-compose.yaml`; adjust them for your deployment.
 
-# API Keys
-GOOGLE_API_KEY=your_google_api_key
+## Local development
 
-# SessionNet
-SESSIONNET_BASE_URL=https://sessionnet.owl-it.de/rosdorf/BI/
+Python 3.12 is required (the Docker image uses `python:3.12-slim`).
 
-# Traefik
-TRAEFIK_HOST=gossip.yourdomain.com
-
-# Logging
-LOG_LEVEL=INFO
-```
-
-### 3. Start the Application
 ```bash
-docker-compose up -d
-```
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
 
-The application will:
-- Start PostgreSQL database
-- Run database migrations automatically
-- Start the FastAPI application on port 8000
-- Begin scheduled jobs (protocol fetching at 10:00/17:00, processing at 10:30/17:30)
+cp .env.example .env
+# For a local Postgres container, set DB_HOST=localhost in .env.
 
-### 4. API Endpoints
-- `GET /` - Application info
-- `GET /api/health` - Health check
-- `GET /api/protocols` - List protocols (with pagination and filter)
-- `GET /api/protocols/{id}` - Get specific protocol
-- `GET /api/protocols/{id}/articles` - Get articles for a protocol
-- `GET /api/stats` - System statistics
-- `GET /docs` - Swagger UI documentation
-
-## Development (Local)
-
-### 1. Installation
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Database Setup
-Start PostgreSQL locally or use Docker:
-```bash
-docker run -d --name postgres \
+docker run -d --name gossip-postgres \
   -e POSTGRES_DB=gossip \
   -e POSTGRES_USER=gossip_user \
   -e POSTGRES_PASSWORD=secure_password \
   -p 5432:5432 postgres:16
-```
 
-Run migrations:
-```bash
-alembic upgrade head
-```
-
-### 3. Run the Application
-```bash
 uvicorn app.main:app --reload
 ```
 
-## Legacy Manual Pipeline
+The API is then available at `http://127.0.0.1:8000`, with Swagger UI at
+`/docs`.
 
-The original standalone pipeline is still available via `main.py`:
+## Configuration
 
-- **Run full pipeline:**
-  ```bash
-  python main.py
-  ```
+Configuration is read from `.env` (see `.env.example`):
 
-- **Run specific steps:**
-  ```bash
-  python main.py --steps
-  ```
+| Variable | Purpose |
+| --- | --- |
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | PostgreSQL connection |
+| `DATABASE_URL` | Optional full SQLAlchemy URL; overrides the `DB_*` values |
+| `GOOGLE_API_KEY` | Google GenAI API key |
+| `SESSIONNET_BASE_URL` | SessionNet base URL |
+| `TRAEFIK_HOST` | Public hostname used by the deployment |
+| `LOG_LEVEL` | Python log level (`INFO` by default) |
+| `ARTICLES_DIR` | Output directory for articles and generated images |
+| `LOGS_DIR` | Log output directory |
 
-## Scheduler Jobs
+## API
 
-| Job | Schedule | Description |
-|-----|----------|-------------|
-| fetch_protocols | 10:00 & 17:00 | Fetch new protocols from SessionNet |
-| process_protocols | 10:30 & 17:30 | Process unprocessed protocols |
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/` | Application metadata |
+| `GET` | `/api/health` | Health check |
+| `GET` | `/api/protocols` | List protocols (`skip`, `limit`, `processed`) |
+| `GET` | `/api/protocols/{id}` | Protocol detail, including extracted PDF text |
+| `GET` | `/api/protocols/{id}/articles` | Articles for a protocol |
+| `GET` | `/api/stats` | Protocol/article counts |
+| `POST` | `/api/pipeline/fetch` | Fetch new protocols now |
+| `POST` | `/api/pipeline/process` | Process unprocessed protocols now |
+| `POST` | `/api/pipeline/run` | Fetch and process in one call |
+| `POST` | `/api/pipeline/generate-insta` | Generate Instagram assets (optional `protocol_id`) |
+| `GET` | `/api/pipeline/status` | Pipeline backlog and counts |
+| `GET` | `/docs` | Swagger UI |
 
-## Security Notes
-- PostgreSQL is only accessible within the internal Docker network
-- No database ports are exposed externally
-- HTTPS is enforced via Traefik/Cloudflare
-- Secrets are managed via `.env` file (never commit to git)
+The pipeline endpoints call the same jobs as the scheduler and can take a long
+time when Gemini is involved. They are currently unauthenticated; restrict
+access at the reverse proxy or add authentication before exposing the service
+publicly.
+
+## Scheduled jobs
+
+| Job | Schedule (Europe/Berlin) | Description |
+| --- | --- | --- |
+| `fetch_protocols` | 10:00 and 17:00 | Fetch new protocols from SessionNet |
+| `process_protocols` | 10:30 and 17:30 | Process unprocessed protocols |
+
+Because the scheduler runs inside the web process, do not scale the `app`
+service to multiple replicas without moving the scheduler to a dedicated
+worker first.
+
+## Tests and linting
+
+```bash
+pytest -m "not manual"   # standard test suite
+pytest -m manual         # real Gemini calls; requires GOOGLE_API_KEY
+ruff check .
+```
+
+`pytest` runs the unit suite by default. Manual tests are marked and should
+only be run when you intend to spend API credits.
+
+## Operational notes
+
+- The application writes generated articles and images to `ARTICLES_DIR` and
+  logs to `LOGS_DIR`. Both are bind-mounted in `docker-compose.yaml`.
+- PostgreSQL is only reachable on the internal Compose network.
+- The Compose router uses the `web` entrypoint; TLS is expected to terminate
+  at the Cloudflare/Traefik edge. Verify the entrypoint against your actual
+  Traefik configuration before changing it.
+- The API currently has no built-in authentication, rate limiting, or request
+  size limits.
+
+## Known limitations / next steps
+
+- Add Alembic migrations instead of `create_all()`.
+- Move the scheduler and long-running pipeline jobs into a dedicated worker.
+- Add authentication and rate limiting for the API and pipeline triggers.
+- Store article content as structured blocks instead of an HTML string.
+- Replace the O(n²) full-text duplicate check with a hash or MinHash index.
+- Add structured logging and job-level locking to prevent overlapping runs.

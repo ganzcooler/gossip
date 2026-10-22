@@ -4,7 +4,6 @@ Unit tests for app/services/protocol_processor.py
 import io
 import pytest
 from datetime import date
-from pathlib import Path
 from unittest.mock import MagicMock, patch, AsyncMock
 from PIL import Image
 
@@ -160,8 +159,6 @@ class TestSaveImageToFile:
     def test_reuses_existing_folder_on_retry(self, temp_directory, monkeypatch):
         """Test that folder is reused when it already exists from a previous run."""
         import time
-        from unittest.mock import patch
-        from app.core.config import ARTICLES_DIR
         
         image_bytes = create_test_png_bytes()
         session_date = date(2024, 1, 15)

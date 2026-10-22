@@ -1,9 +1,8 @@
 """
 Unit tests for app/utils/sessionnet.py
 """
-import pytest
 from datetime import datetime
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from app.utils.sessionnet import calculate_sessionnet_params
 
@@ -23,9 +22,6 @@ class TestCalculateSessionnetParams:
         """Test that __cjahr is set to year from 6 months ago."""
         params = calculate_sessionnet_params()
         now = datetime.now()
-        six_months_ago = now.replace(year=now.year - 1) if now.month <= 6 else now
-        expected_year = six_months_ago.year - (1 if now.month <= 6 else 0)
-        
         # __cjahr is the year from 6 months ago
         actual_six_months_ago = now - __import__('datetime').timedelta(days=180)
         assert params["__cjahr"] == actual_six_months_ago.year
@@ -61,14 +57,12 @@ class TestCalculateSessionnetParams:
     @patch('app.utils.sessionnet.datetime')
     def test_year_boundary_january(self, mock_datetime):
         """Test month calculation when current month is January."""
-        from datetime import timedelta
         
         # Create a real datetime for January 2024
         mock_now = datetime(2024, 1, 15)
         mock_datetime.now.return_value = mock_now
         
         # Mock timedelta to return a real datetime 6 months ago
-        six_months_ago = datetime(2023, 7, 15)
         mock_datetime.timedelta = __import__('datetime').timedelta
         
         params = calculate_sessionnet_params()

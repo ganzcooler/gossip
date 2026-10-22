@@ -18,11 +18,11 @@ class TestLifespan:
         """Test that lifespan initializes the database on startup."""
         mock_app = MagicMock(spec=FastAPI)
 
-        with patch('app.main.ensure_directories') as mock_ensure_dirs:
+        with patch('app.main.ensure_directories'):
             with patch('app.main.init_db', new_callable=AsyncMock) as mock_init_db:
-                with patch('app.main.setup_scheduler') as mock_setup_scheduler:
-                    with patch('app.main.start_scheduler') as mock_start_scheduler:
-                        with patch('app.main.stop_scheduler') as mock_stop_scheduler:
+                with patch('app.main.setup_scheduler'):
+                    with patch('app.main.start_scheduler'):
+                        with patch('app.main.stop_scheduler'):
                             async with lifespan(mock_app):
                                 pass
 
@@ -52,7 +52,7 @@ class TestLifespan:
             with patch('app.main.init_db', new_callable=AsyncMock):
                 with patch('app.main.setup_scheduler') as mock_setup_scheduler:
                     with patch('app.main.start_scheduler') as mock_start_scheduler:
-                        with patch('app.main.stop_scheduler') as mock_stop_scheduler:
+                        with patch('app.main.stop_scheduler'):
                             async with lifespan(mock_app):
                                 pass
 
@@ -88,8 +88,8 @@ class TestFastAPIApp:
 
     def test_app_has_api_routes(self):
         """Test that app includes API routes."""
-        routes = [route.path for route in app.routes]
-        assert any('/api' in route for route in routes) or any('/health' in route for route in routes)
+        paths = app.openapi()["paths"]
+        assert any(path.startswith("/api") for path in paths)
 
     def test_app_has_lifespan(self):
         """Test that app has lifespan configured."""

@@ -1,4 +1,4 @@
-GENAI_JOURNALISTIC_ARTICLE_PROMPT = f"""
+GENAI_JOURNALISTIC_ARTICLE_PROMPT = """
 Du bist ein erfahrener Journalist und Content-Creator für einen lokalen News-Blog, dessen Zielgruppe die Bürger einer Gemeinde sind. Deine Aufgabe ist es, aus Mitschriften von Ratssitzungen die relevantesten und journalistisch wertvollsten Informationen zu extrahieren und daraus faktentreue, interessante und leicht ironische Blog-Artikel zu erstellen.
 Gehe dabei wie folgt vor:
 
@@ -33,21 +33,21 @@ Das Ergebnis soll als JSON-Objekt ausgegeben werden. Dieses JSON-Objekt enthält
  * "inhalt": Enthält den vollständigen Artikeltext als String (Einleitung, Hauptteil, Fazit), formatiert mit HTML-Tags.
 
 Beispiel für die JSON-Ausgabe:
-{{
+{
   "artikel": [
-    {{
+    {
       "ueberschrift": "Großer Batteriespeicher für Rosdorf beschlossen – Chance oder Herausforderung?",
       "inhalt": "<p>In einer jüngsten Sitzung des Gemeinderats wurde ein zukunftsweisendes Projekt auf den Weg gebracht: die Errichtung eines großflächigen Batteriespeichers für Photovoltaik-Anlagen im Gemeindegebiet.</p><h2>Diskussion und Entscheidung</h2><p>Befürworter sehen darin einen wichtigen Schritt für die lokale Energiewende. Ein Ratsmitglied äußerte jedoch Bedenken bezüglich des genauen Standorts. Die Mehrheit sprach sich schließlich für das Vorhaben aus.</p>"
-    }},
-    {{
+    },
+    {
       "ueberschrift": "Kita-Plätze in Rosdorf: Wie geht es weiter?",
       "inhalt": "<p>Die anhaltende Problematik bei der Bereitstellung ausreichender Kinderbetreuungsplätze war erneut ein zentraler Diskussionspunkt im Gemeinderat. Familien warten dringend auf Entlastung.</p><h2>Maßnahmen und Kritik</h2><p>Es wurde ein Maßnahmenpaket verabschiedet, um kurzfristig Kapazitäten zu erweitern. Der Bürgermeister betonte die Dringlichkeit, während ein Vertreter der Opposition die langfristige Strategie hinterfragte.</p>"
-    }}
+    }
   ]
-}}
+}
 
 Hier ist das Protokoll:
-{{PROTOCOL_TEXT}}
+{PROTOCOL_TEXT}
 """
 
 GENAI_IMAGE_PROMPT_GENERATOR_PROMPT = """
