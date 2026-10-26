@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from typing import List, Optional
+from typing import Optional
 
 from app.database import get_db
 from app.models import Protocol, Article
@@ -99,7 +99,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 
     # Processed protocols
     processed_result = await db.execute(
-        select(func.count(Protocol.id)).where(Protocol.processed == True)
+        select(func.count(Protocol.id)).where(Protocol.processed.is_(True))
     )
     processed_protocols = processed_result.scalar()
 
@@ -238,7 +238,7 @@ async def get_pipeline_status(db: AsyncSession = Depends(get_db)):
 
     # Unprocessed protocols
     unprocessed_result = await db.execute(
-        select(func.count(Protocol.id)).where(Protocol.processed == False)
+        select(func.count(Protocol.id)).where(Protocol.processed.is_(False))
     )
     unprocessed_protocols = unprocessed_result.scalar()
 

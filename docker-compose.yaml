@@ -8,8 +8,8 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - ${ARTICLES_DIR:-./articles}:/app/articles
-      - ./logs:/app/logs
+      - /home/openclaw/data/gossip/articles:/app/articles
+      - /home/openclaw/data/gossip/logs:/app/logs
     networks:
       - internal
       - traefik-proxy

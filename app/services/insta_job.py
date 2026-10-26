@@ -59,7 +59,7 @@ async def generate_insta_images_job(db_session, protocol_id=None):
     else:
         result = await db_session.execute(
             select(Protocol)
-            .where(Protocol.processed == True)
+            .where(Protocol.processed.is_(True))
             .where(Protocol.articles.any())
         )
         protocols = result.scalars().all()

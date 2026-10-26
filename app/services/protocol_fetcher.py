@@ -214,7 +214,6 @@ def extract_getfile_id(url: str) -> int:
 async def download_pdf_text(pdf_url: str, max_retries: int = 3) -> str | None:
     """Download PDF and extract text content."""
     import fitz  # PyMuPDF
-    import io
 
     async with httpx.AsyncClient() as client:
         for attempt in range(max_retries):

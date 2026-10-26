@@ -1,7 +1,6 @@
 """
 Unit tests for app/api/routes.py
 """
-import pytest
 from datetime import datetime, date
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient

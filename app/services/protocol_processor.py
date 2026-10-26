@@ -28,7 +28,7 @@ async def process_protocols_job(db_session: AsyncSession):
 
     # Get all unprocessed protocols
     result = await db_session.execute(
-        select(Protocol).where(Protocol.processed == False)
+        select(Protocol).where(Protocol.processed.is_(False))
     )
     unprocessed = result.scalars().all()
 
@@ -49,7 +49,7 @@ async def process_protocols_job(db_session: AsyncSession):
     if processed_count > 0:
         logger.info(f"Protocol processing job completed. Processed {processed_count} protocols")
     else:
-        logger.info(f"No new protocols to process.")
+        logger.info("No new protocols to process.")
 
     return processed_count
 

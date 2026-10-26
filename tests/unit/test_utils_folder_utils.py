@@ -3,7 +3,6 @@ Unit tests for app/utils/folder_utils.py
 """
 import pytest
 from datetime import date
-from pathlib import Path
 import re
 
 from app.utils.folder_utils import create_protocol_folder, ensure_directories

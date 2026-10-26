@@ -2,7 +2,7 @@
 Unit tests for app/services/duplicate_detector.py
 """
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 from app.services.duplicate_detector import check_duplicate
@@ -135,10 +135,6 @@ class TestCheckDuplicate:
     @pytest.mark.asyncio
     async def test_protocols_with_old_dates_ignored(self, mock_db_session, create_mock_protocol):
         """Test that protocols older than 3 months are not considered."""
-        # Create a protocol from 4 months ago
-        old_date = datetime.now() - timedelta(days=120)
-        old_protocol = create_mock_protocol("Duplicate text", created_at=old_date)
-        
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = []  # Query returns empty (old protocols filtered)
         mock_db_session.execute.return_value = mock_result

@@ -1,7 +1,6 @@
 """
 Unit tests for app/services/image_generator.py
 """
-import pytest
 from unittest.mock import MagicMock, patch
 
 from app.services.image_generator import (

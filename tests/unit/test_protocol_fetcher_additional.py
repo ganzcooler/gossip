@@ -2,8 +2,6 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import date
-from bs4 import BeautifulSoup
 import httpx
 
 from app.services.protocol_fetcher import (

@@ -8,7 +8,6 @@ omit =
     */.venv/*
     */env/*
     */.env/*
-    alembic/*
     app/main.py
     app/scheduler.py
     app/logging_config.py

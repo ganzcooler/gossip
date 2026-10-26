@@ -3,8 +3,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import date
-from pathlib import Path
-import io
 
 from app.services.protocol_processor import (
     process_protocols_job,

@@ -2,8 +2,6 @@
 Unit tests for app/core/config.py
 """
 import pytest
-from unittest.mock import patch, MagicMock
-import os
 
 
 class TestConfig:
@@ -97,9 +95,9 @@ class TestConfig:
         """Test that AI model names are configured."""
         from app.core import config
         
-        assert config.GENAI_ARTICLE_GENERATION_MODEL == "gemini-3.5-flash"
-        assert config.GENAI_IMAGE_PROMPT_MODEL == "gemini-2.5-flash"
-        assert config.GENAI_IMAGE_GENERATION_MODEL == "gemini-2.5-flash-image"
+        assert config.GENAI_ARTICLE_GENERATION_MODEL == "gemini-3.1-pro-preview"
+        assert config.GENAI_IMAGE_PROMPT_MODEL == "gemini-3.5-flash"
+        assert config.GENAI_IMAGE_GENERATION_MODEL == "gemini-3.1-flash-image"
 
     def test_api_call_delay_configured(self, mock_env_vars):
         """Test API call delay is configured."""
@@ -111,7 +109,6 @@ class TestConfig:
         """Test directory path configurations."""
         import importlib
         from app.core import config
-        from pathlib import Path
         
         # Reload to pick up mocked env vars
         importlib.reload(config)

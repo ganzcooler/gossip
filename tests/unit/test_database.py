@@ -1,7 +1,7 @@
 """Tests for database module."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, create_tables, init_db, engine, AsyncSessionLocal, Base
@@ -81,7 +81,7 @@ class TestCreateTables:
         """Test that create_tables imports models (coverage for import statements)."""
         # This test verifies the function structure and imports
         # The actual DB calls are hard to mock due to SQLAlchemy's async API
-        with patch('app.database.Base') as mock_base:
+        with patch('app.database.Base'):
             with patch('app.database.engine'):
                 with patch('app.models.Protocol'):  # Verify models are imported
                     with patch('app.models.Article'):
