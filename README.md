@@ -11,10 +11,11 @@ PostgreSQL and an in-process APScheduler.
    extracts their text with PyMuPDF.
 2. **Deduplicate** — compares new protocols against the previous 90 days using
    a 95% text-similarity threshold.
-3. **Generate articles** — sends protocol text to Google Gemini and validates
-   the response against a structured article schema.
+3. **Generate articles** — sends protocol text to DeepSeek V4.1 Flash via
+   OpenRouter and validates the response against a structured article schema.
 4. **Generate images** — creates an image prompt, verifies/rewrites it for a
-   realistic style, and generates the image with Gemini's image model.
+   realistic style, and generates the image with Gemini 3.1 Flash Image
+   (Nano Banana 2) via OpenRouter.
 5. **Render Instagram assets** — generates captions and 4:5 images with the
    headline, logo, and protocol tag overlaid.
 6. **Persist and serve** — stores protocols/articles in PostgreSQL, writes
@@ -30,10 +31,10 @@ through the API.
 SessionNet ──▶ Protocol fetcher ──▶ PostgreSQL
                                       │
                                       ▼
-                              Article generator ──▶ Gemini
+                              Article generator ──▶ OpenRouter
                                       │
                                       ▼
-                              Image generator ─────▶ Gemini image model
+                              Image generator ─────▶ OpenRouter
                                       │
                                       ▼
                               Instagram renderer ──▶ articles/ + DB
@@ -53,7 +54,7 @@ app/
 ├── core/
 │   ├── config.py              Environment-backed settings
 │   ├── models.py              Pydantic response models
-│   ├── prompts.py             Gemini prompts
+│   ├── prompts.py             LLM prompts
 │   └── tags.py                Protocol-to-tag mapping
 ├── database.py                Async SQLAlchemy engine/session
 ├── main.py                    FastAPI entry point and lifespan
@@ -62,8 +63,8 @@ app/
 ├── services/
 │   ├── protocol_fetcher.py    SessionNet scraping and PDF ingestion
 │   ├── protocol_processor.py  Orchestrates article/image/Instagram creation
-│   ├── article_generator.py   Gemini article generation
-│   ├── image_generator.py     Gemini image generation
+│   ├── article_generator.py   OpenRouter article generation
+│   ├── image_generator.py     OpenRouter image generation
 │   ├── caption_generator.py   Instagram captions
 │   ├── insta_generator.py     Instagram image rendering
 │   ├── insta_job.py           Batch Instagram generation
@@ -91,7 +92,7 @@ Prerequisites: Docker, Docker Compose, and the external networks used by
 
 ```bash
 cp .env.example .env
-# Edit .env: at minimum set GOOGLE_API_KEY and a real DB_PASSWORD.
+# Edit .env: at minimum set OPENROUTER_API_KEY and a real DB_PASSWORD.
 
 docker network create traefik-proxy   # skip if it already exists
 docker network create gossip-net      # skip if it already exists
@@ -99,8 +100,9 @@ docker compose up -d --build
 ```
 
 The application listens on port 8000 inside the Compose network and is routed
-by Traefik at the configured host. The host paths for article and log output
-are set in `docker-compose.yaml`; adjust them for your deployment.
+by Traefik at the configured host. The host directory for article and log
+output is set with `GOSSIP_DATA_DIR` in `.env`; the default is `./data`.
+For the existing deployment, set it to `/home/openclaw/data/gossip`.
 
 ## Local development
 
@@ -134,12 +136,16 @@ Configuration is read from `.env` (see `.env.example`):
 | --- | --- |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | PostgreSQL connection |
 | `DATABASE_URL` | Optional full SQLAlchemy URL; overrides the `DB_*` values |
-| `GOOGLE_API_KEY` | Google GenAI API key |
+| `OPENROUTER_API_KEY` | OpenRouter API key |
+| `OPENROUTER_TEXT_MODEL` | Text model (default: `deepseek/deepseek-v4.1-flash-1017`) |
+| `OPENROUTER_IMAGE_MODEL` | Image model (default: `google/gemini-3.1-flash-image`) |
+| `OPENROUTER_REASONING_EFFORT` | Reasoning effort for text calls (default: `max`) |
 | `SESSIONNET_BASE_URL` | SessionNet base URL |
 | `TRAEFIK_HOST` | Public hostname used by the deployment |
 | `LOG_LEVEL` | Python log level (`INFO` by default) |
-| `ARTICLES_DIR` | Output directory for articles and generated images |
-| `LOGS_DIR` | Log output directory |
+| `GOSSIP_DATA_DIR` | Host directory for article and log output (Compose only; default `./data`) |
+| `ARTICLES_DIR` | Output directory for articles and generated images (container path) |
+| `LOGS_DIR` | Log output directory (container path) |
 
 ## API
 
@@ -159,7 +165,7 @@ Configuration is read from `.env` (see `.env.example`):
 | `GET` | `/docs` | Swagger UI |
 
 The pipeline endpoints call the same jobs as the scheduler and can take a long
-time when Gemini is involved. They are currently unauthenticated; restrict
+time when OpenRouter is involved. They are currently unauthenticated; restrict
 access at the reverse proxy or add authentication before exposing the service
 publicly.
 
@@ -178,7 +184,7 @@ worker first.
 
 ```bash
 pytest -m "not manual"   # standard test suite
-pytest -m manual         # real Gemini calls; requires GOOGLE_API_KEY
+pytest -m manual         # real OpenRouter calls; requires OPENROUTER_API_KEY
 ruff check .
 ```
 
@@ -188,7 +194,10 @@ only be run when you intend to spend API credits.
 ## Operational notes
 
 - The application writes generated articles and images to `ARTICLES_DIR` and
-  logs to `LOGS_DIR`. Both are bind-mounted in `docker-compose.yaml`.
+  monthly logs to `LOGS_DIR`. Both live under `GOSSIP_DATA_DIR` and are
+  bind-mounted in `docker-compose.yaml`.
+- Docker JSON logs are capped at 10 MB across 3 files; the monthly file logs
+  are kept separately so they survive container rebuilds.
 - PostgreSQL is only reachable on the internal Compose network.
 - The Compose router uses the `web` entrypoint; TLS is expected to terminate
   at the Cloudflare/Traefik edge. Verify the entrypoint against your actual
