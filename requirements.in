@@ -1,6 +1,5 @@
 # Runtime dependencies (source list).
 # The pinned lock file is requirements.txt.
-google-genai
 python-dotenv
 beautifulsoup4
 PyMuPDF

@@ -3,12 +3,21 @@ Manual tests for image generation with real API calls.
 
 Run: pytest -m manual
 """
+import os
+
 import pytest
 
 from app.services.image_generator import generate_image
 
+pytestmark = [
+    pytest.mark.manual,
+    pytest.mark.skipif(
+        not os.getenv("OPENROUTER_API_KEY"),
+        reason="requires OPENROUTER_API_KEY for a real OpenRouter call",
+    ),
+]
 
-@pytest.mark.manual
+
 def test_generate_image_real_api_call():
     """Test that generate_image returns non-empty bytes from a real API call."""
     prompt = (
@@ -25,7 +34,6 @@ def test_generate_image_real_api_call():
     )
 
 
-@pytest.mark.manual
 def test_generate_image_returns_valid_image_data():
     """Test that the generated image data has valid image magic bytes."""
     prompt = "A simple blue square on white background"

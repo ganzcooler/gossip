@@ -126,10 +126,16 @@ generated_images/
 logs/
 extracted_texts/
 insta_images/
+data/
 
 # Obsolete directories (if any remnants)
 # chroma_db/ # ChromaDB has been removed
 
-# Agent skills (installed locally, not committed)
+# Agent skills and generated working docs (local, not committed)
 .agents/
 skills-lock.json
+.scratch/
+GLOSSARY.md
+GLOSSARY-MAP.md
+docs/adr/
+docs/agents/

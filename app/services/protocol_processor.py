@@ -93,18 +93,41 @@ async def process_protocol(protocol: Protocol, db_session: AsyncSession):
 
     # Step 2: Process each article
     protocol_folder = None  # Will be set lazily when first article is saved
+    image_failures = 0
+    image_successes = 0
     for index, article_data in enumerate(articles, start=1):
         try:
-            protocol_folder = await process_single_article(
+            protocol_folder, image_saved = await process_single_article(
                 protocol=protocol,
                 article_data=article_data,
                 article_index=index,
                 protocol_folder=protocol_folder,
                 db_session=db_session
             )
+            if image_saved:
+                image_successes += 1
+            else:
+                image_failures += 1
+        except AuthenticationError:
+            raise
         except Exception as e:
+            image_failures += 1
             logger.error(f"Error processing article {index} for protocol {protocol.id}: {e}")
             continue
+
+    logger.debug(
+        f"Protocol {protocol.id}: {image_successes} image(s) generated, "
+        f"{image_failures} failed."
+    )
+
+    if image_failures:
+        logger.warning(
+            f"Protocol {protocol.id}: {image_failures} of {len(articles)} article "
+            "images failed; leaving protocol unprocessed for retry."
+        )
+        protocol.processed = False
+        await db_session.commit()
+        return
 
     # Step 3: Create Instagram images for all articles in this protocol
     # Only if we have a valid protocol_folder (at least one image was generated)
@@ -145,10 +168,10 @@ async def process_single_article(
     article_index: int,
     protocol_folder: Path | None,
     db_session: AsyncSession
-) -> Path | None:
+) -> tuple[Path | None, bool]:
     """
     Process a single article: save HTML, generate image, create Instagram content.
-    Returns the protocol_folder path (created if needed).
+    Returns the protocol_folder path and whether an image was saved.
     """
     logger.debug(f"Processing article {article_index}: {article_data.ueberschrift}")
 
@@ -171,7 +194,7 @@ async def process_single_article(
 
     if not image_bytes:
         logger.warning(f"No image generated for article {article_index}")
-        return protocol_folder  # Return existing folder path to avoid recreating it
+        return protocol_folder, False
 
     # Step 2c: Save image (folder will be created lazily if needed)
     image_path = save_image_to_file(
@@ -195,7 +218,7 @@ async def process_single_article(
         logger.debug(f"Saved caption to database for article {article_index}")
 
     logger.debug(f"Successfully processed article {article_index}: {article_data.ueberschrift}")
-    return protocol_folder
+    return protocol_folder, True
 
 
 def save_image_to_file(
@@ -287,45 +310,73 @@ async def _process_existing_protocol(
         folder_name = f"{protocol.session_date.strftime('%y%m%d')}_{normalized}"
         protocol_folder = ARTICLES_DIR / folder_name
 
-    # Check if images exist in the folder
-    existing_images = list(protocol_folder.glob("image_*.jpg")) + list(protocol_folder.glob("image_*.png"))
+    # Regenerate only the images that are actually missing.
+    existing_images = list(protocol_folder.glob("image_*.jpg")) + list(
+        protocol_folder.glob("image_*.png")
+    )
+    logger.debug(
+        f"Found {len(existing_images)} existing images for protocol {protocol.id}"
+    )
 
-    if not existing_images:
-        logger.info(f"No images found for protocol {protocol.id}. Regenerating images...")
-        loop = asyncio.get_event_loop()
+    image_failures = 0
+    loop = asyncio.get_event_loop()
 
-        # Regenerate images for each article
-        for article in existing_articles:
-            try:
-                # Parse article content to get the data needed for image generation
-                content = article.content
-                # Extract title from h1 tag
-                h1_match = re.search(r'<h1>(.*?)</h1>', content)
-                title = h1_match.group(1) if h1_match else f"Article {article.article_index}"
+    for article in existing_articles:
+        expected_images = [
+            protocol_folder / f"image_{article.article_index:02d}.jpg",
+            protocol_folder / f"image_{article.article_index:02d}.png",
+        ]
+        if any(path.exists() for path in expected_images):
+            continue
 
-                # Create SingleArticle for image generation
-                article_data = SingleArticle(ueberschrift=title, inhalt=content)
+        try:
+            # Parse article content to get the data needed for image generation
+            content = article.content
+            # Extract title from h1 tag
+            h1_match = re.search(r'<h1>(.*?)</h1>', content)
+            title = h1_match.group(1) if h1_match else f"Article {article.article_index}"
 
-                # Generate image
-                prompt, image_bytes = await loop.run_in_executor(
-                    None, generate_image_for_article, article_data
+            # Create SingleArticle for image generation
+            article_data = SingleArticle(ueberschrift=title, inhalt=content)
+
+            # Generate image
+            prompt, image_bytes = await loop.run_in_executor(
+                None, generate_image_for_article, article_data
+            )
+
+            if image_bytes:
+                save_image_to_file(
+                    image_bytes,
+                    protocol_folder,
+                    article.article_index,
+                    protocol.session_date,
+                    protocol.title
+                )
+                logger.debug(f"Regenerated image for article {article.article_index}")
+            else:
+                image_failures += 1
+                logger.warning(
+                    f"No image generated for article {article.article_index} "
+                    f"of protocol {protocol.id}"
                 )
 
-                if image_bytes:
-                    save_image_to_file(
-                        image_bytes,
-                        protocol_folder,
-                        article.article_index,
-                        protocol.session_date,
-                        protocol.title
-                    )
-                    logger.debug(f"Regenerated image for article {article.article_index}")
+        except AuthenticationError:
+            raise
+        except Exception as e:
+            image_failures += 1
+            logger.error(
+                f"Error regenerating image for article {article.article_index}: {e}"
+            )
+            continue
 
-            except Exception as e:
-                logger.error(f"Error regenerating image for article {article.article_index}: {e}")
-                continue
-    else:
-        logger.debug(f"Found {len(existing_images)} existing images for protocol {protocol.id}")
+    if image_failures:
+        logger.warning(
+            f"Protocol {protocol.id}: {image_failures} article image(s) still "
+            "missing; leaving protocol unprocessed for retry."
+        )
+        protocol.processed = False
+        await db_session.commit()
+        return
 
     # Create Instagram images for all articles
     if protocol_folder.exists():

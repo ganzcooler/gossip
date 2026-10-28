@@ -67,7 +67,8 @@ def setup_logging():
 
     # Liste der nervigen Bibliotheken auf WARNING oder ERROR setzen
     logging.getLogger("httpcore").setLevel(logging.WARNING)
-    logging.getLogger("google_genai").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("PIL").setLevel(logging.INFO)
 
     return logging.getLogger(__name__)

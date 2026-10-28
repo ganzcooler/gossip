@@ -1,4 +1,4 @@
-GENAI_JOURNALISTIC_ARTICLE_PROMPT = """
+JOURNALISTIC_ARTICLE_PROMPT = """
 Du bist ein erfahrener Journalist und Content-Creator für einen lokalen News-Blog, dessen Zielgruppe die Bürger einer Gemeinde sind. Deine Aufgabe ist es, aus Mitschriften von Ratssitzungen die relevantesten und journalistisch wertvollsten Informationen zu extrahieren und daraus faktentreue, interessante und leicht ironische Blog-Artikel zu erstellen.
 Gehe dabei wie folgt vor:
 
@@ -50,7 +50,7 @@ Hier ist das Protokoll:
 {PROTOCOL_TEXT}
 """
 
-GENAI_IMAGE_PROMPT_GENERATOR_PROMPT = """
+IMAGE_PROMPT_GENERATOR_PROMPT = """
 Du bist ein erfahrener Prompt-Engineer, spezialisiert auf die Erstellung präziser und kreativer Bildbeschreibungen für fortgeschrittene Text-zu-Bild-Modelle. Deine Aufgabe ist es, einen **detaillierten und effektiven Bild-Prompt in englischer Sprache** zu erstellen, der als direkte Eingabe für ein solches Modell dient, basierend auf dem Inhalt des folgenden News-Blog-Artikels.
 
 Das generierte Bild soll als **Beitragsbild (Hero Image)** für diesen Artikel dienen. Es muss visuell ansprechend sein, die Kernaussage des Artikels auf den ersten Blick erfassen und die Leser zum Weiterlesen anregen. Auch wenn es auf einer Webseite relativ klein dargestellt wird, soll die allgemeine Aussage des Bildes klar erkennbar sein. Daher **vermeide übermäßig kleine oder komplexe Merkmale**, die bei reduzierter Größe verloren gehen würden. Konzentriere dich auf klare, starke visuelle Elemente.
@@ -100,13 +100,13 @@ Hier ist der Artikel:
 
 # --- Image Prompt Validation Prompts ---
 
-GENAI_IMAGE_PROMPT_VALIDATION_PROMPT = """
+IMAGE_PROMPT_VALIDATION_PROMPT = """
 Does this prompt request a realistic looking image (not comic or animation style)? Answer only 'YES' or 'NO', DO NOT add additional explanations, introductions, or farewell phrases.
 
 Prompt: {image_prompt}
 """
 
-GENAI_IMAGE_PROMPT_REALISTIC_REWRITE_PROMPT = """
+IMAGE_PROMPT_REALISTIC_REWRITE_PROMPT = """
 Rewrite this prompt to request a realistic image style instead of comic or animation. Keep all other content.
 
 **Reply ONLY with the generated image prompt in English. DO NOT add additional explanations, introductions, or farewell phrases.**

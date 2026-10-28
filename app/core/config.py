@@ -18,7 +18,7 @@ DATABASE_URL = os.getenv(
 )
 
 # API Keys
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # SessionNet
 SESSIONNET_BASE_URL = os.getenv(
@@ -37,19 +37,27 @@ ARTICLES_DIR = Path(os.getenv("ARTICLES_DIR", "/app/articles"))
 LOGS_DIR = Path(os.getenv("LOGS_DIR", "/app/logs"))
 
 
-# --- Model Names ---
-GENAI_ARTICLE_GENERATION_MODEL = "gemini-3.1-pro-preview"
-GENAI_IMAGE_PROMPT_MODEL = "gemini-3.5-flash"
-GENAI_CLASSIFICATION_MODEL = "gemini-3.1-flash-lite"
-GENAI_IMAGE_GENERATION_MODEL = "gemini-3.1-flash-image"
+# --- OpenRouter ---
+OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_TEXT_MODEL = os.getenv(
+    "OPENROUTER_TEXT_MODEL", "deepseek/deepseek-v4.1-flash-1017"
+)
+OPENROUTER_IMAGE_MODEL = os.getenv(
+    "OPENROUTER_IMAGE_MODEL", "google/gemini-3.1-flash-image"
+)
+OPENROUTER_REASONING_EFFORT = os.getenv("OPENROUTER_REASONING_EFFORT", "max")
+OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL", "https://gossip.dano1.de")
+OPENROUTER_APP_NAME = os.getenv("OPENROUTER_APP_NAME", "Gossip")
 
 # --- API Call Settings ---
 API_CALL_DELAY_SECONDS = 1
 
 
-def load_google_api_key():
-    """Loads the Google API Key from environment variables."""
-    api_key = os.getenv("GOOGLE_API_KEY")
+def load_openrouter_api_key():
+    """Loads the OpenRouter API key from environment variables."""
+    api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
-        raise ValueError("GOOGLE_API_KEY not found in .env file or environment variables.")
+        raise ValueError(
+            "OPENROUTER_API_KEY not found in .env file or environment variables."
+        )
     return api_key

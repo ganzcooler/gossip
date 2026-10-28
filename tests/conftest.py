@@ -24,7 +24,9 @@ def mock_env_vars(monkeypatch):
     # Get project root for test directories
     project_root = Path(__file__).parent.parent
     env_vars = {
-        "GOOGLE_API_KEY": "test-api-key",
+        "OPENROUTER_API_KEY": "test-api-key",
+        "OPENROUTER_TEXT_MODEL": "deepseek/deepseek-v4.1-flash-1017",
+        "OPENROUTER_IMAGE_MODEL": "google/gemini-3.1-flash-image",
         "DB_HOST": "localhost",
         "DB_PORT": "5432",
         "DB_NAME": "test_db",

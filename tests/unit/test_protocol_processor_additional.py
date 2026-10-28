@@ -125,7 +125,37 @@ class TestProcessSingleArticle:
                 mock_protocol, mock_article_data, 1, None, mock_db_session
             )
 
-            assert result is None
+            assert result == (None, False)
+
+    @pytest.mark.asyncio
+    async def test_process_single_article_success_returns_true(self, mock_db_session, tmp_path):
+        """Test that a saved image is reported as success."""
+        mock_protocol = MagicMock()
+        mock_protocol.id = 1
+        mock_protocol.session_date = date(2024, 1, 1)
+        mock_protocol.title = "Test"
+
+        mock_article_data = MagicMock()
+        mock_article_data.ueberschrift = "Test Title"
+        mock_article_data.inhalt = "<p>Content</p>"
+
+        image_path = tmp_path / "image_01.jpg"
+
+        with patch('app.services.protocol_processor.generate_image_for_article') as mock_gen_image:
+            mock_gen_image.return_value = ("prompt", b"image-bytes")
+
+            with patch('app.services.protocol_processor.save_image_to_file') as mock_save:
+                mock_save.return_value = image_path
+
+                with patch(
+                    'app.services.protocol_processor.generate_insta_caption',
+                    return_value="Caption",
+                ):
+                    result = await process_single_article(
+                        mock_protocol, mock_article_data, 1, None, mock_db_session
+                    )
+
+        assert result == (tmp_path, True)
 
     @pytest.mark.asyncio
     async def test_process_single_article_exception_during_processing(self, mock_db_session):
@@ -230,7 +260,7 @@ class TestProcessExistingProtocol:
     """Tests for _process_existing_protocol function."""
 
     @pytest.mark.asyncio
-    async def test_process_existing_protocol_regenerates_images(self, mock_db_session):
+    async def test_process_existing_protocol_regenerates_images(self, mock_db_session, tmp_path):
         """Test regenerating images when none exist."""
         mock_protocol = MagicMock()
         mock_protocol.id = 1
@@ -243,25 +273,26 @@ class TestProcessExistingProtocol:
         mock_article.caption = "Caption"
 
         existing_articles = [mock_article]
+        protocol_folder = tmp_path / "240101_test_protocol"
+        protocol_folder.mkdir()
 
         with patch('app.services.protocol_processor.create_protocol_folder') as mock_create:
-            mock_folder = MagicMock()
-            mock_folder.glob.return_value = []  # No existing images
-            mock_create.return_value = mock_folder
+            mock_create.return_value = protocol_folder
 
             with patch('app.services.protocol_processor.generate_image_for_article') as mock_gen:
                 mock_gen.return_value = ("prompt", b'image_bytes')
 
                 with patch('app.services.protocol_processor.save_image_to_file') as mock_save:
-                    mock_save.return_value = mock_folder / "image_01.jpg"
+                    mock_save.return_value = protocol_folder / "image_01.jpg"
 
                     with patch('app.services.protocol_processor.create_insta_images_for_protocol_async', new_callable=AsyncMock):
                         await _process_existing_protocol(mock_protocol, existing_articles, mock_db_session)
 
                         mock_gen.assert_called_once()
+                        assert mock_protocol.processed is True
 
     @pytest.mark.asyncio
-    async def test_process_existing_protocol_skips_image_regeneration(self, mock_db_session):
+    async def test_process_existing_protocol_skips_image_regeneration(self, mock_db_session, tmp_path):
         """Test skipping image regeneration when images exist."""
         mock_protocol = MagicMock()
         mock_protocol.id = 1
@@ -274,14 +305,97 @@ class TestProcessExistingProtocol:
         mock_article.caption = "Caption"
 
         existing_articles = [mock_article]
+        protocol_folder = tmp_path / "240101_test_protocol"
+        protocol_folder.mkdir()
+        (protocol_folder / "image_01.jpg").write_bytes(b"existing")
 
         with patch('app.services.protocol_processor.create_protocol_folder') as mock_create:
-            mock_folder = MagicMock()
-            mock_folder.glob.return_value = [mock_folder / "image_01.jpg"]  # Images exist
-            mock_create.return_value = mock_folder
+            mock_create.return_value = protocol_folder
 
             with patch('app.services.protocol_processor.generate_image_for_article') as mock_gen:
                 with patch('app.services.protocol_processor.create_insta_images_for_protocol_async', new_callable=AsyncMock):
                     await _process_existing_protocol(mock_protocol, existing_articles, mock_db_session)
 
                     mock_gen.assert_not_called()
+                    assert mock_protocol.processed is True
+
+    @pytest.mark.asyncio
+    async def test_process_existing_protocol_leaves_unprocessed_on_image_failure(
+        self, mock_db_session, tmp_path
+    ):
+        """Failed image generation must not mark the protocol as processed."""
+        mock_protocol = MagicMock()
+        mock_protocol.id = 55
+        mock_protocol.session_date = date(2026, 8, 26)
+        mock_protocol.title = "Jugendausschuss"
+
+        mock_article = MagicMock()
+        mock_article.article_index = 1
+        mock_article.content = "<h1>Title</h1><p>Content</p>"
+        mock_article.caption = None
+
+        protocol_folder = tmp_path / "260826_jugendausschuss"
+        protocol_folder.mkdir()
+
+        with patch('app.services.protocol_processor.create_protocol_folder') as mock_create:
+            mock_create.return_value = protocol_folder
+
+            with patch('app.services.protocol_processor.generate_image_for_article') as mock_gen:
+                mock_gen.return_value = ("prompt", b"")
+
+                with patch(
+                    'app.services.protocol_processor.create_insta_images_for_protocol_async',
+                    new_callable=AsyncMock,
+                ) as mock_insta:
+                    await _process_existing_protocol(
+                        mock_protocol, [mock_article], mock_db_session
+                    )
+
+                    assert mock_protocol.processed is False
+                    mock_db_session.commit.assert_awaited()
+                    mock_insta.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_process_existing_protocol_regenerates_only_missing_images(
+        self, mock_db_session, tmp_path
+    ):
+        """Only articles without an existing image should be regenerated."""
+        mock_protocol = MagicMock()
+        mock_protocol.id = 1
+        mock_protocol.session_date = date(2024, 1, 1)
+        mock_protocol.title = "Test Protocol"
+
+        article_one = MagicMock()
+        article_one.article_index = 1
+        article_one.content = "<h1>One</h1><p>Content</p>"
+        article_one.caption = None
+
+        article_two = MagicMock()
+        article_two.article_index = 2
+        article_two.content = "<h1>Two</h1><p>Content</p>"
+        article_two.caption = None
+
+        protocol_folder = tmp_path / "240101_test_protocol"
+        protocol_folder.mkdir()
+        (protocol_folder / "image_01.jpg").write_bytes(b"existing")
+
+        with patch('app.services.protocol_processor.create_protocol_folder') as mock_create:
+            mock_create.return_value = protocol_folder
+
+            with patch('app.services.protocol_processor.generate_image_for_article') as mock_gen:
+                mock_gen.return_value = ("prompt", b"image_bytes")
+
+                with patch('app.services.protocol_processor.save_image_to_file') as mock_save:
+                    mock_save.return_value = protocol_folder / "image_02.jpg"
+
+                    with patch(
+                        'app.services.protocol_processor.create_insta_images_for_protocol_async',
+                        new_callable=AsyncMock,
+                    ):
+                        await _process_existing_protocol(
+                            mock_protocol, [article_one, article_two], mock_db_session
+                        )
+
+        mock_gen.assert_called_once()
+        generated_article = mock_gen.call_args.args[0]
+        assert generated_article.ueberschrift == "Two"
