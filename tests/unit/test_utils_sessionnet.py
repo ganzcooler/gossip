@@ -1,7 +1,7 @@
 """
 Unit tests for app/utils/sessionnet.py
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from app.utils.sessionnet import calculate_sessionnet_params
@@ -27,14 +27,34 @@ class TestCalculateSessionnetParams:
         assert params["__cjahr"] == actual_six_months_ago.year
 
     def test_cmonat_is_six_months_ago(self):
-        """Test that __cmonat is set to month from 6 months ago."""
+        """Test that __cmonat matches the month 180 days ago."""
         params = calculate_sessionnet_params()
-        
-        now = datetime.now()
-        six_months_ago = now.replace(month=now.month - 6 if now.month > 6 else now.month + 6)
-        expected_month = six_months_ago.month
-        
+
+        expected_month = (datetime.now() - timedelta(days=180)).month
+
         assert params["__cmonat"] == expected_month
+
+    @patch('app.utils.sessionnet.datetime')
+    def test_cmonat_before_180_day_boundary(self, mock_datetime):
+        """2026-10-27 is still April when subtracting 180 days."""
+        mock_datetime.now.return_value = datetime(2026, 10, 27, 12, 0)
+        mock_datetime.timedelta = timedelta
+
+        params = calculate_sessionnet_params()
+
+        assert params["__cmonat"] == 4
+        assert params["__cjahr"] == 2026
+
+    @patch('app.utils.sessionnet.datetime')
+    def test_cmonat_at_180_day_boundary(self, mock_datetime):
+        """2026-10-28 crosses into May when subtracting 180 days."""
+        mock_datetime.now.return_value = datetime(2026, 10, 28, 12, 0)
+        mock_datetime.timedelta = timedelta
+
+        params = calculate_sessionnet_params()
+
+        assert params["__cmonat"] == 5
+        assert params["__cjahr"] == 2026
 
     def test_canz_is_twelve(self):
         """Test that __canz is set to 12."""
