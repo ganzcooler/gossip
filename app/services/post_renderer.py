@@ -8,6 +8,7 @@ structured error so the caller can repair the semantic slide plan.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
@@ -35,7 +36,7 @@ MUNICIPALITY_BADGE = "GEMEINDERAT ROSDORF"
 SUMMARY_FONTS = {
     "cover_headline": 86,
     "cover_kicker": 32,
-    "cover_badge": 26,
+    "cover_badge": 30,
     "content_number": 150,
     "content_label": 30,
     "content_headline": 62,
@@ -46,7 +47,7 @@ SUMMARY_FONTS = {
 TOPIC_FONTS = {
     "cover_headline": 80,
     "cover_kicker": 30,
-    "cover_badge": 24,
+    "cover_badge": 28,
     "content_number": 150,
     "content_label": 28,
     "content_headline": 54,
@@ -238,11 +239,21 @@ def _draw_badge(
     fill,
     top_right: tuple[int, int],
     *,
-    padding_x: int = 22,
-    padding_y: int = 12,
+    padding_x: int = 26,
+    padding_y: int = 14,
     tracking: float = 2.0,
+    max_width: int | None = 700,
+    min_font_size: int = 18,
 ) -> None:
+    text = text.upper()
     text_width = _tracked_width(draw, text, font, tracking)
+    if max_width is not None and text_width + 2 * padding_x > max_width:
+        base_size = getattr(font, "size", None)
+        if base_size:
+            available = max_width - 2 * padding_x
+            new_size = max(min_font_size, int(base_size * available / text_width))
+            font = font.font_variant(size=new_size)
+            text_width = _tracked_width(draw, text, font, tracking)
     ascent, descent = font.getmetrics()
     rect_width = int(text_width + 2 * padding_x)
     rect_height = ascent + descent + 2 * padding_y
@@ -297,6 +308,17 @@ def _save_jpeg(image: Image.Image, path: Path) -> Path:
     return path
 
 
+def _strip_session_label(text: str, session_label: str | None) -> str:
+    """Remove a leading committee label such as 'Ortsrat Obernjesa: '."""
+    if not session_label:
+        return text
+    label = session_label.strip()
+    if not label:
+        return text
+    cleaned = re.sub(rf"^\s*{re.escape(label)}\s*[:\-–—]\s*", "", text, flags=re.IGNORECASE)
+    return cleaned.strip() or text
+
+
 def _summary_background(cover_image: Image.Image) -> Image.Image:
     background = _prepare_image(cover_image, CANVAS_9_16)
     background = background.filter(ImageFilter.GaussianBlur(radius=28))
@@ -310,12 +332,17 @@ def render_summary_story(
     plan: SummarySlidePlan,
     output_dir: Path,
     res_dir: Path | None = None,
+    session_label: str | None = None,
 ) -> list[Path]:
     """Render the 9:16 summary cover and content slides."""
     res_dir = res_dir or Path(__file__).parent.parent / "res"
     paths: list[Path] = []
 
-    paths.append(_render_summary_cover(cover_image, plan, output_dir, res_dir))
+    paths.append(
+        _render_summary_cover(
+            cover_image, plan, output_dir, res_dir, session_label=session_label
+        )
+    )
 
     background = _summary_background(cover_image)
     total = len(plan.slides) + 1
@@ -338,6 +365,8 @@ def _render_summary_cover(
     plan: SummarySlidePlan,
     output_dir: Path,
     res_dir: Path,
+    *,
+    session_label: str | None = None,
 ) -> Path:
     image = _prepare_image(cover_image, CANVAS_9_16)
     image = _gradient(image, 0.48, 238)
@@ -349,10 +378,11 @@ def _render_summary_cover(
     badge_font = _font(res_dir, "oswald", SUMMARY_FONTS["cover_badge"])
     _draw_badge(
         draw,
-        MUNICIPALITY_BADGE,
+        session_label or MUNICIPALITY_BADGE,
         badge_font,
         BLUE,
         (CANVAS_9_16[0] - 72, 250),
+        max_width=700,
     )
 
     kicker_font = _font(res_dir, "oswald", SUMMARY_FONTS["cover_kicker"])
@@ -366,9 +396,10 @@ def _render_summary_cover(
 
     headline_font = _font(res_dir, "oswald", SUMMARY_FONTS["cover_headline"])
     headline_top = kicker_bottom + 34
+    cover_headline = _strip_session_label(plan.cover.headline, session_label)
     lines = _fit_lines(
         draw,
-        plan.cover.headline,
+        cover_headline,
         headline_font,
         max_width=900,
         max_height=1720 - headline_top,
@@ -473,6 +504,7 @@ def render_topic_carousel(
     output_dir: Path,
     post_index: int,
     res_dir: Path | None = None,
+    session_label: str | None = None,
 ) -> list[Path]:
     """Render the 4:5 cover and paired content slides for one topic post."""
     if len(artwork_images) != len(plan.pairs):
@@ -481,7 +513,16 @@ def render_topic_carousel(
         )
 
     res_dir = res_dir or Path(__file__).parent.parent / "res"
-    paths: list[Path] = [ _render_topic_cover(cover_image, plan, output_dir, post_index, res_dir) ]
+    paths: list[Path] = [
+        _render_topic_cover(
+            cover_image,
+            plan,
+            output_dir,
+            post_index,
+            res_dir,
+            session_label=session_label,
+        )
+    ]
 
     total = len(plan.pairs) * 2 + 1
     page = 2
@@ -515,6 +556,8 @@ def _render_topic_cover(
     output_dir: Path,
     post_index: int,
     res_dir: Path,
+    *,
+    session_label: str | None = None,
 ) -> Path:
     image = _prepare_image(cover_image, CANVAS_4_5)
     image = _gradient(image, 0.50, 238)
@@ -526,10 +569,11 @@ def _render_topic_cover(
     badge_font = _font(res_dir, "oswald", TOPIC_FONTS["cover_badge"])
     _draw_badge(
         draw,
-        MUNICIPALITY_BADGE,
+        session_label or MUNICIPALITY_BADGE,
         badge_font,
         ORANGE,
         (CANVAS_4_5[0] - 72, 100),
+        max_width=700,
     )
 
     kicker_font = _font(res_dir, "oswald", TOPIC_FONTS["cover_kicker"])
@@ -543,9 +587,10 @@ def _render_topic_cover(
 
     headline_font = _font(res_dir, "oswald", TOPIC_FONTS["cover_headline"])
     headline_top = kicker_bottom + 32
+    cover_headline = _strip_session_label(plan.cover.headline, session_label)
     lines = _fit_lines(
         draw,
-        plan.cover.headline,
+        cover_headline,
         headline_font,
         max_width=900,
         max_height=4 * _line_height(headline_font, 8),
@@ -570,22 +615,29 @@ def _render_topic_content(
     panel_side: str,
     res_dir: Path,
 ) -> Image.Image:
-    canvas = Image.new("RGB", CANVAS_4_5, CHARCOAL)
-    artwork = _prepare_image(artwork, CANVAS_4_5)
+    # The generated artwork is a wide two-page spread. Split it into two
+    # full-page 4:5 pages; each slide uses one page as its full-page background
+    # and overlays the text panel on the outer half. The visible inner halves
+    # meet at the slide boundary and continue seamlessly when the reader swipes.
+    spread = _prepare_image(artwork, (CANVAS_4_5[0] * 2, CANVAS_4_5[1]))
+    page_left = spread.crop((0, 0, CANVAS_4_5[0], CANVAS_4_5[1]))
+    page_right = spread.crop((CANVAS_4_5[0], 0, CANVAS_4_5[0] * 2, CANVAS_4_5[1]))
 
     if panel_side == "left":
+        canvas = page_left
         panel_color = ORANGE
-        image_half = artwork.crop((0, 0, PANEL_WIDTH, CANVAS_4_5[1]))
-        canvas.paste(panel_color, (0, 0, PANEL_WIDTH, CANVAS_4_5[1]))
-        canvas.paste(image_half, (PANEL_WIDTH, 0))
+        ImageDraw.Draw(canvas).rectangle(
+            [(0, 0), (PANEL_WIDTH, CANVAS_4_5[1])], fill=panel_color
+        )
         text_x = 60
         panel_x = 0
         accent = WHITE
     else:
+        canvas = page_right
         panel_color = CHARCOAL
-        image_half = artwork.crop((PANEL_WIDTH, 0, CANVAS_4_5[0], CANVAS_4_5[1]))
-        canvas.paste(image_half, (0, 0))
-        canvas.paste(panel_color, (PANEL_WIDTH, 0, CANVAS_4_5[0], CANVAS_4_5[1]))
+        ImageDraw.Draw(canvas).rectangle(
+            [(PANEL_WIDTH, 0), (CANVAS_4_5[0], CANVAS_4_5[1])], fill=panel_color
+        )
         text_x = 600
         panel_x = PANEL_WIDTH
         accent = ORANGE

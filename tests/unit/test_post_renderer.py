@@ -13,7 +13,11 @@ from app.core.post_models import (
     TopicSlidePlan,
 )
 from app.services.errors import TextOverflowError
-from app.services.post_renderer import render_summary_story, render_topic_carousel
+from app.services.post_renderer import (
+    _strip_session_label,
+    render_summary_story,
+    render_topic_carousel,
+)
 
 RES_DIR = Path(__file__).resolve().parents[2] / "app" / "res"
 
@@ -115,7 +119,7 @@ def test_render_summary_story_creates_cover_and_content_slides(tmp_path):
 def test_render_topic_carousel_creates_paired_slides(tmp_path):
     paths = render_topic_carousel(
         cover_image=_image(),
-        artwork_images=[_image(), _image()],
+        artwork_images=[_image((1920, 1080)), _image((1920, 1080))],
         plan=_topic_plan(),
         output_dir=tmp_path,
         post_index=1,
@@ -145,3 +149,20 @@ def test_summary_renderer_rejects_overlong_body_without_shrinking(tmp_path):
             output_dir=tmp_path,
             res_dir=RES_DIR,
         )
+
+
+def test_strip_session_label_removes_leading_committee():
+    assert (
+        _strip_session_label(
+            "Ortsrat Obernjesa: Haushalt, Windpark, Radwege",
+            "Ortsrat Obernjesa",
+        )
+        == "Haushalt, Windpark, Radwege"
+    )
+    assert (
+        _strip_session_label(
+            "Haushalt, Windpark, Radwege",
+            "Ortsrat Obernjesa",
+        )
+        == "Haushalt, Windpark, Radwege"
+    )

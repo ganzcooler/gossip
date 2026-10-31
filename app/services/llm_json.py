@@ -68,6 +68,7 @@ def call_json(
     *,
     prompt: str,
     model: Type[T],
+    call_label: str | None = None,
     max_tokens: int = 8192,
     temperature: float | None = None,
     reasoning_effort: str | None = "medium",
@@ -75,6 +76,7 @@ def call_json(
     timeout: float = 180.0,
 ) -> T:
     """Run one prompt and validate the response against a Pydantic model."""
+    label = call_label or model.__name__
     response_format = {
         "type": "json_schema",
         "json_schema": {
@@ -86,7 +88,17 @@ def call_json(
 
     last_error: Exception | None = None
     for attempt in range(max_retries):
+        started = time.monotonic()
         try:
+            logger.info(
+                "LLM call %s start model=%s reasoning=%s max_tokens=%s attempt=%s/%s",
+                label,
+                config.OPENROUTER_TEXT_MODEL,
+                reasoning_effort or "off",
+                max_tokens,
+                attempt + 1,
+                max_retries,
+            )
             raw = openrouter_client.chat_completion(
                 model=config.OPENROUTER_TEXT_MODEL,
                 prompt=prompt,
@@ -101,8 +113,8 @@ def call_json(
 
             if not raw:
                 logger.warning(
-                    "Structured call %s returned an empty response on attempt %s/%s",
-                    model.__name__,
+                    "LLM call %s returned an empty response on attempt %s/%s",
+                    label,
                     attempt + 1,
                     max_retries,
                 )
@@ -110,14 +122,22 @@ def call_json(
                     time.sleep(config.API_CALL_DELAY_SECONDS)
                 continue
 
-            return model.model_validate_json(strip_code_fences(raw))
+            parsed = model.model_validate_json(strip_code_fences(raw))
+            logger.info(
+                "LLM call %s ok in %.2fs chars=%s",
+                label,
+                time.monotonic() - started,
+                len(raw),
+            )
+            return parsed
 
         except Exception as exc:
             logger.error(
-                "Structured call %s failed on attempt %s/%s: %s",
-                model.__name__,
+                "LLM call %s failed on attempt %s/%s after %.2fs: %s",
+                label,
                 attempt + 1,
                 max_retries,
+                time.monotonic() - started,
                 exc,
                 exc_info=True,
             )
@@ -136,6 +156,7 @@ def call_json(
 def call_text(
     *,
     prompt: str,
+    call_label: str | None = None,
     max_tokens: int = 2048,
     temperature: float | None = None,
     reasoning_effort: str | None = "medium",
@@ -143,9 +164,20 @@ def call_text(
     timeout: float = 180.0,
 ) -> str:
     """Run one prompt and return plain text, with retries and auth handling."""
+    label = call_label or "text"
     last_error: Exception | None = None
     for attempt in range(max_retries):
+        started = time.monotonic()
         try:
+            logger.info(
+                "LLM call %s start model=%s reasoning=%s max_tokens=%s attempt=%s/%s",
+                label,
+                config.OPENROUTER_TEXT_MODEL,
+                reasoning_effort or "off",
+                max_tokens,
+                attempt + 1,
+                max_retries,
+            )
             raw = openrouter_client.chat_completion(
                 model=config.OPENROUTER_TEXT_MODEL,
                 prompt=prompt,
@@ -157,17 +189,26 @@ def call_text(
                 },
             )
             if raw:
+                logger.info(
+                    "LLM call %s ok in %.2fs chars=%s",
+                    label,
+                    time.monotonic() - started,
+                    len(raw),
+                )
                 return raw.strip()
             logger.warning(
-                "Text call returned an empty response on attempt %s/%s",
+                "LLM call %s returned an empty response on attempt %s/%s",
+                label,
                 attempt + 1,
                 max_retries,
             )
         except Exception as exc:
             logger.error(
-                "Text call failed on attempt %s/%s: %s",
+                "LLM call %s failed on attempt %s/%s after %.2fs: %s",
+                label,
                 attempt + 1,
                 max_retries,
+                time.monotonic() - started,
                 exc,
                 exc_info=True,
             )

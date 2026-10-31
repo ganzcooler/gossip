@@ -33,7 +33,13 @@ def generate_summary_cover_prompt(article: ArticleDraft, cover: CoverPlan) -> st
         ARTICLE_JSON=article.model_dump_json(indent=2),
     )
     return _ensure_photorealistic(
-        call_text(prompt=prompt, max_tokens=1024, temperature=0.8, reasoning_effort=None)
+        call_text(
+            prompt=prompt,
+            call_label="summary_cover_prompt",
+            max_tokens=1024,
+            temperature=0.8,
+            reasoning_effort=None,
+        )
     )
 
 
@@ -44,7 +50,13 @@ def generate_topic_cover_prompt(article: ArticleDraft, cover: CoverPlan) -> str:
         ARTICLE_JSON=article.model_dump_json(indent=2),
     )
     return _ensure_photorealistic(
-        call_text(prompt=prompt, max_tokens=1024, temperature=0.8, reasoning_effort=None)
+        call_text(
+            prompt=prompt,
+            call_label="topic_cover_prompt",
+            max_tokens=1024,
+            temperature=0.8,
+            reasoning_effort=None,
+        )
     )
 
 
@@ -57,7 +69,13 @@ def generate_topic_artwork_prompt(
         ARTICLE_JSON=article.model_dump_json(indent=2),
     )
     return _ensure_photorealistic(
-        call_text(prompt=prompt, max_tokens=1024, temperature=0.8, reasoning_effort=None)
+        call_text(
+            prompt=prompt,
+            call_label="topic_artwork_prompt",
+            max_tokens=1024,
+            temperature=0.8,
+            reasoning_effort=None,
+        )
     )
 
 
@@ -72,6 +90,7 @@ def generate_topic_caption(
     return call_json(
         prompt=prompt,
         model=CaptionResult,
+        call_label="topic_caption",
         max_tokens=512,
         temperature=0.6,
         reasoning_effort=None,
@@ -80,7 +99,13 @@ def generate_topic_caption(
 
 def generate_image_bytes(prompt: str, aspect_ratio: str) -> bytes:
     """Generate one image and fail loudly when the provider returns nothing."""
+    logger.info(
+        "Image generation start aspect=%s prompt_chars=%s", aspect_ratio, len(prompt)
+    )
     image_bytes = generate_image(prompt, aspect_ratio=aspect_ratio)
     if not image_bytes:
         raise PostGenerationError(f"Image generation returned no data for {aspect_ratio}")
+    logger.info(
+        "Image generation ok aspect=%s bytes=%s", aspect_ratio, len(image_bytes)
+    )
     return image_bytes

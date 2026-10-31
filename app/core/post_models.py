@@ -42,6 +42,7 @@ class TopicBrief(BaseModel):
 class EditorialPlan(BaseModel):
     """The editorial plan for one protocol."""
 
+    session_label: Optional[str] = None
     summary: SummaryBrief
     topics: List[TopicBrief]
 

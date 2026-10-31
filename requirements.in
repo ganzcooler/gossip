@@ -8,6 +8,7 @@ Pillow
 fastapi
 uvicorn
 sqlalchemy
+alembic
 asyncpg
 apscheduler
 httpx

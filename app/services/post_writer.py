@@ -26,6 +26,7 @@ def write_summary_article(
     return call_json(
         prompt=prompt,
         model=ArticleDraft,
+        call_label="summary_writer",
         max_tokens=16384,
         temperature=0.7,
     )
@@ -42,6 +43,7 @@ def write_topic_article(protocol_text: str, topic_brief: TopicBrief) -> ArticleD
     return call_json(
         prompt=prompt,
         model=ArticleDraft,
+        call_label=f"topic_writer:{topic_brief.slug}",
         max_tokens=16384,
         temperature=0.7,
     )
@@ -63,6 +65,7 @@ def repair_article(
     return call_json(
         prompt=prompt,
         model=ArticleDraft,
+        call_label="article_repair",
         max_tokens=16384,
         temperature=0.5,
     )

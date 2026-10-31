@@ -42,6 +42,7 @@ class Protocol(Base):
     id = Column(Integer, primary_key=True, index=True)
     session_date = Column(Date, nullable=False)
     title = Column(Text, nullable=False)
+    session_label = Column(Text, nullable=True)
     getfile_id = Column(Integer, nullable=False, unique=True)
     pdf_text = Column(Text, nullable=False)
     processed = Column(Boolean, default=False)

@@ -85,17 +85,21 @@ def _protocol_folder(protocol: Protocol) -> Path:
 
 async def process_protocol_posts(protocol: Protocol, db_session: AsyncSession) -> None:
     """Generate and render every planned post for one protocol."""
-    logger.debug("Processing protocol %s with the post pipeline", protocol.id)
+    logger.info(
+        "Post pipeline started for protocol %s (session=%s)",
+        protocol.id,
+        protocol.session_label or "unknown",
+    )
     folder = _protocol_folder(protocol)
     plan = await _get_or_create_plan(protocol, db_session)
 
     await _ensure_summary_post(protocol, plan.summary, folder, db_session)
-    logger.debug("Summary post is ready for protocol %s", protocol.id)
+    logger.info("Summary post is ready for protocol %s", protocol.id)
 
     for index, topic in enumerate(plan.topics, start=1):
         try:
             await _ensure_topic_post(protocol, topic, index, folder, db_session)
-            logger.debug(
+            logger.info(
                 "Topic post %s (%s) is ready for protocol %s",
                 index,
                 topic.slug,
@@ -135,9 +139,14 @@ async def _get_or_create_plan(
     )
     record = result.scalar_one_or_none()
     if record is not None:
-        return EditorialPlan.model_validate(record.plan_json)
+        plan = EditorialPlan.model_validate(record.plan_json)
+        if plan.session_label and protocol.session_label != plan.session_label:
+            protocol.session_label = plan.session_label
+            await db_session.commit()
+        return plan
 
     plan = await _run_sync(plan_editorial, protocol.pdf_text)
+    protocol.session_label = plan.session_label
     record = EditorialPlanRecord(
         protocol_id=protocol.id,
         plan_json=plan.model_dump(mode="json"),
@@ -233,7 +242,13 @@ async def _ensure_summary_post(
     )
 
     paths, plan = await _render_summary_with_repair(
-        post, article, plan, cover_path, folder, db_session
+        post,
+        article,
+        plan,
+        cover_path,
+        folder,
+        db_session,
+        session_label=protocol.session_label,
     )
     await _upsert_rendered_assets(post, paths, db_session)
     post.status = PostStatus.READY
@@ -286,9 +301,11 @@ async def _ensure_topic_post(
     for pair_index, pair in enumerate(plan.pairs, start=1):
         path, _ = await _ensure_asset_image(
             post,
-            role=f"artwork_{pair_index:02d}",
+            # v2 marks the switch from a 4:5 half-image to a 16:9 two-page
+            # spread, so existing 4:5 artwork is not reused.
+            role=f"artwork_v2_{pair_index:02d}",
             prompt_factory=lambda pair=pair: generate_topic_artwork_prompt(article, pair),
-            aspect_ratio="4:5",
+            aspect_ratio="16:9",
             folder=folder,
             filename=f"topic_{post_index:02d}_artwork_{pair_index:02d}_source.png",
             db_session=db_session,
@@ -309,6 +326,7 @@ async def _ensure_topic_post(
         folder,
         post_index,
         db_session,
+        session_label=protocol.session_label,
     )
     await _upsert_rendered_assets(post, paths, db_session)
     post.status = PostStatus.READY
@@ -330,8 +348,15 @@ async def _ensure_article(
         except ValidationError:
             logger.warning("Stored article for post %s is invalid; rewriting", post.slug)
 
+    logger.info("Writing article for post %s", post.slug)
     article = await _run_sync(writer, protocol.pdf_text, brief)
     fact_check = await _run_sync(fact_check_article, protocol.pdf_text, article)
+    logger.info(
+        "Fact-check %s: verdict=%s issues=%s",
+        post.slug,
+        fact_check.verdict,
+        len(fact_check.issues),
+    )
 
     if fact_check.verdict == "needs_repair":
         logger.info("Repairing article %s after fact-check", post.slug)
@@ -483,6 +508,8 @@ async def _render_summary_with_repair(
     cover_path: Path,
     folder: Path,
     db_session: AsyncSession,
+    *,
+    session_label: str | None = None,
 ) -> tuple[list[Path], SummarySlidePlan]:
     for attempt in range(2):
         try:
@@ -493,6 +520,7 @@ async def _render_summary_with_repair(
                     plan=plan,
                     output_dir=folder,
                     res_dir=RES_DIR,
+                    session_label=session_label,
                 )
             return paths, plan
         except TextOverflowError as exc:
@@ -516,6 +544,7 @@ async def _render_summary_with_repair(
             plan=plan,
             output_dir=folder,
             res_dir=RES_DIR,
+            session_label=session_label,
         )
     return paths, plan
 
@@ -529,6 +558,8 @@ async def _render_topic_with_repair(
     folder: Path,
     post_index: int,
     db_session: AsyncSession,
+    *,
+    session_label: str | None = None,
 ) -> tuple[list[Path], TopicSlidePlan]:
     for attempt in range(2):
         try:
@@ -545,6 +576,7 @@ async def _render_topic_with_repair(
                     output_dir=folder,
                     post_index=post_index,
                     res_dir=RES_DIR,
+                    session_label=session_label,
                 )
             return paths, plan
         except TextOverflowError as exc:
@@ -570,6 +602,7 @@ async def _render_topic_with_repair(
             output_dir=folder,
             post_index=post_index,
             res_dir=RES_DIR,
+            session_label=session_label,
         )
     return paths, plan
 

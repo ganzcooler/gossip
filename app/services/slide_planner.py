@@ -99,6 +99,7 @@ def plan_summary_slides(
         plan = call_json(
             prompt=prompt,
             model=SummarySlidePlan,
+            call_label="summary_slide_plan",
             max_tokens=4096,
             temperature=0.4,
             reasoning_effort=None,
@@ -127,6 +128,7 @@ def plan_topic_slides(
         plan = call_json(
             prompt=prompt,
             model=TopicSlidePlan,
+            call_label="topic_slide_plan",
             max_tokens=4096,
             temperature=0.4,
             reasoning_effort=None,
@@ -157,6 +159,7 @@ def repair_summary_slides(
         repaired = call_json(
             prompt=prompt,
             model=SummarySlidePlan,
+            call_label="summary_slide_repair",
             max_tokens=4096,
             temperature=0.3,
             reasoning_effort=None,
@@ -185,6 +188,7 @@ def repair_topic_slides(
         repaired = call_json(
             prompt=prompt,
             model=TopicSlidePlan,
+            call_label="topic_slide_repair",
             max_tokens=4096,
             temperature=0.3,
             reasoning_effort=None,
