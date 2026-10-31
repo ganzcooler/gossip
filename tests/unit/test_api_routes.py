@@ -240,8 +240,20 @@ class TestGetStats:
         
         mock_articles = MagicMock()
         mock_articles.scalar.return_value = 15
-        
-        mock_session.execute.side_effect = [mock_total, mock_processed, mock_articles]
+
+        mock_posts = MagicMock()
+        mock_posts.scalar.return_value = 5
+
+        mock_ready_posts = MagicMock()
+        mock_ready_posts.scalar.return_value = 4
+
+        mock_session.execute.side_effect = [
+            mock_total,
+            mock_processed,
+            mock_articles,
+            mock_posts,
+            mock_ready_posts,
+        ]
         
         async def override_get_db():
             yield mock_session
@@ -257,6 +269,8 @@ class TestGetStats:
             assert "processed_protocols" in data
             assert "unprocessed_protocols" in data
             assert "total_articles" in data
+            assert "total_posts" in data
+            assert "ready_posts" in data
         finally:
             app.dependency_overrides.clear()
 

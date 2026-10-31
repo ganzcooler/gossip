@@ -195,7 +195,21 @@ class TestGetStats:
         mock_articles = MagicMock()
         mock_articles.scalar.return_value = 250
 
-        mock_db_session.execute = AsyncMock(side_effect=[mock_total, mock_processed, mock_articles])
+        mock_posts = MagicMock()
+        mock_posts.scalar.return_value = 12
+
+        mock_ready_posts = MagicMock()
+        mock_ready_posts.scalar.return_value = 9
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=[
+                mock_total,
+                mock_processed,
+                mock_articles,
+                mock_posts,
+                mock_ready_posts,
+            ]
+        )
 
         result = await get_stats(mock_db_session)
 
@@ -203,3 +217,5 @@ class TestGetStats:
         assert result["processed_protocols"] == 75
         assert result["unprocessed_protocols"] == 25
         assert result["total_articles"] == 250
+        assert result["total_posts"] == 12
+        assert result["ready_posts"] == 9

@@ -152,7 +152,7 @@ def generate_image_prompt(article: SingleArticle) -> str:
     return ""
 
 
-def generate_image(prompt: str) -> bytes:
+def generate_image(prompt: str, aspect_ratio: str = "9:16") -> bytes:
     """Generates an image from a prompt using OpenRouter with retries."""
     logger.debug("Generating image...")
     max_retries = 5
@@ -161,7 +161,7 @@ def generate_image(prompt: str) -> bytes:
             image_bytes = openrouter_client.generate_image(
                 model=config.OPENROUTER_IMAGE_MODEL,
                 prompt=prompt,
-                aspect_ratio="9:16",
+                aspect_ratio=aspect_ratio,
             )
 
             if image_bytes:

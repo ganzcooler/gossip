@@ -17,6 +17,7 @@ from app.services import ArticleGenerationError
 from app.services.image_generator import generate_image_for_article
 from app.services.caption_generator import generate_insta_caption
 from app.services.insta_generator import create_insta_images_for_protocol
+from app.services.post_processor import process_protocol_posts
 from app.services import AuthenticationError
 
 logger = logging.getLogger(__name__)
@@ -55,8 +56,14 @@ async def process_protocols_job(db_session: AsyncSession):
 
 
 async def process_protocol(protocol: Protocol, db_session: AsyncSession):
+    """Process a protocol through the two-post pipeline."""
+    await process_protocol_posts(protocol, db_session)
+
+
+async def process_protocol_legacy(protocol: Protocol, db_session: AsyncSession):
     """
-    Process a single protocol - generate articles, images, and Instagram content.
+    Legacy one-article-per-topic pipeline, kept for reference during the
+    transition. New work goes through ``process_protocol``.
     """
     logger.debug(f"Processing protocol: {protocol.title} (ID: {protocol.id})")
 

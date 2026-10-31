@@ -86,21 +86,21 @@ class TestProcessProtocol:
     """Tests for process_protocol function."""
 
     @pytest.mark.asyncio
-    async def test_process_protocol_with_existing_articles(self, mock_db_session):
-        """Test processing protocol with existing articles."""
+    async def test_process_protocol_delegates_to_post_pipeline(self, mock_db_session):
+        """The new pipeline owns protocol processing."""
         mock_protocol = MagicMock()
         mock_protocol.id = 1
         mock_protocol.title = "Test"
 
-        mock_article = MagicMock()
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [mock_article]
-        mock_db_session.execute = AsyncMock(return_value=mock_result)
-
-        with patch('app.services.protocol_processor._process_existing_protocol', new_callable=AsyncMock) as mock_process_existing:
+        with patch(
+            'app.services.protocol_processor.process_protocol_posts',
+            new_callable=AsyncMock,
+        ) as mock_process_posts:
             await process_protocol(mock_protocol, mock_db_session)
 
-            mock_process_existing.assert_called_once()
+            mock_process_posts.assert_awaited_once_with(
+                mock_protocol, mock_db_session
+            )
 
 
 class TestProcessSingleArticle:

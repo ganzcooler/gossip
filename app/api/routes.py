@@ -1,15 +1,57 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from typing import Optional
 
 from app.database import get_db
-from app.models import Protocol, Article
+from app.models import Protocol, Article, Post, PostStatus
 from app.services.protocol_fetcher import fetch_protocols_job
 from app.services.protocol_processor import process_protocols_job
 from app.services import generate_insta_images_job
 
 router = APIRouter()
+
+
+def _serialize_post(post: Post) -> dict:
+    """Serialize a new post with its slides and asset metadata."""
+    post_type = post.post_type.value if hasattr(post.post_type, "value") else post.post_type
+    status = post.status.value if hasattr(post.status, "value") else post.status
+    return {
+        "id": post.id,
+        "protocol_id": post.protocol_id,
+        "post_type": post_type,
+        "slug": post.slug,
+        "post_index": post.post_index,
+        "title": post.title,
+        "kicker": post.kicker,
+        "content_markdown": post.content_markdown,
+        "content_json": post.content_json,
+        "slide_plan_json": post.slide_plan_json,
+        "caption": post.caption,
+        "status": status,
+        "error": post.error,
+        "created_at": post.created_at.isoformat() if post.created_at else None,
+        "slides": [
+            {
+                "slide_index": slide.slide_index,
+                "pair_index": slide.pair_index,
+                "label": slide.label,
+                "headline": slide.headline,
+                "body": slide.body,
+            }
+            for slide in post.slides
+        ],
+        "assets": [
+            {
+                "role": asset.role,
+                "path": asset.path,
+                "status": asset.status,
+                "prompt": asset.prompt,
+            }
+            for asset in post.assets
+        ],
+    }
 
 
 @router.get("/health")
@@ -71,6 +113,33 @@ async def get_protocol(protocol_id: int, db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.get("/protocols/{protocol_id}/posts")
+async def get_protocol_posts(protocol_id: int, db: AsyncSession = Depends(get_db)):
+    """Get the new posts for a protocol, including slides and asset metadata."""
+    result = await db.execute(
+        select(Post)
+        .options(selectinload(Post.slides), selectinload(Post.assets))
+        .where(Post.protocol_id == protocol_id)
+        .order_by(Post.post_index)
+    )
+    posts = result.scalars().all()
+    return [_serialize_post(post) for post in posts]
+
+
+@router.get("/posts/{post_id}")
+async def get_post(post_id: int, db: AsyncSession = Depends(get_db)):
+    """Get one new post with its slides and asset metadata."""
+    result = await db.execute(
+        select(Post)
+        .options(selectinload(Post.slides), selectinload(Post.assets))
+        .where(Post.id == post_id)
+    )
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    return _serialize_post(post)
+
+
 @router.get("/protocols/{protocol_id}/articles")
 async def get_protocol_articles(protocol_id: int, db: AsyncSession = Depends(get_db)):
     """Get articles for a specific protocol."""
@@ -103,15 +172,25 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     )
     processed_protocols = processed_result.scalar()
 
-    # Total articles
+    # Total articles (legacy)
     total_articles_result = await db.execute(select(func.count(Article.id)))
     total_articles = total_articles_result.scalar()
+
+    # New posts
+    total_posts_result = await db.execute(select(func.count(Post.id)))
+    total_posts = total_posts_result.scalar()
+    ready_posts_result = await db.execute(
+        select(func.count(Post.id)).where(Post.status == PostStatus.READY)
+    )
+    ready_posts = ready_posts_result.scalar()
 
     return {
         "total_protocols": total_protocols,
         "processed_protocols": processed_protocols,
         "unprocessed_protocols": total_protocols - processed_protocols,
-        "total_articles": total_articles
+        "total_articles": total_articles,
+        "total_posts": total_posts,
+        "ready_posts": ready_posts,
     }
 
 
