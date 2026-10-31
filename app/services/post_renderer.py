@@ -622,7 +622,7 @@ def _render_topic_content(
     spread = _prepare_image(artwork, (CANVAS_4_5[0] * 2, CANVAS_4_5[1]))
     page_left = spread.crop((0, 0, CANVAS_4_5[0], CANVAS_4_5[1]))
     page_right = spread.crop((CANVAS_4_5[0], 0, CANVAS_4_5[0] * 2, CANVAS_4_5[1]))
-    color_block = (slide_number - 1) // 2
+    color_block = slide_number // 2
     panel_color = ORANGE if color_block % 2 == 0 else CHARCOAL
     accent = WHITE if panel_color == ORANGE else ORANGE
 
