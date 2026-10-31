@@ -24,6 +24,7 @@ def plan_editorial(protocol_text: str) -> EditorialPlan:
     return call_json(
         prompt=prompt,
         model=EditorialPlan,
-        max_tokens=4096,
+        max_tokens=8192,
         temperature=0.3,
+        reasoning_effort="medium",
     )

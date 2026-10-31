@@ -20,6 +20,7 @@ def fact_check_article(protocol_text: str, article: ArticleDraft) -> FactCheckRe
     return call_json(
         prompt=prompt,
         model=FactCheckResult,
-        max_tokens=4096,
+        max_tokens=8192,
         temperature=0.2,
+        reasoning_effort=None,
     )

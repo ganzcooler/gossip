@@ -333,7 +333,7 @@ async def _ensure_article(
     article = await _run_sync(writer, protocol.pdf_text, brief)
     fact_check = await _run_sync(fact_check_article, protocol.pdf_text, article)
 
-    if fact_check.issues or fact_check.verdict == "needs_repair":
+    if fact_check.verdict == "needs_repair":
         logger.info("Repairing article %s after fact-check", post.slug)
         article = await _run_sync(
             repair_article, protocol.pdf_text, article, fact_check

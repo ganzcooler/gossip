@@ -13,6 +13,8 @@ from app.core.post_models import (
 )
 from app.services.errors import SlidePlanError
 from app.services.slide_planner import (
+    _condense_text,
+    _label_from_heading,
     fallback_summary_slides,
     fallback_topic_slides,
     validate_summary_plan,
@@ -117,3 +119,22 @@ def test_fallback_topic_slides_produces_even_pairs():
     assert all(len(pair.slides) == 2 for pair in plan.pairs)
     assert all(len(slide.body) <= 220 for pair in plan.pairs for slide in pair.slides)
     assert all(pair.artwork_brief for pair in plan.pairs)
+
+
+def test_label_from_heading_maps_intro_words():
+    assert _label_from_heading("Was der Ortsrat beschlossen hat") == "BESCHLUSS"
+    assert _label_from_heading("Das steckt hinter dem Gesamtprojekt") == "HINTERGRUND"
+    assert _label_from_heading("Optik, Größe und Kosten als Streitpunkte") == "KOSTEN"
+
+
+def test_condense_text_keeps_date_and_full_sentence():
+    text = (
+        "In der Sitzung am 24. September 2026 hat der Ortsrat eine Entscheidung "
+        "getroffen. Ein weiterer Satz."
+    )
+
+    result = _condense_text([text], 120)
+
+    assert "24." in result
+    assert "September" in result
+    assert result != "In der Sitzung am 24."

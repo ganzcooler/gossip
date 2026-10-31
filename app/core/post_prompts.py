@@ -165,7 +165,7 @@ Prüfe jede Tatsachenbehauptung:
 - Gibt es Ironie, Wertung, Clickbait oder reißerische Fragen?
 - Gibt es Widersprüche im Artikel selbst?
 
-Melde nur klare Probleme, keine Stilwünsche. Wenn der Artikel in Ordnung ist, gib eine leere Liste und "ok" zurück.
+Melde nur echte Fehler, keine Stilwünsche und keine korrekten Aussagen. Die Liste `issues` enthält ausschließlich Aussagen, die du als falsch, unbelegt, irreführend oder unzulässig einstufst. Korrekte Aussagen und Überlegungen gehören nicht in die Liste. Wenn du keinen klaren Fehler findest, gib `issues: []` und `verdict: "ok"` zurück. Setze `verdict` auf `"needs_repair"`, sobald mindestens ein echter Fehler in `issues` steht. Maximal zehn Einträge; halte `problem` kurz und konkret.
 
 Antworte ausschließlich mit gültigem JSON in diesem Format:
 {{
@@ -232,6 +232,7 @@ Wichtig:
 - Nutze die H2-Abschnitte als Anker: eine H2 pro Content-Slide, wenn möglich. Teile lange Abschnitte an Absatz- oder Satzgrenzen.
 - Behalte die Reihenfolge des Artikels bei.
 - Die Cover-Slide enthält Kicker, Headline und einen englischen Bild-Brief.
+- Cover-Headline: maximal 70 Zeichen, neutral, keine Frage.
 - Jede Content-Slide enthält ein kurzes Label, eine Headline und einen Body.
 - Label: ein bis zwei Wörter, Großbuchstaben, z. B. "HAUSHALT", "WINDPARK", "AUSBLICK".
 - Headline: maximal 60 Zeichen, neutral, keine Frage.
@@ -260,20 +261,22 @@ Artikel:
 
 
 TOPIC_SLIDE_PLAN_PROMPT = """
-Du bist Slide-Planer für ein 4:5-Karussell. Verdichte den fertigen Artikel zu einer Cover-Slide und einer geraden Anzahl von zwei bis acht Content-Slides. Die Content-Slides bilden Paare.
+Du bist Slide-Planer für ein 4:5-Karussell. Verdichte den fertigen Artikel zu einer Cover-Slide und höchstens acht Content-Slides (zwei bis vier Paare). Die Content-Slides bilden Paare.
 
 {STYLE_GUIDE}
 
 Wichtig:
 - Der Artikel ist die einzige Faktenquelle. Du darfst kürzen, umformulieren und weniger wichtige Details weglassen, aber keine Fakten hinzufügen.
+- Wähle höchstens vier Aspekte. Wenn der Artikel mehr H2-Abschnitte hat, gruppiere sie zu zwei bis vier Paaren. Zähle die Paare vor der Ausgabe.
 - Nutze die H2-Abschnitte als Anker: ein H2 pro Paar, wenn möglich. Teile lange Abschnitte an Absatz- oder Satzgrenzen.
 - Jedes Paar erzählt einen Aspekt des Themas. Die zwei Slides eines Paares sind eine Doppelseite: Slide 1 hat das Textpanel links, Slide 2 hat das Textpanel rechts.
 - Jedes Paar bekommt einen englischen `artwork_brief`: eine zusammenhängende Szene, die vertikal in der Mitte geteilt wird. Die Mitte muss ruhig bleiben; keine kritischen Details auf der Naht. Kein Text im Bild.
 - Die Cover-Slide enthält Kicker, Headline und einen englischen Bild-Brief.
+- Cover-Headline: maximal 70 Zeichen, neutral, keine Frage.
 - Jede Content-Slide enthält ein kurzes Label, eine Headline und einen Body.
 - Label: ein bis zwei Wörter, Großbuchstaben, z. B. "BESCHLUSS", "HINTERGRUND", "AUSBLICK".
 - Headline: maximal 60 Zeichen, neutral, keine Frage.
-- Body: maximal 220 Zeichen, ein bis zwei Sätze, keine Aufzählung.
+- Body: maximal 160 Zeichen, ein bis zwei Sätze, keine Aufzählung.
 - Keine Personennamen, keine Ironie, keine Wertung.
 
 Antworte ausschließlich mit gültigem JSON in diesem Format:

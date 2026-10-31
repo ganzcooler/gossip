@@ -33,7 +33,7 @@ def generate_summary_cover_prompt(article: ArticleDraft, cover: CoverPlan) -> st
         ARTICLE_JSON=article.model_dump_json(indent=2),
     )
     return _ensure_photorealistic(
-        call_text(prompt=prompt, max_tokens=1024, temperature=0.8)
+        call_text(prompt=prompt, max_tokens=1024, temperature=0.8, reasoning_effort=None)
     )
 
 
@@ -44,7 +44,7 @@ def generate_topic_cover_prompt(article: ArticleDraft, cover: CoverPlan) -> str:
         ARTICLE_JSON=article.model_dump_json(indent=2),
     )
     return _ensure_photorealistic(
-        call_text(prompt=prompt, max_tokens=1024, temperature=0.8)
+        call_text(prompt=prompt, max_tokens=1024, temperature=0.8, reasoning_effort=None)
     )
 
 
@@ -57,7 +57,7 @@ def generate_topic_artwork_prompt(
         ARTICLE_JSON=article.model_dump_json(indent=2),
     )
     return _ensure_photorealistic(
-        call_text(prompt=prompt, max_tokens=1024, temperature=0.8)
+        call_text(prompt=prompt, max_tokens=1024, temperature=0.8, reasoning_effort=None)
     )
 
 
@@ -74,6 +74,7 @@ def generate_topic_caption(
         model=CaptionResult,
         max_tokens=512,
         temperature=0.6,
+        reasoning_effort=None,
     )
 
 

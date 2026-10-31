@@ -101,6 +101,7 @@ def plan_summary_slides(
             model=SummarySlidePlan,
             max_tokens=4096,
             temperature=0.4,
+            reasoning_effort=None,
         )
         plan = _normalise_summary_plan(plan)
         validate_summary_plan(plan)
@@ -128,6 +129,7 @@ def plan_topic_slides(
             model=TopicSlidePlan,
             max_tokens=4096,
             temperature=0.4,
+            reasoning_effort=None,
         )
         plan = _normalise_topic_plan(plan)
         validate_topic_plan(plan)
@@ -157,6 +159,7 @@ def repair_summary_slides(
             model=SummarySlidePlan,
             max_tokens=4096,
             temperature=0.3,
+            reasoning_effort=None,
         )
         repaired = _normalise_summary_plan(repaired)
         validate_summary_plan(repaired)
@@ -184,6 +187,7 @@ def repair_topic_slides(
             model=TopicSlidePlan,
             max_tokens=4096,
             temperature=0.3,
+            reasoning_effort=None,
         )
         repaired = _normalise_topic_plan(repaired)
         validate_topic_plan(repaired)
@@ -261,8 +265,8 @@ def fallback_topic_slides(article: ArticleDraft) -> TopicSlidePlan:
         slides.append(
             SlideContent(
                 label=_label_from_heading(section.heading),
-                headline=_shorten(section.heading, 60),
-                body=_condense_text(section.paragraphs, 220),
+                headline=_shorten(section.heading, 50),
+                body=_condense_text(section.paragraphs, 160),
             )
         )
 
@@ -270,8 +274,8 @@ def fallback_topic_slides(article: ArticleDraft) -> TopicSlidePlan:
         slides.append(
             SlideContent(
                 label="ÜBERBLICK",
-                headline=_shorten(article.title, 60),
-                body=_shorten(article.lead, 220),
+                headline=_shorten(article.title, 50),
+                body=_shorten(article.lead, 160),
             )
         )
 
@@ -280,7 +284,7 @@ def fallback_topic_slides(article: ArticleDraft) -> TopicSlidePlan:
             SlideContent(
                 label="AUSBLICK",
                 headline="Was als Nächstes passiert",
-                body=_shorten(article.lead, 220),
+                body=_shorten(article.lead, 160),
             )
         )
 
@@ -290,7 +294,7 @@ def fallback_topic_slides(article: ArticleDraft) -> TopicSlidePlan:
             SlideContent(
                 label="AUSBLICK",
                 headline="Was als Nächstes passiert",
-                body=_shorten(fallback_body, 220),
+                body=_shorten(fallback_body, 160),
             )
         )
 
@@ -325,10 +329,47 @@ def _fallback_artwork_brief(pair: list[SlideContent]) -> str:
     )
 
 
+_LABEL_HINTS = {
+    "was": "BESCHLUSS",
+    "wie": "AUSBLICK",
+    "warum": "HINTERGRUND",
+    "das": "HINTERGRUND",
+    "optik": "KOSTEN",
+    "finanzierung": "FINANZEN",
+    "kosten": "KOSTEN",
+    "fragen": "BÜRGERFRAGEN",
+    "weitere": "WEITERE",
+    "sachstand": "SACHSTAND",
+    "anträge": "ANTRÄGE",
+}
+
+_STOPWORDS = {
+    "der",
+    "die",
+    "das",
+    "und",
+    "in",
+    "am",
+    "aus",
+    "mit",
+    "für",
+    "von",
+    "im",
+    "zur",
+    "zum",
+}
+
+
 def _label_from_heading(heading: str) -> str:
     cleaned = re.sub(r"[^\w\sÄÖÜäöüß-]", "", heading).strip()
     words = cleaned.split()
-    label = " ".join(words[:2]).upper()
+    if not words:
+        return "ÜBERBLICK"
+    first = re.sub(r"[^\wÄÖÜäöüß-]", "", words[0]).lower()
+    if first in _LABEL_HINTS:
+        return _LABEL_HINTS[first]
+    filtered = [word for word in words if word.lower() not in _STOPWORDS]
+    label = " ".join((filtered or words)[:2]).upper()
     return label[:MAX_SLIDE_LABEL] or "ÜBERBLICK"
 
 
@@ -345,14 +386,25 @@ def _condense_text(paragraphs: list[str], max_length: int) -> str:
     if len(text) <= max_length:
         return text
 
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    result = ""
+    # Do not split after a day number ("24. September") or inside common
+    # abbreviations. The old naive split produced fragments such as
+    # "In der Sitzung am 24." and then dropped the rest of the sentence.
+    sentences = re.split(r"(?<!\d)(?<=[.!?])\s+(?=[A-ZÄÖÜ])", text)
+    abbreviations = ("z.B.", "d.h.", "Nr.", "Dr.", "ca.", "bzw.", "u.a.", "vgl.", "etc.")
+    merged: list[str] = []
     for sentence in sentences:
+        if merged and merged[-1].endswith(abbreviations):
+            merged[-1] = f"{merged[-1]} {sentence}"
+        else:
+            merged.append(sentence)
+
+    result = ""
+    for sentence in merged:
         candidate = f"{result} {sentence}".strip()
         if len(candidate) <= max_length:
             result = candidate
+        elif not result:
+            return _shorten(sentence, max_length)
         else:
             break
-    if result:
-        return result
-    return _shorten(text, max_length)
+    return result or _shorten(text, max_length)

@@ -58,12 +58,19 @@ def strip_code_fences(text: str) -> str:
     return cleaned.strip()
 
 
+def _reasoning_config(effort: str | None) -> dict:
+    if effort is None:
+        return {"enabled": False}
+    return {"effort": effort}
+
+
 def call_json(
     *,
     prompt: str,
     model: Type[T],
     max_tokens: int = 8192,
     temperature: float | None = None,
+    reasoning_effort: str | None = "medium",
     max_retries: int = 3,
     timeout: float = 180.0,
 ) -> T:
@@ -88,7 +95,7 @@ def call_json(
                 max_tokens=max_tokens,
                 timeout=timeout,
                 extra_body={
-                    "reasoning": {"effort": config.OPENROUTER_REASONING_EFFORT}
+                    "reasoning": _reasoning_config(reasoning_effort)
                 },
             )
 
@@ -131,6 +138,7 @@ def call_text(
     prompt: str,
     max_tokens: int = 2048,
     temperature: float | None = None,
+    reasoning_effort: str | None = "medium",
     max_retries: int = 3,
     timeout: float = 180.0,
 ) -> str:
@@ -145,7 +153,7 @@ def call_text(
                 max_tokens=max_tokens,
                 timeout=timeout,
                 extra_body={
-                    "reasoning": {"effort": config.OPENROUTER_REASONING_EFFORT}
+                    "reasoning": _reasoning_config(reasoning_effort)
                 },
             )
             if raw:
