@@ -1,8 +1,9 @@
 """Image prompts, image generation, and captions for the new posts."""
 
 import logging
+import time
 
-from app.core import post_prompts
+from app.core import config, post_prompts
 from app.core.post_models import (
     ArticleDraft,
     CaptionResult,
@@ -11,7 +12,8 @@ from app.core.post_models import (
     TopicSlidePlan,
 )
 from app.services.errors import PostGenerationError
-from app.services.image_generator import generate_image
+from app.services import openrouter_client
+from app.services.cost_tracker import record_usage
 from app.services.llm_json import call_json, call_text
 
 logger = logging.getLogger(__name__)
@@ -36,9 +38,9 @@ def generate_summary_cover_prompt(article: ArticleDraft, cover: CoverPlan) -> st
         call_text(
             prompt=prompt,
             call_label="summary_cover_prompt",
-            max_tokens=1024,
+            max_tokens=4096,
             temperature=0.8,
-            reasoning_effort=None,
+            reasoning_effort="medium",
         )
     )
 
@@ -53,9 +55,9 @@ def generate_topic_cover_prompt(article: ArticleDraft, cover: CoverPlan) -> str:
         call_text(
             prompt=prompt,
             call_label="topic_cover_prompt",
-            max_tokens=1024,
+            max_tokens=4096,
             temperature=0.8,
-            reasoning_effort=None,
+            reasoning_effort="medium",
         )
     )
 
@@ -72,9 +74,9 @@ def generate_topic_artwork_prompt(
         call_text(
             prompt=prompt,
             call_label="topic_artwork_prompt",
-            max_tokens=1024,
+            max_tokens=4096,
             temperature=0.8,
-            reasoning_effort=None,
+            reasoning_effort="medium",
         )
     )
 
@@ -91,9 +93,9 @@ def generate_topic_caption(
         prompt=prompt,
         model=CaptionResult,
         call_label="topic_caption",
-        max_tokens=512,
+        max_tokens=2048,
         temperature=0.6,
-        reasoning_effort=None,
+        reasoning_effort="medium",
     )
 
 
@@ -102,10 +104,35 @@ def generate_image_bytes(prompt: str, aspect_ratio: str) -> bytes:
     logger.info(
         "Image generation start aspect=%s prompt_chars=%s", aspect_ratio, len(prompt)
     )
-    image_bytes = generate_image(prompt, aspect_ratio=aspect_ratio)
-    if not image_bytes:
-        raise PostGenerationError(f"Image generation returned no data for {aspect_ratio}")
-    logger.info(
-        "Image generation ok aspect=%s bytes=%s", aspect_ratio, len(image_bytes)
+    last_error: Exception | None = None
+    for attempt in range(1, 6):
+        try:
+            result = openrouter_client.generate_image_result(
+                model=config.OPENROUTER_IMAGE_MODEL,
+                prompt=prompt,
+                aspect_ratio=aspect_ratio,
+            )
+            record_usage(result.usage)
+            cost = result.usage.get("cost")
+            logger.info(
+                "Image generation ok aspect=%s bytes=%s attempt=%s/5 cost_usd=%s",
+                aspect_ratio,
+                len(result.image_bytes),
+                attempt,
+                f"{cost:.6f}" if isinstance(cost, (int, float)) else "n/a",
+            )
+            return result.image_bytes
+        except Exception as exc:
+            last_error = exc
+            logger.error(
+                "Image generation failed on attempt %s/5: %s",
+                attempt,
+                exc,
+                exc_info=True,
+            )
+            if attempt < 5:
+                time.sleep(config.API_CALL_DELAY_SECONDS)
+
+    raise PostGenerationError(
+        f"Image generation failed after 5 attempts for {aspect_ratio}: {last_error}"
     )
-    return image_bytes

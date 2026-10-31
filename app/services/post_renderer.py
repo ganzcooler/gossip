@@ -622,25 +622,24 @@ def _render_topic_content(
     spread = _prepare_image(artwork, (CANVAS_4_5[0] * 2, CANVAS_4_5[1]))
     page_left = spread.crop((0, 0, CANVAS_4_5[0], CANVAS_4_5[1]))
     page_right = spread.crop((CANVAS_4_5[0], 0, CANVAS_4_5[0] * 2, CANVAS_4_5[1]))
+    color_block = (slide_number - 1) // 2
+    panel_color = ORANGE if color_block % 2 == 0 else CHARCOAL
+    accent = WHITE if panel_color == ORANGE else ORANGE
 
     if panel_side == "left":
         canvas = page_left
-        panel_color = ORANGE
         ImageDraw.Draw(canvas).rectangle(
             [(0, 0), (PANEL_WIDTH, CANVAS_4_5[1])], fill=panel_color
         )
         text_x = 60
         panel_x = 0
-        accent = WHITE
     else:
         canvas = page_right
-        panel_color = CHARCOAL
         ImageDraw.Draw(canvas).rectangle(
             [(PANEL_WIDTH, 0), (CANVAS_4_5[0], CANVAS_4_5[1])], fill=panel_color
         )
         text_x = 600
         panel_x = PANEL_WIDTH
-        accent = ORANGE
 
     draw = ImageDraw.Draw(canvas)
 

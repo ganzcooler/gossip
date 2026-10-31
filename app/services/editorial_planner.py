@@ -25,7 +25,7 @@ def plan_editorial(protocol_text: str) -> EditorialPlan:
         prompt=prompt,
         model=EditorialPlan,
         call_label="editorial_plan",
-        max_tokens=8192,
+        max_tokens=16384,
         temperature=0.3,
-        reasoning_effort="medium",
+        reasoning_effort="high",
     )

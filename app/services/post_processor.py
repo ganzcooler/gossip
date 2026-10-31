@@ -40,6 +40,7 @@ from app.models import (
 )
 from app.services.editorial_planner import plan_editorial
 from app.services.errors import AuthenticationError, TextOverflowError
+from app.services.cost_tracker import start_cost_tracking, stop_cost_tracking
 from app.services.fact_checker import fact_check_article
 from app.services.post_image_generator import (
     generate_image_bytes,
@@ -84,6 +85,17 @@ def _protocol_folder(protocol: Protocol) -> Path:
 
 
 async def process_protocol_posts(protocol: Protocol, db_session: AsyncSession) -> None:
+    """Run the post pipeline with per-run token and cost accounting."""
+    start_cost_tracking(f"protocol:{protocol.id}")
+    try:
+        await _process_protocol_posts(protocol, db_session)
+    finally:
+        tracker = stop_cost_tracking()
+        if tracker is not None:
+            logger.info("Pipeline cost %s", tracker.summary())
+
+
+async def _process_protocol_posts(protocol: Protocol, db_session: AsyncSession) -> None:
     """Generate and render every planned post for one protocol."""
     logger.info(
         "Post pipeline started for protocol %s (session=%s)",

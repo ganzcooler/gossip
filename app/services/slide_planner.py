@@ -100,9 +100,9 @@ def plan_summary_slides(
             prompt=prompt,
             model=SummarySlidePlan,
             call_label="summary_slide_plan",
-            max_tokens=4096,
+            max_tokens=8192,
             temperature=0.4,
-            reasoning_effort=None,
+            reasoning_effort="medium",
         )
         plan = _normalise_summary_plan(plan)
         validate_summary_plan(plan)
@@ -129,9 +129,9 @@ def plan_topic_slides(
             prompt=prompt,
             model=TopicSlidePlan,
             call_label="topic_slide_plan",
-            max_tokens=4096,
+            max_tokens=8192,
             temperature=0.4,
-            reasoning_effort=None,
+            reasoning_effort="medium",
         )
         plan = _normalise_topic_plan(plan)
         validate_topic_plan(plan)
@@ -160,9 +160,9 @@ def repair_summary_slides(
             prompt=prompt,
             model=SummarySlidePlan,
             call_label="summary_slide_repair",
-            max_tokens=4096,
+            max_tokens=8192,
             temperature=0.3,
-            reasoning_effort=None,
+            reasoning_effort="medium",
         )
         repaired = _normalise_summary_plan(repaired)
         validate_summary_plan(repaired)
@@ -189,9 +189,9 @@ def repair_topic_slides(
             prompt=prompt,
             model=TopicSlidePlan,
             call_label="topic_slide_repair",
-            max_tokens=4096,
+            max_tokens=8192,
             temperature=0.3,
-            reasoning_effort=None,
+            reasoning_effort="medium",
         )
         repaired = _normalise_topic_plan(repaired)
         validate_topic_plan(repaired)

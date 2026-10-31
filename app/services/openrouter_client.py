@@ -8,6 +8,7 @@ the article/image generators.
 
 import base64
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -15,6 +16,22 @@ import httpx
 from app.core import config
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ChatCompletionResult:
+    """Text response plus provider usage and cost metadata."""
+
+    content: str
+    usage: dict[str, Any]
+
+
+@dataclass
+class ImageGenerationResult:
+    """Image bytes plus provider usage and cost metadata."""
+
+    image_bytes: bytes
+    usage: dict[str, Any]
 
 
 class OpenRouterError(Exception):
@@ -87,9 +104,32 @@ def chat_completion(
     timeout: float = 120.0,
 ) -> str:
     """Run a single-prompt chat completion and return the text response."""
+    return chat_completion_result(
+        model=model,
+        prompt=prompt,
+        temperature=temperature,
+        response_format=response_format,
+        max_tokens=max_tokens,
+        extra_body=extra_body,
+        timeout=timeout,
+    ).content
+
+
+def chat_completion_result(
+    *,
+    model: str,
+    prompt: str,
+    temperature: float | None = None,
+    response_format: dict[str, Any] | None = None,
+    max_tokens: int | None = None,
+    extra_body: dict[str, Any] | None = None,
+    timeout: float = 120.0,
+) -> ChatCompletionResult:
+    """Run a single-prompt chat completion with usage/cost metadata."""
     payload: dict[str, Any] = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
+        "usage": {"include": True},
     }
     if temperature is not None:
         payload["temperature"] = temperature
@@ -113,8 +153,12 @@ def chat_completion(
             if isinstance(part, dict) and part.get("type") == "text"
         )
     if content is None:
-        return ""
-    return str(content).strip()
+        content = ""
+    usage = data.get("usage")
+    return ChatCompletionResult(
+        content=str(content).strip(),
+        usage=usage if isinstance(usage, dict) else {},
+    )
 
 
 def generate_image(
@@ -125,6 +169,22 @@ def generate_image(
     timeout: float = 300.0,
 ) -> bytes:
     """Generate one image and return the decoded image bytes."""
+    return generate_image_result(
+        model=model,
+        prompt=prompt,
+        aspect_ratio=aspect_ratio,
+        timeout=timeout,
+    ).image_bytes
+
+
+def generate_image_result(
+    *,
+    model: str,
+    prompt: str,
+    aspect_ratio: str = "9:16",
+    timeout: float = 300.0,
+) -> ImageGenerationResult:
+    """Generate one image with usage/cost metadata."""
     payload = {
         "model": model,
         "prompt": prompt,
@@ -140,6 +200,12 @@ def generate_image(
         raise OpenRouterError(f"Unexpected OpenRouter image response: {data!r}") from exc
 
     try:
-        return base64.b64decode(encoded, validate=True)
+        image_bytes = base64.b64decode(encoded, validate=True)
     except (TypeError, ValueError) as exc:
         raise OpenRouterError("OpenRouter returned invalid base64 image data") from exc
+
+    usage = data.get("usage")
+    return ImageGenerationResult(
+        image_bytes=image_bytes,
+        usage=usage if isinstance(usage, dict) else {},
+    )

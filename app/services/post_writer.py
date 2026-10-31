@@ -29,6 +29,7 @@ def write_summary_article(
         call_label="summary_writer",
         max_tokens=16384,
         temperature=0.7,
+        reasoning_effort="high",
     )
 
 
@@ -46,6 +47,7 @@ def write_topic_article(protocol_text: str, topic_brief: TopicBrief) -> ArticleD
         call_label=f"topic_writer:{topic_brief.slug}",
         max_tokens=16384,
         temperature=0.7,
+        reasoning_effort="high",
     )
 
 
@@ -68,6 +70,7 @@ def repair_article(
         call_label="article_repair",
         max_tokens=16384,
         temperature=0.5,
+        reasoning_effort="high",
     )
 
 

@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from app.core import config
 from app.services import openrouter_client
+from app.services.cost_tracker import record_usage
 from app.services.errors import (
     AuthenticationError,
     PostGenerationError,
@@ -64,6 +65,17 @@ def _reasoning_config(effort: str | None) -> dict:
     return {"effort": effort}
 
 
+def _usage_log_values(usage: dict) -> tuple[int, int, int, str]:
+    cost = usage.get("cost")
+    details = usage.get("completion_tokens_details") or {}
+    return (
+        int(usage.get("prompt_tokens") or 0),
+        int(usage.get("completion_tokens") or 0),
+        int(details.get("reasoning_tokens") or 0),
+        f"{cost:.6f}" if isinstance(cost, (int, float)) else "n/a",
+    )
+
+
 def call_json(
     *,
     prompt: str,
@@ -71,7 +83,7 @@ def call_json(
     call_label: str | None = None,
     max_tokens: int = 8192,
     temperature: float | None = None,
-    reasoning_effort: str | None = "medium",
+    reasoning_effort: str | None = "high",
     max_retries: int = 3,
     timeout: float = 180.0,
 ) -> T:
@@ -99,7 +111,7 @@ def call_json(
                 attempt + 1,
                 max_retries,
             )
-            raw = openrouter_client.chat_completion(
+            result = openrouter_client.chat_completion_result(
                 model=config.OPENROUTER_TEXT_MODEL,
                 prompt=prompt,
                 temperature=temperature,
@@ -110,6 +122,9 @@ def call_json(
                     "reasoning": _reasoning_config(reasoning_effort)
                 },
             )
+            usage = result.usage
+            record_usage(usage)
+            raw = result.content
 
             if not raw:
                 logger.warning(
@@ -123,11 +138,19 @@ def call_json(
                 continue
 
             parsed = model.model_validate_json(strip_code_fences(raw))
+            prompt_tokens, completion_tokens, reasoning_tokens, cost_usd = (
+                _usage_log_values(usage)
+            )
             logger.info(
-                "LLM call %s ok in %.2fs chars=%s",
+                "LLM call %s ok in %.2fs chars=%s prompt_tokens=%s "
+                "completion_tokens=%s reasoning_tokens=%s cost_usd=%s",
                 label,
                 time.monotonic() - started,
                 len(raw),
+                prompt_tokens,
+                completion_tokens,
+                reasoning_tokens,
+                cost_usd,
             )
             return parsed
 
@@ -159,7 +182,7 @@ def call_text(
     call_label: str | None = None,
     max_tokens: int = 2048,
     temperature: float | None = None,
-    reasoning_effort: str | None = "medium",
+    reasoning_effort: str | None = "high",
     max_retries: int = 3,
     timeout: float = 180.0,
 ) -> str:
@@ -178,7 +201,7 @@ def call_text(
                 attempt + 1,
                 max_retries,
             )
-            raw = openrouter_client.chat_completion(
+            result = openrouter_client.chat_completion_result(
                 model=config.OPENROUTER_TEXT_MODEL,
                 prompt=prompt,
                 temperature=temperature,
@@ -188,12 +211,23 @@ def call_text(
                     "reasoning": _reasoning_config(reasoning_effort)
                 },
             )
+            usage = result.usage
+            record_usage(usage)
+            raw = result.content
             if raw:
+                prompt_tokens, completion_tokens, reasoning_tokens, cost_usd = (
+                    _usage_log_values(usage)
+                )
                 logger.info(
-                    "LLM call %s ok in %.2fs chars=%s",
+                    "LLM call %s ok in %.2fs chars=%s prompt_tokens=%s "
+                    "completion_tokens=%s reasoning_tokens=%s cost_usd=%s",
                     label,
                     time.monotonic() - started,
                     len(raw),
+                    prompt_tokens,
+                    completion_tokens,
+                    reasoning_tokens,
+                    cost_usd,
                 )
                 return raw.strip()
             logger.warning(
