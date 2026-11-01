@@ -25,7 +25,7 @@ from app.services.slide_planner import (
 )
 
 TOPIC_BODY_CHARS = 480
-SUMMARY_BODY_CHARS = 800
+SUMMARY_BODY_CHARS = 950
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 
 

@@ -40,7 +40,7 @@ SUMMARY_FONTS = {
     "content_number": 150,
     "content_label": 30,
     "content_headline": 62,
-    "content_body": 38,
+    "content_body": 36,
     "content_counter": 26,
 }
 
@@ -475,12 +475,12 @@ def _render_summary_content(
         draw,
         slide.body,
         body_font,
-        max_width=880,
+        max_width=900,
         max_height=1640 - body_top,
         role=f"summary_slide_{page:02d}_body",
-        spacing=10,
+        spacing=6,
     )
-    _draw_lines(draw, body_lines, (100, body_top), body_font, WHITE, spacing=10)
+    _draw_lines(draw, body_lines, (100, body_top), body_font, WHITE, spacing=6)
 
     counter_font = _font(res_dir, "oswald", SUMMARY_FONTS["content_counter"])
     _draw_tracked_text(
