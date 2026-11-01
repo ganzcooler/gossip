@@ -87,7 +87,8 @@ class TestConfig:
         importlib.reload(config)
 
         assert config.OPENROUTER_TEXT_MODEL == "deepseek/deepseek-v4.1-flash-1017"
-        assert config.OPENROUTER_IMAGE_MODEL == "google/gemini-3.1-flash-image"
+        assert config.OPENROUTER_IMAGE_MODEL == "meta/muse-image"
+        assert config.OPENROUTER_IMAGE_RESOLUTION == "1K"
         assert config.OPENROUTER_REASONING_EFFORT == "max"
         assert config.OPENROUTER_BASE_URL == "https://openrouter.ai/api/v1"
 
@@ -95,6 +96,7 @@ class TestConfig:
         """Test that model names can be overridden by environment variables."""
         monkeypatch.setenv("OPENROUTER_TEXT_MODEL", "custom/text-model")
         monkeypatch.setenv("OPENROUTER_IMAGE_MODEL", "custom/image-model")
+        monkeypatch.setenv("OPENROUTER_IMAGE_RESOLUTION", "2K")
         monkeypatch.setenv("OPENROUTER_REASONING_EFFORT", "high")
 
         from app.core import config
@@ -103,6 +105,7 @@ class TestConfig:
 
         assert config.OPENROUTER_TEXT_MODEL == "custom/text-model"
         assert config.OPENROUTER_IMAGE_MODEL == "custom/image-model"
+        assert config.OPENROUTER_IMAGE_RESOLUTION == "2K"
         assert config.OPENROUTER_REASONING_EFFORT == "high"
 
     def test_api_call_delay_configured(self, mock_env_vars):

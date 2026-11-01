@@ -116,18 +116,20 @@ class TestGenerateImage:
         )
 
         result = generate_image(
-            model="google/gemini-3.1-flash-image",
+            model="meta/muse-image",
             prompt="A test image",
             aspect_ratio="9:16",
+            resolution="1K",
         )
 
         assert result == b"image-bytes"
         args, kwargs = mock_post.call_args
         assert args[0].endswith("/images")
         assert kwargs["json"] == {
-            "model": "google/gemini-3.1-flash-image",
+            "model": "meta/muse-image",
             "prompt": "A test image",
             "aspect_ratio": "9:16",
+            "resolution": "1K",
             "n": 1,
         }
 

@@ -26,7 +26,8 @@ def mock_env_vars(monkeypatch):
     env_vars = {
         "OPENROUTER_API_KEY": "test-api-key",
         "OPENROUTER_TEXT_MODEL": "deepseek/deepseek-v4.1-flash-1017",
-        "OPENROUTER_IMAGE_MODEL": "google/gemini-3.1-flash-image",
+        "OPENROUTER_IMAGE_MODEL": "meta/muse-image",
+        "OPENROUTER_IMAGE_RESOLUTION": "1K",
         "DB_HOST": "localhost",
         "DB_PORT": "5432",
         "DB_NAME": "test_db",

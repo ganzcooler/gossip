@@ -162,6 +162,7 @@ def generate_image(prompt: str, aspect_ratio: str = "9:16") -> bytes:
                 model=config.OPENROUTER_IMAGE_MODEL,
                 prompt=prompt,
                 aspect_ratio=aspect_ratio,
+                resolution=config.OPENROUTER_IMAGE_RESOLUTION,
             )
 
             if image_bytes:

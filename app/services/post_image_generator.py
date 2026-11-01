@@ -111,6 +111,7 @@ def generate_image_bytes(prompt: str, aspect_ratio: str) -> bytes:
                 model=config.OPENROUTER_IMAGE_MODEL,
                 prompt=prompt,
                 aspect_ratio=aspect_ratio,
+                resolution=config.OPENROUTER_IMAGE_RESOLUTION,
             )
             record_usage(result.usage)
             cost = result.usage.get("cost")

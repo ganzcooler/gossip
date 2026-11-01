@@ -158,7 +158,8 @@ Configuration is read from `.env` (see `.env.example`):
 | `DATABASE_URL` | Optional full SQLAlchemy URL; overrides the `DB_*` values |
 | `OPENROUTER_API_KEY` | OpenRouter API key |
 | `OPENROUTER_TEXT_MODEL` | Text model (default: `deepseek/deepseek-v4.1-flash-1017`) |
-| `OPENROUTER_IMAGE_MODEL` | Image model (default: `google/gemini-3.1-flash-image`) |
+| `OPENROUTER_IMAGE_MODEL` | Image model (default: `meta/muse-image`) |
+| `OPENROUTER_IMAGE_RESOLUTION` | Image resolution tier (default: `1K`) |
 | `OPENROUTER_REASONING_EFFORT` | Reasoning effort for text calls (default: `max`) |
 | `SESSIONNET_BASE_URL` | SessionNet base URL |
 | `TRAEFIK_HOST` | Public hostname used by the deployment |

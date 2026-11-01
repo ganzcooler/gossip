@@ -199,9 +199,10 @@ class TestGenerateImage:
 
         assert result == b"image_data_bytes"
         kwargs = mock_generate.call_args.kwargs
-        assert kwargs["model"] == "google/gemini-3.1-flash-image"
+        assert kwargs["model"] == "meta/muse-image"
         assert kwargs["prompt"] == "A test prompt"
         assert kwargs["aspect_ratio"] == "9:16"
+        assert kwargs["resolution"] == "1K"
         mock_generate.assert_called_once()
 
     @patch("app.services.image_generator.time.sleep")
