@@ -56,6 +56,7 @@ from app.services.post_writer import (
     write_summary_article,
     write_topic_article,
 )
+from app.services.output_cleanup import cleanup_protocol_output
 from app.services.slide_planner import (
     fallback_summary_slides,
     fallback_topic_slides,
@@ -135,8 +136,49 @@ async def _process_protocol_posts(protocol: Protocol, db_session: AsyncSession) 
     protocol.processed = all_ready
     await db_session.commit()
 
-    if not all_ready:
+    if all_ready:
+        try:
+            await _cleanup_protocol_output(protocol, folder, db_session)
+        except Exception as exc:
+            logger.warning(
+                "Output cleanup failed for protocol %s: %s", protocol.id, exc
+            )
+    else:
         logger.warning("Protocol %s remains unprocessed", protocol.id)
+
+
+async def _cleanup_protocol_output(
+    protocol: Protocol,
+    folder: Path,
+    db_session: AsyncSession,
+) -> None:
+    """Keep only DB-referenced assets and current captions in the output."""
+    posts_result = await db_session.execute(
+        select(Post)
+        .where(Post.protocol_id == protocol.id)
+        .order_by(Post.post_index)
+    )
+    posts = posts_result.scalars().all()
+    captions = [
+        (post.post_index, post.slug, post.caption)
+        for post in posts
+        if post.caption
+    ]
+
+    assets_result = await db_session.execute(
+        select(PostAsset)
+        .join(Post, PostAsset.post_id == Post.id)
+        .where(Post.protocol_id == protocol.id)
+    )
+    assets = assets_result.scalars().all()
+    allowed = [Path(asset.path) for asset in assets if asset.path]
+
+    removed = cleanup_protocol_output(folder, captions, allowed)
+    logger.info(
+        "Output cleanup for protocol %s removed %s file(s)",
+        protocol.id,
+        len(removed),
+    )
 
 
 async def _get_or_create_plan(

@@ -141,6 +141,8 @@ async def test_protocol_processed_when_all_posts_ready(tmp_path):
         "app.services.post_processor._ensure_summary_post", AsyncMock()
     ), patch(
         "app.services.post_processor._all_posts_ready", AsyncMock(return_value=True)
+    ), patch(
+        "app.services.post_processor._cleanup_protocol_output", AsyncMock()
     ):
         await process_protocol_posts(protocol, session)
 
