@@ -128,10 +128,13 @@ def call_json(
 
             if not raw:
                 logger.warning(
-                    "LLM call %s returned an empty response on attempt %s/%s",
+                    "LLM call %s returned an empty response on attempt %s/%s "
+                    "finish_reason=%s usage=%s",
                     label,
                     attempt + 1,
                     max_retries,
+                    result.finish_reason,
+                    usage,
                 )
                 if attempt < max_retries - 1:
                     time.sleep(config.API_CALL_DELAY_SECONDS)
@@ -231,10 +234,13 @@ def call_text(
                 )
                 return raw.strip()
             logger.warning(
-                "LLM call %s returned an empty response on attempt %s/%s",
+                "LLM call %s returned an empty response on attempt %s/%s "
+                "finish_reason=%s usage=%s",
                 label,
                 attempt + 1,
                 max_retries,
+                result.finish_reason,
+                usage,
             )
         except Exception as exc:
             logger.error(

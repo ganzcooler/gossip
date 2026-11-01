@@ -24,6 +24,7 @@ class ChatCompletionResult:
 
     content: str
     usage: dict[str, Any]
+    finish_reason: str | None = None
 
 
 @dataclass
@@ -155,9 +156,11 @@ def chat_completion_result(
     if content is None:
         content = ""
     usage = data.get("usage")
+    finish_reason = data["choices"][0].get("finish_reason")
     return ChatCompletionResult(
         content=str(content).strip(),
         usage=usage if isinstance(usage, dict) else {},
+        finish_reason=finish_reason,
     )
 
 
