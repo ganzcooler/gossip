@@ -91,14 +91,14 @@ def test_validate_summary_plan_rejects_too_many_slides():
         validate_summary_plan(_summary_plan(9))
 
 
-def test_validate_topic_plan_accepts_one_to_four_pairs():
+def test_validate_topic_plan_accepts_one_to_three_pairs():
     validate_topic_plan(_topic_plan(1))
-    validate_topic_plan(_topic_plan(4))
+    validate_topic_plan(_topic_plan(3))
 
 
 def test_validate_topic_plan_rejects_too_many_pairs():
     with pytest.raises(SlidePlanError):
-        validate_topic_plan(_topic_plan(5))
+        validate_topic_plan(_topic_plan(4))
 
 
 def test_fallback_summary_slides_produces_valid_plan():
@@ -115,7 +115,7 @@ def test_fallback_topic_slides_produces_even_pairs():
 
     validate_topic_plan(plan)
     assert plan.cover.kicker == "THEMA IM FOKUS"
-    assert 1 <= len(plan.pairs) <= 4
+    assert 1 <= len(plan.pairs) <= 3
     assert all(len(pair.slides) == 2 for pair in plan.pairs)
     assert all(len(slide.body) <= 220 for pair in plan.pairs for slide in pair.slides)
     assert all(pair.artwork_brief for pair in plan.pairs)

@@ -61,8 +61,6 @@ from app.services.slide_planner import (
     fallback_topic_slides,
     plan_summary_slides,
     plan_topic_slides,
-    repair_summary_slides,
-    repair_topic_slides,
 )
 from app.utils.folder_utils import create_protocol_folder, normalize_for_folder_name
 
@@ -528,42 +526,33 @@ async def _render_summary_with_repair(
     *,
     session_label: str | None = None,
 ) -> tuple[list[Path], SummarySlidePlan]:
-    for attempt in range(2):
-        try:
-            with Image.open(cover_path) as cover_image:
-                paths = await _run_sync(
-                    render_summary_story,
-                    cover_image=cover_image,
-                    plan=plan,
-                    output_dir=folder,
-                    res_dir=RES_DIR,
-                    session_label=session_label,
-                )
-            return paths, plan
-        except TextOverflowError as exc:
-            overflow = (
-                f"role: {exc.role}\ntext: {exc.text}\n"
-                f"max_width: {exc.max_width}\nmax_height: {exc.max_height}"
+    try:
+        with Image.open(cover_path) as cover_image:
+            paths = await _run_sync(
+                render_summary_story,
+                cover_image=cover_image,
+                plan=plan,
+                output_dir=folder,
+                res_dir=RES_DIR,
+                session_label=session_label,
             )
-            logger.warning("Summary render overflow: %s", exc)
-            if attempt == 0:
-                plan = await _run_sync(
-                    repair_summary_slides, article, plan, overflow
-                )
-            else:
-                plan = fallback_summary_slides(article)
-            await _persist_summary_slides(post, plan, db_session)
-
-    with Image.open(cover_path) as cover_image:
-        paths = await _run_sync(
-            render_summary_story,
-            cover_image=cover_image,
-            plan=plan,
-            output_dir=folder,
-            res_dir=RES_DIR,
-            session_label=session_label,
+        return paths, plan
+    except TextOverflowError as exc:
+        logger.warning(
+            "Summary render overflow (%s); using deterministic fallback", exc
         )
-    return paths, plan
+        plan = fallback_summary_slides(article)
+        await _persist_summary_slides(post, plan, db_session)
+        with Image.open(cover_path) as cover_image:
+            paths = await _run_sync(
+                render_summary_story,
+                cover_image=cover_image,
+                plan=plan,
+                output_dir=folder,
+                res_dir=RES_DIR,
+                session_label=session_label,
+            )
+        return paths, plan
 
 
 async def _render_topic_with_repair(
@@ -578,50 +567,41 @@ async def _render_topic_with_repair(
     *,
     session_label: str | None = None,
 ) -> tuple[list[Path], TopicSlidePlan]:
-    for attempt in range(2):
-        try:
-            with ExitStack() as stack:
-                cover_image = stack.enter_context(Image.open(cover_path))
-                artworks = [
-                    stack.enter_context(Image.open(path)) for path in artwork_paths
-                ]
-                paths = await _run_sync(
-                    render_topic_carousel,
-                    cover_image=cover_image,
-                    artwork_images=artworks,
-                    plan=plan,
-                    output_dir=folder,
-                    post_index=post_index,
-                    res_dir=RES_DIR,
-                    session_label=session_label,
-                )
-            return paths, plan
-        except TextOverflowError as exc:
-            overflow = (
-                f"role: {exc.role}\ntext: {exc.text}\n"
-                f"max_width: {exc.max_width}\nmax_height: {exc.max_height}"
+    try:
+        with ExitStack() as stack:
+            cover_image = stack.enter_context(Image.open(cover_path))
+            artworks = [
+                stack.enter_context(Image.open(path)) for path in artwork_paths
+            ]
+            paths = await _run_sync(
+                render_topic_carousel,
+                cover_image=cover_image,
+                artwork_images=artworks,
+                plan=plan,
+                output_dir=folder,
+                post_index=post_index,
+                res_dir=RES_DIR,
+                session_label=session_label,
             )
-            logger.warning("Topic render overflow: %s", exc)
-            if attempt == 0:
-                plan = await _run_sync(repair_topic_slides, article, plan, overflow)
-            else:
-                plan = fallback_topic_slides(article)
-            await _persist_topic_slides(post, plan, db_session)
-
-    with ExitStack() as stack:
-        cover_image = stack.enter_context(Image.open(cover_path))
-        artworks = [stack.enter_context(Image.open(path)) for path in artwork_paths]
-        paths = await _run_sync(
-            render_topic_carousel,
-            cover_image=cover_image,
-            artwork_images=artworks,
-            plan=plan,
-            output_dir=folder,
-            post_index=post_index,
-            res_dir=RES_DIR,
-            session_label=session_label,
-        )
-    return paths, plan
+        return paths, plan
+    except TextOverflowError as exc:
+        logger.warning("Topic render overflow (%s); using deterministic fallback", exc)
+        plan = fallback_topic_slides(article)
+        await _persist_topic_slides(post, plan, db_session)
+        with ExitStack() as stack:
+            cover_image = stack.enter_context(Image.open(cover_path))
+            artworks = [stack.enter_context(Image.open(path)) for path in artwork_paths]
+            paths = await _run_sync(
+                render_topic_carousel,
+                cover_image=cover_image,
+                artwork_images=artworks,
+                plan=plan,
+                output_dir=folder,
+                post_index=post_index,
+                res_dir=RES_DIR,
+                session_label=session_label,
+            )
+        return paths, plan
 
 
 async def _all_posts_ready(

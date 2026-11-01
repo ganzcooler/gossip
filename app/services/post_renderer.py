@@ -48,11 +48,11 @@ TOPIC_FONTS = {
     "cover_headline": 80,
     "cover_kicker": 30,
     "cover_badge": 28,
-    "content_number": 150,
+    "content_number": 110,
     "content_label": 28,
-    "content_headline": 54,
-    "content_body": 36,
-    "content_counter": 24,
+    "content_headline": 50,
+    "content_body": 34,
+    "content_counter": 22,
 }
 
 
@@ -641,58 +641,58 @@ def _render_topic_content(
     draw = ImageDraw.Draw(canvas)
 
     number_font = _font(res_dir, "oswald", TOPIC_FONTS["content_number"])
-    draw.text((text_x, 80), f"{slide_number:02d}", font=number_font, fill=accent)
+    draw.text((text_x, 45), f"{slide_number:02d}", font=number_font, fill=accent)
 
     if slide.label:
         label_font = _font(res_dir, "oswald", TOPIC_FONTS["content_label"])
         _draw_tracked_text(
             draw,
-            (text_x, 260),
+            (text_x, 210),
             slide.label.upper(),
             label_font,
             accent,
             tracking=2.0,
         )
 
-    draw.line([(text_x, 314), (text_x + 420, 314)], fill=accent, width=2)
+    draw.line([(text_x, 250), (text_x + 420, 250)], fill=accent, width=2)
 
     headline_font = _font(res_dir, "oswald", TOPIC_FONTS["content_headline"])
-    headline_top = 356
+    headline_top = 286
     headline_lines = _fit_lines(
         draw,
         slide.headline,
         headline_font,
         max_width=420,
-        max_height=4 * _line_height(headline_font, 6),
+        max_height=4 * _line_height(headline_font, -2),
         role=f"topic_slide_{page:02d}_headline",
-        spacing=0,
+        spacing=-2,
     )
     headline_bottom = _draw_lines(
-        draw, headline_lines, (text_x, headline_top), headline_font, WHITE, spacing=0
+        draw, headline_lines, (text_x, headline_top), headline_font, WHITE, spacing=-2
     )
 
     body_font = _font(res_dir, "inter", TOPIC_FONTS["content_body"])
-    body_top = headline_bottom + 30
+    body_top = headline_bottom + 22
     body_lines = _fit_lines(
         draw,
         slide.body,
         body_font,
         max_width=420,
-        max_height=1120 - body_top,
+        max_height=1180 - body_top,
         role=f"topic_slide_{page:02d}_body",
-        spacing=10,
+        spacing=6,
     )
-    _draw_lines(draw, body_lines, (text_x, body_top), body_font, WHITE, spacing=10)
+    _draw_lines(draw, body_lines, (text_x, body_top), body_font, WHITE, spacing=6)
 
     counter_font = _font(res_dir, "oswald", TOPIC_FONTS["content_counter"])
     _draw_tracked_text(
         draw,
-        (text_x, 1240),
+        (text_x, 1250),
         f"{page:02d} / {total:02d}",
         counter_font,
         accent,
         tracking=1.0,
     )
 
-    _paste_logo(canvas, res_dir, (panel_x + PANEL_WIDTH - 110, 1150), 80)
+    _paste_logo(canvas, res_dir, (panel_x + PANEL_WIDTH - 110, 1190), 80)
     return canvas

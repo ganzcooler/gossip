@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 MIN_SUMMARY_SLIDES = 3
 MAX_SUMMARY_SLIDES = 8
 MIN_TOPIC_SLIDES = 2
-MAX_TOPIC_SLIDES = 8
-MAX_SLIDE_BODY = 300
+MAX_TOPIC_SLIDES = 6
+MAX_SLIDE_BODY = 220
 MAX_SLIDE_HEADLINE = 120
 MAX_SLIDE_LABEL = 40
 MAX_COVER_HEADLINE = 120
@@ -270,7 +270,7 @@ def fallback_topic_slides(article: ArticleDraft) -> TopicSlidePlan:
             SlideContent(
                 label=_label_from_heading(section.heading),
                 headline=_shorten(section.heading, 50),
-                body=_condense_text(section.paragraphs, 160),
+                body=_condense_text(section.paragraphs, 220),
             )
         )
 
@@ -288,7 +288,7 @@ def fallback_topic_slides(article: ArticleDraft) -> TopicSlidePlan:
             SlideContent(
                 label="AUSBLICK",
                 headline="Was als Nächstes passiert",
-                body=_shorten(article.lead, 160),
+                body=_shorten(article.lead, 220),
             )
         )
 
@@ -298,7 +298,7 @@ def fallback_topic_slides(article: ArticleDraft) -> TopicSlidePlan:
             SlideContent(
                 label="AUSBLICK",
                 headline="Was als Nächstes passiert",
-                body=_shorten(fallback_body, 160),
+                body=_shorten(fallback_body, 220),
             )
         )
 
