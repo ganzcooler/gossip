@@ -4,6 +4,7 @@ The writer deliberately never sees slide counts or layout limits. Slides are a
 later, separate condensation step.
 """
 
+import json
 import logging
 
 from app.core import post_prompts
@@ -29,7 +30,7 @@ def write_summary_article(
         call_label="summary_writer",
         max_tokens=16384,
         temperature=0.7,
-        reasoning_effort="high",
+        reasoning_effort="max",
     )
 
 
@@ -47,7 +48,7 @@ def write_topic_article(protocol_text: str, topic_brief: TopicBrief) -> ArticleD
         call_label=f"topic_writer:{topic_brief.slug}",
         max_tokens=16384,
         temperature=0.7,
-        reasoning_effort="high",
+        reasoning_effort="max",
     )
 
 
@@ -70,7 +71,28 @@ def repair_article(
         call_label="article_repair",
         max_tokens=16384,
         temperature=0.5,
-        reasoning_effort="high",
+        reasoning_effort="max",
+    )
+
+
+def repair_article_for_budget(
+    protocol_text: str, article: ArticleDraft, budget
+) -> ArticleDraft:
+    """Rewrite an article that misses the word/section/character budget."""
+    prompt = post_prompts.render_prompt(
+        post_prompts.ARTICLE_BUDGET_REPAIR_PROMPT,
+        BUDGET_JSON=json.dumps(budget.as_dict(), indent=2),
+        ARTICLE_JSON=article.model_dump_json(indent=2),
+        PROTOCOL_TEXT=protocol_text,
+    )
+    logger.info("Repairing article '%s' for budget", article.title)
+    return call_json(
+        prompt=prompt,
+        model=ArticleDraft,
+        call_label="article_budget_repair",
+        max_tokens=16384,
+        temperature=0.4,
+        reasoning_effort="max",
     )
 
 

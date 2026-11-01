@@ -92,10 +92,10 @@ Struktur:
 - `title`: neutrale, konkrete Überschrift, maximal 80 Zeichen.
 - `kicker`: immer "SITZUNG KOMPAKT".
 - `lead`: ein bis zwei Sätze, die den Kern der Sitzung zusammenfassen.
-- `sections`: drei bis sieben Abschnitte. Jeder Abschnitt hat eine kurze Überschrift und ein bis drei Absätze.
+- `sections`: vier bis sechs Abschnitte. Jeder Abschnitt hat eine kurze Überschrift und ein bis drei Absätze.
 - `key_takeaways`: drei bis sieben kurze Kernaussagen.
 
-Länge: So lang wie nötig, typischerweise 500 bis 900 Wörter. Keine künstliche Kürzung.
+Länge: 500 bis 650 Wörter. Keine künstliche Kürzung, aber auch keine Ausschweifungen.
 
 Antworte ausschließlich mit gültigem JSON in diesem Format:
 {{
@@ -132,10 +132,10 @@ Struktur:
 - `title`: neutrale, konkrete Überschrift, maximal 80 Zeichen.
 - `kicker`: immer "THEMA IM FOKUS".
 - `lead`: ein bis zwei Sätze, die den Kern des Themas zusammenfassen.
-- `sections`: drei bis sechs Abschnitte. Jeder Abschnitt hat eine kurze Überschrift und ein bis drei Absätze.
+- `sections`: drei bis vier Abschnitte. Jeder Abschnitt hat eine kurze Überschrift und ein bis drei Absätze.
 - `key_takeaways`: drei bis sechs kurze Kernaussagen.
 
-Länge: So lang wie nötig, typischerweise 600 bis 1100 Wörter. Keine künstliche Kürzung.
+Länge: 350 bis 450 Wörter. Keine künstliche Kürzung, aber auch keine Ausschweifungen.
 
 Antworte ausschließlich mit gültigem JSON in diesem Format:
 {{
@@ -227,7 +227,7 @@ Protokoll:
 
 
 SUMMARY_SLIDE_PLAN_PROMPT = """
-Du bist Slide-Planer für eine 9:16-Story. Verdichte den fertigen Artikel zu einer Cover-Slide und drei bis sieben Content-Slides. Maximal acht Content-Slides.
+Du bist Slide-Planer für eine 9:16-Story. Verdichte den fertigen Artikel zu einer Cover-Slide und drei bis sieben Content-Slides. Maximal sieben Content-Slides.
 
 {STYLE_GUIDE}
 
@@ -394,4 +394,28 @@ Artikel:
 
 Slide-Plan:
 {SLIDE_PLAN_JSON}
+""".strip()
+
+
+ARTICLE_BUDGET_REPAIR_PROMPT = """
+Du bist Lektor für einen lokalen Nachrichtenkanal. Der folgende Artikel verletzt das vorgegebene Längen- und Struktur-Budget. Überarbeite ihn so, dass er das Budget exakt einhält.
+
+{STYLE_GUIDE}
+
+Budget:
+{BUDGET_JSON}
+
+Regeln:
+- Behalte alle Fakten und die inhaltliche Reihenfolge bei.
+- Kürze durch Straffung, nicht durch Weglassen wichtiger Fakten.
+- Genau eine H1 (`title`), die angegebene Anzahl H2-Abschnitte.
+- Keine neuen Fakten, keine Personennamen.
+- `key_takeaways` bleiben kurze Metadaten und werden nicht auf Slides verwendet.
+- Gib den vollständigen korrigierten Artikel als JSON zurück.
+
+Artikel:
+{ARTICLE_JSON}
+
+Protokoll:
+{PROTOCOL_TEXT}
 """.strip()

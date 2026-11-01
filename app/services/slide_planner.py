@@ -23,7 +23,7 @@ from app.services.llm_json import call_json
 logger = logging.getLogger(__name__)
 
 MIN_SUMMARY_SLIDES = 3
-MAX_SUMMARY_SLIDES = 8
+MAX_SUMMARY_SLIDES = 7
 MIN_TOPIC_SLIDES = 2
 MAX_TOPIC_SLIDES = 6
 MAX_SLIDE_BODY = 220

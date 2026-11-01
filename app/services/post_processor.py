@@ -39,7 +39,8 @@ from app.models import (
     Protocol,
 )
 from app.services.editorial_planner import plan_editorial
-from app.services.errors import AuthenticationError, TextOverflowError
+from app.services.article_budget import budget_for_post_type, validate_article_budget
+from app.services.errors import AuthenticationError, PostGenerationError, TextOverflowError
 from app.services.cost_tracker import start_cost_tracking, stop_cost_tracking
 from app.services.fact_checker import fact_check_article
 from app.services.post_image_generator import (
@@ -53,6 +54,7 @@ from app.services.post_renderer import render_summary_story, render_topic_carous
 from app.services.post_writer import (
     article_to_markdown,
     repair_article,
+    repair_article_for_budget,
     write_summary_article,
     write_topic_article,
 )
@@ -60,9 +62,8 @@ from app.services.output_cleanup import cleanup_protocol_output
 from app.services.slide_planner import (
     fallback_summary_slides,
     fallback_topic_slides,
-    plan_summary_slides,
-    plan_topic_slides,
 )
+from app.services.slide_distributor import build_summary_slides, build_topic_slides
 from app.utils.folder_utils import create_protocol_folder, normalize_for_folder_name
 
 logger = logging.getLogger(__name__)
@@ -280,7 +281,7 @@ async def _ensure_summary_post(
 
     plan = _load_summary_plan(post)
     if plan is None:
-        plan = await _run_sync(plan_summary_slides, article)
+        plan = await _run_sync(build_summary_slides, article)
         await _persist_summary_slides(post, plan, db_session)
 
     cover_path, _ = await _ensure_asset_image(
@@ -337,7 +338,7 @@ async def _ensure_topic_post(
 
     plan = _load_topic_plan(post)
     if plan is None:
-        plan = await _run_sync(plan_topic_slides, article)
+        plan = await _run_sync(build_topic_slides, article)
         await _persist_topic_slides(post, plan, db_session)
 
     cover_path, _ = await _ensure_asset_image(
@@ -404,6 +405,8 @@ async def _ensure_article(
 
     logger.info("Writing article for post %s", post.slug)
     article = await _run_sync(writer, protocol.pdf_text, brief)
+    budget = budget_for_post_type(post.post_type)
+    article = await _ensure_article_budget(article, budget, protocol.pdf_text)
     fact_check = await _run_sync(fact_check_article, protocol.pdf_text, article)
     logger.info(
         "Fact-check %s: verdict=%s issues=%s",
@@ -417,6 +420,7 @@ async def _ensure_article(
         article = await _run_sync(
             repair_article, protocol.pdf_text, article, fact_check
         )
+        article = await _ensure_article_budget(article, budget, protocol.pdf_text)
         second_check = await _run_sync(fact_check_article, protocol.pdf_text, article)
         if second_check.issues:
             logger.warning(
@@ -433,6 +437,23 @@ async def _ensure_article(
     post.error = None
     await db_session.commit()
     return article
+
+
+async def _ensure_article_budget(article, budget, protocol_text):
+    errors = validate_article_budget(article, budget)
+    if not errors:
+        return article
+    logger.warning("Article budget violation: %s; repairing once", "; ".join(errors))
+    repaired = await _run_sync(
+        repair_article_for_budget, protocol_text, article, budget
+    )
+    remaining = validate_article_budget(repaired, budget)
+    if remaining:
+        raise PostGenerationError(
+            "Article still violates its budget after repair: "
+            + "; ".join(remaining)
+        )
+    return repaired
 
 
 def _load_summary_plan(post: Post) -> SummarySlidePlan | None:

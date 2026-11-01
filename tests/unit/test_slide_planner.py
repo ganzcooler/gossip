@@ -76,9 +76,9 @@ def _topic_plan(pair_count: int) -> TopicSlidePlan:
     )
 
 
-def test_validate_summary_plan_accepts_three_to_eight_slides():
+def test_validate_summary_plan_accepts_three_to_seven_slides():
     validate_summary_plan(_summary_plan(3))
-    validate_summary_plan(_summary_plan(8))
+    validate_summary_plan(_summary_plan(7))
 
 
 def test_validate_summary_plan_rejects_too_few_slides():
@@ -88,7 +88,7 @@ def test_validate_summary_plan_rejects_too_few_slides():
 
 def test_validate_summary_plan_rejects_too_many_slides():
     with pytest.raises(SlidePlanError):
-        validate_summary_plan(_summary_plan(9))
+        validate_summary_plan(_summary_plan(8))
 
 
 def test_validate_topic_plan_accepts_one_to_three_pairs():
@@ -106,7 +106,7 @@ def test_fallback_summary_slides_produces_valid_plan():
 
     validate_summary_plan(plan)
     assert plan.cover.kicker == "SITZUNG KOMPAKT"
-    assert 3 <= len(plan.slides) <= 8
+    assert 3 <= len(plan.slides) <= 7
     assert all(len(slide.body) <= 220 for slide in plan.slides)
 
 
