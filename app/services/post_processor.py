@@ -248,6 +248,7 @@ async def _ensure_summary_post(
         role="cover",
         prompt_factory=lambda: generate_summary_cover_prompt(article, plan.cover),
         aspect_ratio="9:16",
+        size="1080x1920",
         folder=folder,
         filename="summary_cover_source.png",
         db_session=db_session,
@@ -304,6 +305,7 @@ async def _ensure_topic_post(
         role="cover",
         prompt_factory=lambda: generate_topic_cover_prompt(article, plan.cover),
         aspect_ratio="4:5",
+        size="1080x1350",
         folder=folder,
         filename=f"topic_{post_index:02d}_cover_source.png",
         db_session=db_session,
@@ -313,11 +315,11 @@ async def _ensure_topic_post(
     for pair_index, pair in enumerate(plan.pairs, start=1):
         path, _ = await _ensure_asset_image(
             post,
-            # v2 marks the switch from a 4:5 half-image to a 16:9 two-page
-            # spread, so existing 4:5 artwork is not reused.
-            role=f"artwork_v2_{pair_index:02d}",
+            # v3 marks the return to a complete 4:5 image shown in two halves.
+            role=f"artwork_v3_{pair_index:02d}",
             prompt_factory=lambda pair=pair: generate_topic_artwork_prompt(article, pair),
-            aspect_ratio="16:9",
+            aspect_ratio="4:5",
+            size="1080x1350",
             folder=folder,
             filename=f"topic_{post_index:02d}_artwork_{pair_index:02d}_source.png",
             db_session=db_session,
@@ -470,6 +472,7 @@ async def _ensure_asset_image(
     role: str,
     prompt_factory,
     aspect_ratio: str,
+    size: str | None = None,
     folder: Path,
     filename: str,
     db_session: AsyncSession,
@@ -483,7 +486,9 @@ async def _ensure_asset_image(
     prompt = asset.prompt if asset is not None and asset.prompt else await _run_sync(
         prompt_factory
     )
-    image_bytes = await _run_sync(generate_image_bytes, prompt, aspect_ratio)
+    image_bytes = await _run_sync(
+        generate_image_bytes, prompt, aspect_ratio, size=size
+    )
     path = folder / filename
     path.write_bytes(image_bytes)
 

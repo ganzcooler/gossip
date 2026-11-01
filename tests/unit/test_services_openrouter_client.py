@@ -146,6 +146,30 @@ class TestGenerateImage:
         assert exc_info.value.status_code == 402
 
     @patch("app.services.openrouter_client.httpx.post")
+    def test_image_generation_with_explicit_size(self, mock_post):
+        encoded = base64.b64encode(b"image-bytes").decode()
+        mock_post.return_value = _response(
+            200,
+            {"data": [{"b64_json": encoded, "media_type": "image/png"}]},
+        )
+
+        result = generate_image(
+            model="meta/muse-image",
+            prompt="A test image",
+            aspect_ratio="4:5",
+            size="1080x1350",
+        )
+
+        assert result == b"image-bytes"
+        _, kwargs = mock_post.call_args
+        assert kwargs["json"] == {
+            "model": "meta/muse-image",
+            "prompt": "A test image",
+            "size": "1080x1350",
+            "n": 1,
+        }
+
+    @patch("app.services.openrouter_client.httpx.post")
     def test_invalid_image_payload_raises_openrouter_error(self, mock_post):
         mock_post.return_value = _response(200, {"data": []})
 

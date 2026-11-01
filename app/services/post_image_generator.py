@@ -99,7 +99,12 @@ def generate_topic_caption(
     )
 
 
-def generate_image_bytes(prompt: str, aspect_ratio: str) -> bytes:
+def generate_image_bytes(
+    prompt: str,
+    aspect_ratio: str,
+    *,
+    size: str | None = None,
+) -> bytes:
     """Generate one image and fail loudly when the provider returns nothing."""
     logger.info(
         "Image generation start aspect=%s prompt_chars=%s", aspect_ratio, len(prompt)
@@ -107,12 +112,16 @@ def generate_image_bytes(prompt: str, aspect_ratio: str) -> bytes:
     last_error: Exception | None = None
     for attempt in range(1, 6):
         try:
-            result = openrouter_client.generate_image_result(
-                model=config.OPENROUTER_IMAGE_MODEL,
-                prompt=prompt,
-                aspect_ratio=aspect_ratio,
-                resolution=config.OPENROUTER_IMAGE_RESOLUTION,
-            )
+            kwargs = {
+                "model": config.OPENROUTER_IMAGE_MODEL,
+                "prompt": prompt,
+            }
+            if size is not None:
+                kwargs["size"] = size
+            else:
+                kwargs["aspect_ratio"] = aspect_ratio
+                kwargs["resolution"] = config.OPENROUTER_IMAGE_RESOLUTION
+            result = openrouter_client.generate_image_result(**kwargs)
             record_usage(result.usage)
             cost = result.usage.get("cost")
             logger.info(

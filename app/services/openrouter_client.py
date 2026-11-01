@@ -167,6 +167,7 @@ def generate_image(
     prompt: str,
     aspect_ratio: str = "9:16",
     resolution: str | None = None,
+    size: str | None = None,
     timeout: float = 300.0,
 ) -> bytes:
     """Generate one image and return the decoded image bytes."""
@@ -175,6 +176,7 @@ def generate_image(
         prompt=prompt,
         aspect_ratio=aspect_ratio,
         resolution=resolution,
+        size=size,
         timeout=timeout,
     ).image_bytes
 
@@ -185,17 +187,21 @@ def generate_image_result(
     prompt: str,
     aspect_ratio: str = "9:16",
     resolution: str | None = None,
+    size: str | None = None,
     timeout: float = 300.0,
 ) -> ImageGenerationResult:
     """Generate one image with usage/cost metadata."""
     payload = {
         "model": model,
         "prompt": prompt,
-        "aspect_ratio": aspect_ratio,
         "n": 1,
     }
-    if resolution is not None:
-        payload["resolution"] = resolution
+    if size is not None:
+        payload["size"] = size
+    else:
+        payload["aspect_ratio"] = aspect_ratio
+        if resolution is not None:
+            payload["resolution"] = resolution
     data = _post("/images", payload, timeout)
 
     try:

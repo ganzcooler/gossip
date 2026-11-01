@@ -360,9 +360,9 @@ Article:
 
 
 TOPIC_ARTWORK_IMAGE_PROMPT = """
-You are an editorial image prompt engineer. Write ONE English image prompt for a wide two-page spread used behind two paired slides of a carousel.
+You are an editorial image prompt engineer. Write ONE English image prompt for a complete, self-contained 4:5 editorial photograph for a local news carousel.
 
-The spread is split into two full-page 4:5 pages: the left page appears as the full-page background of the first slide, the right page as the full-page background of the second slide. On the first slide, a solid text panel covers the left half of the left page, so the page's right half is visible. On the second slide, a solid text panel covers the right half of the right page, so the page's left half is visible. Compose one coherent scene across both pages with a calm vertical center line, so the two visible inner halves join seamlessly when the user swipes between the slides. Do not place a door frame, wall, tree trunk, pole, person, vehicle, or any other strong vertical line on the exact center line; let soft continuous elements such as ground, grass, sky, or foliage cross the seam. Keep critical details away from the center; both pages should still have visual interest. The image must be photorealistic, atmospheric, and calm. It must not contain text, logos, brands, children, violence, or recognizable politicians. No sarcasm.
+Choose one clear main subject or visual metaphor that fits the slide pair. The image should work as a full 4:5 photograph with natural composition, depth, and atmosphere. It must be photorealistic, atmospheric, and calm, not a collage. It must not contain text, logos, brands, children, violence, or recognizable politicians. Leave the lower third visually calm so typography can sit there. No sarcasm, no exaggerated metaphors.
 
 Return only the image prompt, no explanations.
 

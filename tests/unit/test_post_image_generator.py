@@ -14,10 +14,13 @@ def test_generate_image_bytes_passes_model_and_resolution(mock_generate):
         usage={},
     )
 
-    result = post_image_generator.generate_image_bytes("A test prompt", "4:5")
+    result = post_image_generator.generate_image_bytes(
+        "A test prompt", "4:5", size="1080x1350"
+    )
 
     assert result == b"image-bytes"
     kwargs = mock_generate.call_args.kwargs
     assert kwargs["model"] == config.OPENROUTER_IMAGE_MODEL
-    assert kwargs["resolution"] == config.OPENROUTER_IMAGE_RESOLUTION
-    assert kwargs["aspect_ratio"] == "4:5"
+    assert kwargs["size"] == "1080x1350"
+    assert "aspect_ratio" not in kwargs
+    assert "resolution" not in kwargs

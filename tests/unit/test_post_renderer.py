@@ -166,3 +166,42 @@ def test_strip_session_label_removes_leading_committee():
         )
         == "Haushalt, Windpark, Radwege"
     )
+
+
+def test_topic_artwork_is_split_into_two_halves(tmp_path):
+    artwork = Image.new("RGB", (1080, 1350), (255, 0, 0))
+    artwork.paste(Image.new("RGB", (540, 1350), (0, 0, 255)), (540, 0))
+    plan = TopicSlidePlan(
+        cover=CoverPlan(
+            kicker="THEMA IM FOKUS",
+            headline="Test",
+            image_brief="Test",
+        ),
+        pairs=[
+            TopicSlidePair(
+                slides=[
+                    SlideContent(label="A", headline="A", body="A"),
+                    SlideContent(label="B", headline="B", body="B"),
+                ],
+                artwork_brief="Test",
+            )
+        ],
+    )
+
+    paths = render_topic_carousel(
+        cover_image=_image(),
+        artwork_images=[artwork],
+        plan=plan,
+        output_dir=tmp_path,
+        post_index=1,
+        res_dir=RES_DIR,
+    )
+
+    with Image.open(paths[1]) as image:
+        pixel = image.convert("RGB").getpixel((800, 100))
+        assert pixel[0] > 200
+        assert pixel[2] < 60
+    with Image.open(paths[2]) as image:
+        pixel = image.convert("RGB").getpixel((200, 100))
+        assert pixel[2] > 200
+        assert pixel[0] < 60

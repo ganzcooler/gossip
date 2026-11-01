@@ -615,29 +615,26 @@ def _render_topic_content(
     panel_side: str,
     res_dir: Path,
 ) -> Image.Image:
-    # The generated artwork is a wide two-page spread. Split it into two
-    # full-page 4:5 pages; each slide uses one page as its full-page background
-    # and overlays the text panel on the outer half. The visible inner halves
-    # meet at the slide boundary and continue seamlessly when the reader swipes.
-    spread = _prepare_image(artwork, (CANVAS_4_5[0] * 2, CANVAS_4_5[1]))
-    page_left = spread.crop((0, 0, CANVAS_4_5[0], CANVAS_4_5[1]))
-    page_right = spread.crop((CANVAS_4_5[0], 0, CANVAS_4_5[0] * 2, CANVAS_4_5[1]))
+    # The generated artwork is one complete 4:5 image. Each slide shows one
+    # half; the text panel sits on the outside so the two halves meet at the
+    # slide boundary and the full image is visible while swiping.
+    artwork = _prepare_image(artwork, CANVAS_4_5)
     color_block = slide_number // 2
     panel_color = ORANGE if color_block % 2 == 0 else CHARCOAL
     accent = WHITE if panel_color == ORANGE else ORANGE
 
     if panel_side == "left":
-        canvas = page_left
-        ImageDraw.Draw(canvas).rectangle(
-            [(0, 0), (PANEL_WIDTH, CANVAS_4_5[1])], fill=panel_color
-        )
+        canvas = Image.new("RGB", CANVAS_4_5, CHARCOAL)
+        image_half = artwork.crop((0, 0, PANEL_WIDTH, CANVAS_4_5[1]))
+        canvas.paste(panel_color, (0, 0, PANEL_WIDTH, CANVAS_4_5[1]))
+        canvas.paste(image_half, (PANEL_WIDTH, 0))
         text_x = 60
         panel_x = 0
     else:
-        canvas = page_right
-        ImageDraw.Draw(canvas).rectangle(
-            [(PANEL_WIDTH, 0), (CANVAS_4_5[0], CANVAS_4_5[1])], fill=panel_color
-        )
+        canvas = Image.new("RGB", CANVAS_4_5, CHARCOAL)
+        image_half = artwork.crop((PANEL_WIDTH, 0, CANVAS_4_5[0], CANVAS_4_5[1]))
+        canvas.paste(image_half, (0, 0))
+        canvas.paste(panel_color, (PANEL_WIDTH, 0, CANVAS_4_5[0], CANVAS_4_5[1]))
         text_x = 600
         panel_x = PANEL_WIDTH
 
