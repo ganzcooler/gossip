@@ -205,3 +205,20 @@ def test_topic_artwork_is_split_into_two_halves(tmp_path):
         pixel = image.convert("RGB").getpixel((200, 100))
         assert pixel[2] > 200
         assert pixel[0] < 60
+
+
+def test_summary_cover_shrinks_a_long_headline(tmp_path):
+    plan = _summary_plan()
+    plan.cover.headline = (
+        "Pavillon bleibt: Maßnahmen gegen nächtlichen Lärm beschlossen "
+        "und weitere lange Formulierungen"
+    )
+
+    paths = render_summary_story(
+        cover_image=_image((1080, 1920)),
+        plan=plan,
+        output_dir=tmp_path,
+        res_dir=RES_DIR,
+    )
+
+    assert paths[0].exists()

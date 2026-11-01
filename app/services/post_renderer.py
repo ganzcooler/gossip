@@ -170,6 +170,41 @@ def _fit_lines(
     return lines
 
 
+def _fit_headline_lines(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    *,
+    res_dir: Path,
+    family: str,
+    max_size: int,
+    min_size: int,
+    max_width: int,
+    max_height: int,
+    role: str,
+    spacing: int,
+):
+    """Fit a headline by shrinking the font down to a sensible minimum."""
+    last_error: TextOverflowError | None = None
+    for size in range(max_size, min_size - 1, -1):
+        font = _font(res_dir, family, size)
+        try:
+            lines = _fit_lines(
+                draw,
+                text,
+                font,
+                max_width=max_width,
+                max_height=max_height,
+                role=role,
+                spacing=spacing,
+            )
+            return lines, font
+        except TextOverflowError as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise TextOverflowError(role=role, text=text, max_width=max_width, max_height=max_height)
+
+
 def _draw_lines(
     draw: ImageDraw.ImageDraw,
     lines: list[str],
@@ -394,13 +429,15 @@ def _render_summary_cover(
         (72, 1160),
     )
 
-    headline_font = _font(res_dir, "oswald", SUMMARY_FONTS["cover_headline"])
     headline_top = kicker_bottom + 34
     cover_headline = _strip_session_label(plan.cover.headline, session_label)
-    lines = _fit_lines(
+    lines, headline_font = _fit_headline_lines(
         draw,
         cover_headline,
-        headline_font,
+        res_dir=res_dir,
+        family="oswald",
+        max_size=SUMMARY_FONTS["cover_headline"],
+        min_size=56,
         max_width=900,
         max_height=1720 - headline_top,
         role="summary_cover_headline",
@@ -454,14 +491,17 @@ def _render_summary_content(
 
     draw.line([(100, 436), (980, 436)], fill=RULE_GREY, width=2)
 
-    headline_font = _font(res_dir, "oswald", SUMMARY_FONTS["content_headline"])
+    base_headline_font = _font(res_dir, "oswald", SUMMARY_FONTS["content_headline"])
     headline_top = 482
-    headline_lines = _fit_lines(
+    headline_lines, headline_font = _fit_headline_lines(
         draw,
         slide.headline,
-        headline_font,
+        res_dir=res_dir,
+        family="oswald",
+        max_size=SUMMARY_FONTS["content_headline"],
+        min_size=44,
         max_width=880,
-        max_height=3 * _line_height(headline_font, 6),
+        max_height=3 * _line_height(base_headline_font, 6),
         role=f"summary_slide_{page:02d}_headline",
         spacing=0,
     )
@@ -585,15 +625,18 @@ def _render_topic_cover(
         (72, 748),
     )
 
-    headline_font = _font(res_dir, "oswald", TOPIC_FONTS["cover_headline"])
+    base_headline_font = _font(res_dir, "oswald", TOPIC_FONTS["cover_headline"])
     headline_top = kicker_bottom + 32
     cover_headline = _strip_session_label(plan.cover.headline, session_label)
-    lines = _fit_lines(
+    lines, headline_font = _fit_headline_lines(
         draw,
         cover_headline,
-        headline_font,
+        res_dir=res_dir,
+        family="oswald",
+        max_size=TOPIC_FONTS["cover_headline"],
+        min_size=52,
         max_width=900,
-        max_height=4 * _line_height(headline_font, 8),
+        max_height=4 * _line_height(base_headline_font, 8),
         role=f"topic_{post_index:02d}_cover_headline",
         spacing=0,
     )
@@ -656,14 +699,17 @@ def _render_topic_content(
 
     draw.line([(text_x, 225), (text_x + 460, 225)], fill=accent, width=2)
 
-    headline_font = _font(res_dir, "oswald", TOPIC_FONTS["content_headline"])
+    base_headline_font = _font(res_dir, "oswald", TOPIC_FONTS["content_headline"])
     headline_top = 255
-    headline_lines = _fit_lines(
+    headline_lines, headline_font = _fit_headline_lines(
         draw,
         slide.headline,
-        headline_font,
+        res_dir=res_dir,
+        family="oswald",
+        max_size=TOPIC_FONTS["content_headline"],
+        min_size=34,
         max_width=460,
-        max_height=4 * _line_height(headline_font, -2),
+        max_height=4 * _line_height(base_headline_font, -2),
         role=f"topic_slide_{page:02d}_headline",
         spacing=-2,
     )
