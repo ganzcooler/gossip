@@ -74,6 +74,7 @@ def summary_body_capacity(headline: str) -> int:
         body_max_y=1640,
         headline_spacing=6,
         body_spacing=6,
+        safety=0.9,
     )
 
 
