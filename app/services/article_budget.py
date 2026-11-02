@@ -26,7 +26,7 @@ class ArticleBudget:
 
 
 SUMMARY_BUDGET = ArticleBudget(
-    min_words=500,
+    min_words=490,
     max_words=600,
     min_sections=4,
     max_sections=6,
