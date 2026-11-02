@@ -27,10 +27,10 @@ class ArticleBudget:
 
 SUMMARY_BUDGET = ArticleBudget(
     min_words=500,
-    max_words=650,
+    max_words=600,
     min_sections=4,
     max_sections=6,
-    max_chars=5000,
+    max_chars=4500,
 )
 TOPIC_BUDGET = ArticleBudget(
     min_words=350,

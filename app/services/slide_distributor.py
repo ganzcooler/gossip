@@ -23,9 +23,8 @@ from app.services.slide_planner import (
     MAX_TOPIC_SLIDES,
     _label_from_heading,
 )
+from app.services.slide_metrics import summary_body_capacity, topic_body_capacity
 
-TOPIC_BODY_CHARS = 480
-SUMMARY_BODY_CHARS = 950
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 
 
@@ -69,7 +68,7 @@ def _section_text(section) -> str:
     return " ".join(paragraph.strip() for paragraph in section.paragraphs).strip()
 
 
-def _build_chunks(article: ArticleDraft, capacity: int):
+def _build_chunks(article: ArticleDraft, capacity_fn):
     chunks: list[tuple[str | None, str, str]] = []
     first = True
     for section in article.sections:
@@ -77,6 +76,7 @@ def _build_chunks(article: ArticleDraft, capacity: int):
         if first:
             text = f"{article.lead} {text}".strip()
             first = False
+        capacity = capacity_fn(section.heading)
         parts = _chunks(text, capacity)
         for index, part in enumerate(parts):
             label = _label_from_heading(section.heading) if index == 0 else None
@@ -96,7 +96,7 @@ def _split_continuation_chunk(body: str) -> list[str]:
 
 
 def build_summary_slides(article: ArticleDraft) -> SummarySlidePlan:
-    chunks = _build_chunks(article, SUMMARY_BODY_CHARS)
+    chunks = _build_chunks(article, summary_body_capacity)
     if len(chunks) > MAX_SUMMARY_SLIDES:
         raise SlidePlanError(
             f"Summary article needs {len(chunks)} slides, maximum is "
@@ -116,7 +116,7 @@ def build_summary_slides(article: ArticleDraft) -> SummarySlidePlan:
 
 
 def build_topic_slides(article: ArticleDraft) -> TopicSlidePlan:
-    chunks = _build_chunks(article, TOPIC_BODY_CHARS)
+    chunks = _build_chunks(article, topic_body_capacity)
     if len(chunks) > MAX_TOPIC_SLIDES:
         raise SlidePlanError(
             f"Topic article needs {len(chunks)} slides, maximum is "
