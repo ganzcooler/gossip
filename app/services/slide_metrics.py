@@ -66,14 +66,14 @@ def summary_body_capacity(headline: str) -> int:
     return _capacity(
         headline,
         headline_size=62,
-        body_size=36,
+        body_size=34,
         headline_width=880,
-        body_width=900,
+        body_width=920,
         headline_top=482,
         body_gap=36,
         body_max_y=1640,
         headline_spacing=6,
-        body_spacing=6,
+        body_spacing=4,
         safety=0.9,
     )
 
