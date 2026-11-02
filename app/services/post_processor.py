@@ -440,20 +440,25 @@ async def _ensure_article(
 
 
 async def _ensure_article_budget(article, budget, protocol_text):
-    errors = validate_article_budget(article, budget)
-    if not errors:
-        return article
-    logger.warning("Article budget violation: %s; repairing once", "; ".join(errors))
-    repaired = await _run_sync(
-        repair_article_for_budget, protocol_text, article, budget
-    )
-    remaining = validate_article_budget(repaired, budget)
+    for attempt in range(2):
+        errors = validate_article_budget(article, budget)
+        if not errors:
+            return article
+        logger.warning(
+            "Article budget violation (%s); repair attempt %s/2",
+            "; ".join(errors),
+            attempt + 1,
+        )
+        article = await _run_sync(
+            repair_article_for_budget, protocol_text, article, budget
+        )
+    remaining = validate_article_budget(article, budget)
     if remaining:
         raise PostGenerationError(
             "Article still violates its budget after repair: "
             + "; ".join(remaining)
         )
-    return repaired
+    return article
 
 
 def _load_summary_plan(post: Post) -> SummarySlidePlan | None:
