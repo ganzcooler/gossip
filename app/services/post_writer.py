@@ -90,7 +90,7 @@ def repair_article_for_budget(
         prompt=prompt,
         model=ArticleDraft,
         call_label="article_budget_repair",
-        max_tokens=32768,
+        max_tokens=65536,
         temperature=0.4,
         reasoning_effort="max",
     )
