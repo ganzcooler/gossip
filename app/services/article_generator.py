@@ -78,7 +78,7 @@ def generate_articles(text: str) -> List[SingleArticle]:
                     "{PROTOCOL_TEXT}", text
                 ),
                 response_format=response_format,
-                max_tokens=8192,
+                max_tokens=32768,
                 extra_body={
                     "reasoning": {"effort": config.OPENROUTER_REASONING_EFFORT}
                 },

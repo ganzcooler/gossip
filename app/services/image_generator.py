@@ -44,7 +44,8 @@ def validate_image_prompt(prompt: str) -> Tuple[bool, str]:
             prompt=prompts.IMAGE_PROMPT_VALIDATION_PROMPT.format(
                 image_prompt=prompt
             ),
-            temperature=1.0,
+            max_tokens=8192,
+                temperature=1.0,
             extra_body={
                 "reasoning": {"effort": config.OPENROUTER_REASONING_EFFORT}
             },
@@ -78,7 +79,8 @@ def make_prompt_realistic(prompt: str) -> str:
             prompt=prompts.IMAGE_PROMPT_REALISTIC_REWRITE_PROMPT.format(
                 image_prompt=prompt
             ),
-            temperature=1.0,
+            max_tokens=8192,
+                temperature=1.0,
             extra_body={
                 "reasoning": {"effort": config.OPENROUTER_REASONING_EFFORT}
             },
@@ -114,6 +116,7 @@ def generate_image_prompt(article: SingleArticle) -> str:
                 prompt=prompts.IMAGE_PROMPT_GENERATOR_PROMPT.format(
                     complete_article=full_article
                 ),
+                max_tokens=8192,
                 temperature=1.0,
                 extra_body={
                     "reasoning": {"effort": config.OPENROUTER_REASONING_EFFORT}

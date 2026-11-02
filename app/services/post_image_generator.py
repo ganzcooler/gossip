@@ -38,7 +38,7 @@ def generate_summary_cover_prompt(article: ArticleDraft, cover: CoverPlan) -> st
         call_text(
             prompt=prompt,
             call_label="summary_cover_prompt",
-            max_tokens=4096,
+            max_tokens=8192,
             temperature=0.8,
             reasoning_effort="medium",
         )
@@ -55,7 +55,7 @@ def generate_topic_cover_prompt(article: ArticleDraft, cover: CoverPlan) -> str:
         call_text(
             prompt=prompt,
             call_label="topic_cover_prompt",
-            max_tokens=4096,
+            max_tokens=8192,
             temperature=0.8,
             reasoning_effort="medium",
         )
@@ -74,7 +74,7 @@ def generate_topic_artwork_prompt(
         call_text(
             prompt=prompt,
             call_label="topic_artwork_prompt",
-            max_tokens=4096,
+            max_tokens=8192,
             temperature=0.8,
             reasoning_effort="medium",
         )
@@ -93,7 +93,7 @@ def generate_topic_caption(
         prompt=prompt,
         model=CaptionResult,
         call_label="topic_caption",
-        max_tokens=2048,
+        max_tokens=4096,
         temperature=0.6,
         reasoning_effort="medium",
     )

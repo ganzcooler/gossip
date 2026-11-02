@@ -28,7 +28,7 @@ def write_summary_article(
         prompt=prompt,
         model=ArticleDraft,
         call_label="summary_writer",
-        max_tokens=16384,
+        max_tokens=32768,
         temperature=0.7,
         reasoning_effort="max",
     )
@@ -46,7 +46,7 @@ def write_topic_article(protocol_text: str, topic_brief: TopicBrief) -> ArticleD
         prompt=prompt,
         model=ArticleDraft,
         call_label=f"topic_writer:{topic_brief.slug}",
-        max_tokens=16384,
+        max_tokens=32768,
         temperature=0.7,
         reasoning_effort="max",
     )
@@ -69,7 +69,7 @@ def repair_article(
         prompt=prompt,
         model=ArticleDraft,
         call_label="article_repair",
-        max_tokens=16384,
+        max_tokens=32768,
         temperature=0.5,
         reasoning_effort="max",
     )

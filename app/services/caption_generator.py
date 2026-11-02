@@ -50,6 +50,7 @@ def generate_insta_caption(article_title: str, article_content: str) -> str | No
                 prompt=prompts.INSTA_CAPTION_PROMPT.format(
                     complete_article=article_content
                 ),
+                max_tokens=4096,
                 temperature=1.0,
                 extra_body={
                     "reasoning": {"effort": config.OPENROUTER_REASONING_EFFORT}

@@ -21,7 +21,7 @@ def fact_check_article(protocol_text: str, article: ArticleDraft) -> FactCheckRe
         prompt=prompt,
         model=FactCheckResult,
         call_label=f"fact_check:{article.title[:60]}",
-        max_tokens=8192,
+        max_tokens=32768,
         temperature=0.2,
         reasoning_effort="medium",
     )
