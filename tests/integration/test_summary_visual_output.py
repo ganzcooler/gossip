@@ -168,7 +168,7 @@ async def test_image_failure_produces_the_brand_fallback_and_still_renders_ready
         assert cover.getpixel((900, 100)) != cover.getpixel((10, 10))
     with Image.open(folder / "summary-2024-01-15-story-02.png") as card:
         assert card.getpixel((70, 1000)) == (30, 123, 181)
-    assert protocol.processed is False
+    assert protocol.processed is True
 
 
 async def test_rerun_after_ready_does_not_call_writer_visuals_or_images_again(
@@ -222,4 +222,4 @@ async def test_missing_logo_fails_the_render_and_writes_no_partial_files(
     assert assets[0].status == "ready"
     assert assets[0].path is None
     assert list(tmp_path.iterdir()) == []
-    assert protocol.processed is False
+    assert protocol.processed is True

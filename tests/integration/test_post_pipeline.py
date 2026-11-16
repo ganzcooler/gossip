@@ -434,7 +434,7 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
 
     assert result.plan_status == "ready"
     assert [post.status for post in result.posts] == ["ready", "ready", "ready"]
-    assert protocol.processed is False
+    assert protocol.processed is True
 
     assert [call.role for call in fake.calls] == [
         "planner",
@@ -658,7 +658,7 @@ async def test_summary_writer_failure_marks_only_the_summary_failed(
 
     plan_row = await _plan_row(postgres_session, protocol)
     assert plan_row.status == "ready"
-    assert protocol.processed is False
+    assert protocol.processed is True
     assert [call.role for call in fake.calls] == [
         "planner",
         "summary_writer",

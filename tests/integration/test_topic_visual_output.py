@@ -271,7 +271,7 @@ async def test_full_protocol_renders_summary_and_topics_with_assets_and_api_path
         "ready",
     ]
     assert [post.failed_step for post in result.posts] == [None, None, None]
-    assert protocol.processed is False
+    assert protocol.processed is True
 
     for post in (summary, haushalt, radweg):
         assert post.caption.startswith("Illustration: KI-generiert.\n")

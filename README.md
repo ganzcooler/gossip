@@ -5,15 +5,18 @@ Gossip is a Python service that fetches municipal council protocols from
 in PostgreSQL. It runs as a containerized FastAPI application with an
 in-process APScheduler.
 
-The stateless post pipeline is feature-complete for generation. A protocol
-becomes a persisted Redaktionsplan plus one Summary post and zero to five topic
-posts with deterministic source excerpts. Every post gets a validated writer
-draft, the hard fact-check gate with one repair, deterministic slides, a
-composed caption, Alt-Texte and rendered images with brand fallbacks. The
-Summary is a blue 9:16 story; each topic is an orange 4:5 feed carousel with
-pair-sliced artwork. Retry/reprocess endpoints and scheduler wiring are still
-to come. The legacy one-call article, caption, image, and Instagram pipeline
-has been removed; legacy articles remain readable through the API.
+The stateless post pipeline is feature-complete for generation, retry and
+reprocess. A protocol becomes a persisted Redaktionsplan plus one Summary post
+and zero to five topic posts with deterministic source excerpts. Every post gets
+a validated writer draft, the hard fact-check gate with one repair,
+deterministic slides, a composed caption, Alt-Texte and rendered images with
+brand fallbacks. The Summary is a blue 9:16 story; each topic is an orange 4:5
+feed carousel with pair-sliced artwork. Failed posts can be retried individually
+from their failed step, and a protocol can be reprocessed from a fresh plan.
+`Protocol.processed` becomes true once the Summary and every planned topic post
+are terminal (`ready` or `failed`). The legacy one-call article, caption, image,
+and Instagram pipeline has been removed; legacy articles remain readable through
+the API.
 
 ## What it does
 
@@ -59,12 +62,19 @@ has been removed; legacy articles remain readable through the API.
    becomes `ready`; authentication errors stop the job. Alt-Texte stay in
    PostgreSQL and the API; no JSON, Markdown, prompt, or manifest files are
    written.
+8. **Retry and reprocess** — `POST /api/posts/{id}/retry` resets one Beitrag and
+   resumes at its `failed_step` with cached drafts, compositions, fact-check
+   results, captions and visual prompts. `force=true` clears only that post's
+   article, slides, assets, caption and output files and restarts at the writer.
+   `POST /api/protocols/{id}/reprocess` deletes the plan, posts and generated
+   output and rebuilds the whole protocol. `Protocol.processed` is terminal
+   (`ready` or `failed` posts) and a failed post is never retried
+   automatically.
 
 The fetch workflow is triggered by APScheduler and can also be started manually
-through the API. The full planning, content and visual pipeline is callable
-through `PostPipeline.run`; scheduler wiring and retry/reprocess operations
-arrive with ticket 08.
-The processing schedule slot is reserved but currently a no-op.
+through the API. The processing job runs the full stateless pipeline for every
+unprocessed protocol. It skips protocols whose Redaktionsplan failed (use the
+manual reprocess endpoint) and never auto-retries failed Beiträge.
 
 ## Architecture
 
@@ -89,7 +99,7 @@ app/
 ├── database.py                Async SQLAlchemy engine/session
 ├── main.py                    FastAPI entry point and lifespan
 ├── models.py                  SQLAlchemy models (protocols, articles, posts, slides, assets, plans)
-├── scheduler.py               APScheduler cron jobs and post-pipeline seam
+├── scheduler.py               APScheduler cron jobs and protocol processing
 ├── services/
 │   ├── protocol_fetcher.py    SessionNet scraping and PDF ingestion
 │   ├── duplicate_detector.py  Protocol similarity check
@@ -106,10 +116,11 @@ app/
 │   ├── post_renderer.py       Deterministic Summary story renderer
 │   ├── topic_renderer.py      Deterministic topic carousel renderer
 │   ├── render_common.py       Shared colors, logo plate, scrim, badge, folders
+│   ├── output_cleanup.py      Scoped force-retry/reprocess file cleanup
 │   ├── text_layout.py         Shared font loading, wrapping and fit primitives
 │   ├── organs.py              Finite Organ seed and deterministic resolver
 │   ├── protocol_excerpts.py   Deterministic source-anchor retrieval
-│   └── post_pipeline.py       Planning, content and Summary visual orchestrator
+│   └── post_pipeline.py       Plan, content, visuals, retry and reprocess
 ├── utils/                     Folder and SessionNet helpers
 └── res/                       Logo and runtime fonts for the renderer
 
@@ -207,14 +218,16 @@ Configuration is read from `.env` (see `.env.example`):
 | `GET` | `/api/protocols/{id}/articles` | Legacy articles for a protocol |
 | `GET` | `/api/protocols/{id}/posts` | Summary and topic posts for a protocol, ordered by `post_index` |
 | `GET` | `/api/posts/{id}` | One post with ordered slides and assets |
+| `POST` | `/api/posts/{id}/retry?force=false` | Retry one post from `failed_step`, or from the writer with `force=true` |
+| `POST` | `/api/protocols/{id}/reprocess` | Rebuild the Redaktionsplan and all posts for a protocol |
 | `GET` | `/api/stats` | Protocol/article counts and `post_counts` |
 | `POST` | `/api/pipeline/fetch` | Fetch new protocols now |
 | `GET` | `/api/pipeline/status` | Pipeline backlog, article counts, and `post_counts` |
 | `GET` | `/docs` | Swagger UI |
 
-The fetch endpoint calls the same job as the scheduler. Retry and reprocess
-endpoints will return with ticket 08; the old process, run, and generate-insta
-triggers are gone.
+The fetch endpoint calls the same job as the scheduler. The retry endpoint
+returns the same full post shape as `GET /api/posts/{id}`. The old process, run,
+and generate-insta triggers are gone.
 
 Planned Beiträge are already persisted and readable. The planning stage stores
 the Redaktionsplan and creates the summary post (`slug="summary"`,
@@ -383,12 +396,55 @@ always include all three post statuses:
 The fetch endpoint is currently unauthenticated; restrict access at the
 reverse proxy or add authentication before exposing the service publicly.
 
+### Retry and reprocess
+
+`POST /api/posts/{id}/retry` resets only that Beitrag to `draft` and reruns it
+from its stored `failed_step`. Upstream artifacts are reused:
+
+| Failed step | Retry resumes at |
+| --- | --- |
+| `writer` (no draft) | Writer, then compose, Faktenprüfung, Caption and visuals |
+| `slide_composer` | Compose from the cached draft, then Faktenprüfung, Caption and visuals |
+| `fact_check` / `repair` | The Faktenprüfung gate from the cached draft, then Caption and visuals |
+| `caption` | Caption from the cached draft; the gate is skipped when `fact_check_json.passed` is true |
+| `visual_prompts` | Visual prompts, image generation and render |
+| `image_generation` / `render` | Image generation and render with the cached prompts (image bytes are not persisted, so image calls repeat) |
+| `organ` | Resolve the Organ again, then continue at the earliest missing cached artifact |
+| `source_retrieval` | Retrieve the cached brief's anchors again, then continue at the earliest missing cached artifact |
+| unknown / none | Earliest missing cached artifact; the fact-check gate is never bypassed |
+
+`force=true` clears that post's article, fact-check result, caption, slides,
+assets and Alt-Texte, deletes only its generated output, and restarts at the
+writer. The Redaktionsplan, briefs and source excerpts stay cached. Other posts
+and their files are never touched.
+
+`POST /api/protocols/{id}/reprocess` deletes the existing plan, all posts,
+slides and assets, removes only the protocol's generated Summary files and
+`topic-*` subfolders, and rebuilds the plan and posts even when the protocol was
+already `processed`. A planner failure leaves `processed=false`.
+
+### `Protocol.processed`
+
+`processed` is terminal, not "everything succeeded". It becomes true when a
+valid `ready` Redaktionsplan exists, the Summary post and every planned topic
+post exist, and all of them are `ready` or `failed`. A failed Summary does not
+block terminal topics, and a failed topic does not block the Summary. A missing
+or `draft` post, or a failed/missing plan, keeps the protocol unprocessed.
+Failed posts remain visible and are only rerun through the manual retry
+endpoint; the scheduler never retries them automatically, and it skips
+protocols with a failed plan so there is no automatic replan loop.
+
 ## Scheduled jobs
 
 | Job | Schedule (Europe/Berlin) | Description |
 | --- | --- | --- |
 | `fetch_protocols` | 10:00 and 17:00 | Fetch new protocols from SessionNet |
-| `process_protocols` | 10:30 and 17:30 | Reserved post-pipeline slot; currently a no-op |
+| `process_protocols` | 10:30 and 17:30 | Run the stateless pipeline for unprocessed protocols; skip failed plans and never auto-retry failed posts |
+
+The processing job selects unprocessed protocols once, then processes each one
+in its own fresh session and pipeline and commits per protocol. Authentication
+or account errors stop the whole job immediately; other per-protocol errors are
+logged and the remaining protocols still run.
 
 Because the scheduler runs inside the web process, do not scale the `app`
 service to multiple replicas without moving the scheduler to a dedicated
@@ -434,6 +490,9 @@ been removed. Manual tests are excluded from the default run and from hooks.
 - The application prepares `ARTICLES_DIR` for generated images and writes
   monthly logs to `LOGS_DIR`. Both live under `GOSSIP_DATA_DIR` and are
   bind-mounted in `docker-compose.yaml`.
+- Force retry and reprocess remove only generated output: Summary
+  `summary-*` images plus `caption-summary-*` files, and the affected
+  `topic-<slug>/` subfolders. Unrelated files and other topics are left alone.
 - Docker JSON logs are capped at 10 MB across 3 files; the monthly file logs
   are kept separately so they survive container rebuilds.
 - PostgreSQL is only reachable on the internal Compose network.
@@ -445,8 +504,9 @@ been removed. Manual tests are excluded from the default run and from hooks.
 
 ## Known limitations / next steps
 
-- The planning stage, both content paths and both visual outputs are
-  implemented; retry/reprocess endpoints and scheduler wiring remain.
+- The planning stage, both content paths, both visual outputs, per-post retry
+  and protocol reprocess are implemented; the scheduled processing job is
+  wired. A manual real-API end-to-end test is not implemented yet.
 - Summary posts are family-pure blue 9:16 story PNGs; topic posts are
   family-pure orange 4:5 carousels. Both write only PNGs plus one caption file
   per Beitrag.
