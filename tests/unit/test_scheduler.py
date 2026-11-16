@@ -1,10 +1,12 @@
 """Tests for scheduler module."""
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from apscheduler.triggers.cron import CronTrigger
 
+from app.services.llm_client import LLMAuthenticationError
 from app.scheduler import (
+    _process_protocol,
     fetch_protocols_wrapper,
     process_protocols_wrapper,
     setup_scheduler,
@@ -53,17 +55,146 @@ class TestFetchProtocolsWrapper:
 
 
 class TestProcessProtocolsWrapper:
-    """Tests for the stateless pipeline seam in process_protocols_wrapper."""
+    """Tests for the scheduled stateless post-pipeline job."""
+
+    @staticmethod
+    def _session_context(session):
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=session)
+        context.__aexit__ = AsyncMock(return_value=False)
+        return context
+
+    @staticmethod
+    def _ids_result(ids):
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = list(ids)
+        return result
+
+    @staticmethod
+    def _status_result(status):
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = status
+        return result
 
     @pytest.mark.asyncio
-    async def test_process_protocols_wrapper_is_a_noop_until_pipeline_lands(self, caplog):
-        """The removed one-call processor must not be called from the scheduler."""
-        with patch('app.scheduler.AsyncSessionLocal') as mock_session_local:
-            with caplog.at_level("INFO", logger="app.scheduler"):
+    async def test_wrapper_processes_ids_and_stops_on_auth(self):
+        session = AsyncMock()
+        session.execute.return_value = self._ids_result([1, 2, 3])
+
+        with patch('app.scheduler.AsyncSessionLocal') as session_local:
+            session_local.return_value = self._session_context(session)
+            with patch(
+                'app.scheduler._process_protocol', new_callable=AsyncMock
+            ) as process:
+                process.side_effect = ["ok", "auth", "ok"]
+
                 await process_protocols_wrapper()
 
-        mock_session_local.assert_not_called()
-        assert "not implemented yet" in caplog.text
+        assert [call.args[0] for call in process.await_args_list] == [1, 2]
+
+    @pytest.mark.asyncio
+    async def test_wrapper_continues_after_non_auth_errors(self):
+        session = AsyncMock()
+        session.execute.return_value = self._ids_result([1, 2])
+
+        with patch('app.scheduler.AsyncSessionLocal') as session_local:
+            session_local.return_value = self._session_context(session)
+            with patch(
+                'app.scheduler._process_protocol', new_callable=AsyncMock
+            ) as process:
+                process.side_effect = ["error", "ok"]
+
+                await process_protocols_wrapper()
+
+        assert [call.args[0] for call in process.await_args_list] == [1, 2]
+
+    @pytest.mark.asyncio
+    async def test_process_protocol_skips_a_failed_plan(self):
+        session = AsyncMock()
+        session.execute.return_value = self._status_result("failed")
+
+        with patch('app.scheduler.AsyncSessionLocal') as session_local:
+            session_local.return_value = self._session_context(session)
+            with patch('app.scheduler.PostPipeline') as pipeline_cls:
+                outcome = await _process_protocol(1)
+
+        assert outcome == "skip"
+        pipeline_cls.assert_not_called()
+        session.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_process_protocol_runs_and_commits_in_a_fresh_session(self):
+        session = AsyncMock()
+        session.execute.return_value = self._status_result(None)
+        protocol = MagicMock(id=1)
+        session.get.return_value = protocol
+
+        with patch('app.scheduler.AsyncSessionLocal') as session_local:
+            session_local.return_value = self._session_context(session)
+            with patch('app.scheduler.OpenRouterLLMClient'):
+                with patch('app.scheduler.PostPipeline') as pipeline_cls:
+                    run = AsyncMock()
+                    pipeline_cls.return_value.run = run
+
+                    outcome = await _process_protocol(1)
+
+        assert outcome == "ok"
+        run.assert_awaited_once_with(protocol, session)
+        session.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_process_protocol_returns_auth_and_rolls_back(self):
+        session = AsyncMock()
+        session.execute.return_value = self._status_result(None)
+        session.get.return_value = MagicMock(id=1)
+
+        with patch('app.scheduler.AsyncSessionLocal') as session_local:
+            session_local.return_value = self._session_context(session)
+            with patch('app.scheduler.OpenRouterLLMClient'):
+                with patch('app.scheduler.PostPipeline') as pipeline_cls:
+                    pipeline_cls.return_value.run = AsyncMock(
+                        side_effect=LLMAuthenticationError("no credits")
+                    )
+
+                    outcome = await _process_protocol(1)
+
+        assert outcome == "auth"
+        session.rollback.assert_awaited_once()
+        session.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_process_protocol_returns_error_and_rolls_back(self):
+        session = AsyncMock()
+        session.execute.return_value = self._status_result(None)
+        session.get.return_value = MagicMock(id=1)
+
+        with patch('app.scheduler.AsyncSessionLocal') as session_local:
+            session_local.return_value = self._session_context(session)
+            with patch('app.scheduler.OpenRouterLLMClient'):
+                with patch('app.scheduler.PostPipeline') as pipeline_cls:
+                    pipeline_cls.return_value.run = AsyncMock(
+                        side_effect=RuntimeError("boom")
+                    )
+
+                    outcome = await _process_protocol(1)
+
+        assert outcome == "error"
+        session.rollback.assert_awaited_once()
+        session.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_unprocessed_protocols_does_not_process_anything(self):
+        session = AsyncMock()
+        session.execute.return_value = self._ids_result([])
+
+        with patch('app.scheduler.AsyncSessionLocal') as session_local:
+            session_local.return_value = self._session_context(session)
+            with patch(
+                'app.scheduler._process_protocol', new_callable=AsyncMock
+            ) as process:
+                await process_protocols_wrapper()
+
+        process.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_process_protocols_wrapper_no_longer_references_old_processor(self):

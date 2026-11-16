@@ -3,11 +3,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
+from app.core.config import ARTICLES_DIR
 from app.database import get_db
 from app.models import Protocol, Article, Post
+from app.services.llm_client import OpenRouterLLMClient
+from app.services.post_pipeline import PostPipeline
 from app.services.protocol_fetcher import fetch_protocols_job
 
 router = APIRouter()
+
+
+def get_post_pipeline() -> PostPipeline:
+    """Build the default pipeline for the API; tests override this dependency."""
+    return PostPipeline(OpenRouterLLMClient(), ARTICLES_DIR)
 
 
 def _isoformat(value):
@@ -200,6 +208,77 @@ async def get_post(post_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Post not found")
 
     return _serialize_post_detail(post)
+
+
+@router.post("/posts/{post_id}/retry")
+async def retry_post(
+    post_id: int,
+    force: bool = False,
+    db: AsyncSession = Depends(get_db),
+    pipeline: PostPipeline = Depends(get_post_pipeline),
+):
+    """Retry one failed Beitrag, optionally restarting at the writer."""
+    result = await db.execute(
+        select(Post)
+        .options(selectinload(Post.slides), selectinload(Post.assets))
+        .where(Post.id == post_id)
+    )
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    await pipeline.retry_post(post, db, force=force)
+
+    refreshed = await db.execute(
+        select(Post)
+        .options(selectinload(Post.slides), selectinload(Post.assets))
+        .where(Post.id == post_id)
+        .execution_options(populate_existing=True)
+    )
+    post = refreshed.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    return _serialize_post_detail(post)
+
+
+@router.post("/protocols/{protocol_id}/reprocess")
+async def reprocess_protocol(
+    protocol_id: int,
+    db: AsyncSession = Depends(get_db),
+    pipeline: PostPipeline = Depends(get_post_pipeline),
+):
+    """Rebuild a protocol's Redaktionsplan and all Beiträge."""
+    result = await db.execute(
+        select(Protocol).where(Protocol.id == protocol_id)
+    )
+    protocol = result.scalar_one_or_none()
+    if not protocol:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    pipeline_result = await pipeline.reprocess_protocol(protocol, db)
+
+    counts = {"draft": 0, "ready": 0, "failed": 0}
+    for post in pipeline_result.posts:
+        if post.status in counts:
+            counts[post.status] += 1
+
+    return {
+        "protocol_id": protocol.id,
+        "processed": bool(protocol.processed),
+        "plan_status": pipeline_result.plan_status,
+        "post_counts": counts,
+        "posts": [
+            {
+                "post_id": post.post_id,
+                "post_type": post.post_type,
+                "slug": post.slug,
+                "status": post.status,
+                "failed_step": post.failed_step,
+                "error": post.error,
+            }
+            for post in pipeline_result.posts
+        ],
+    }
 
 
 @router.get("/stats")

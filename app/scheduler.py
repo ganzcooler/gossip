@@ -2,7 +2,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import logging
 
+from sqlalchemy import select
+
+from app.core.config import ARTICLES_DIR
 from app.database import AsyncSessionLocal
+from app.models import EditorialPlan, Protocol
+from app.services.llm_client import LLMAuthenticationError, OpenRouterLLMClient
+from app.services.post_pipeline import PostPipeline
 from app.services.protocol_fetcher import fetch_protocols_job
 
 logger = logging.getLogger(__name__)
@@ -23,14 +29,80 @@ async def fetch_protocols_wrapper():
             raise
 
 
-async def process_protocols_wrapper():
-    """Scheduled seam for the stateless post pipeline (tickets 02+).
+async def _unprocessed_protocol_ids(session) -> list[int]:
+    result = await session.execute(
+        select(Protocol.id)
+        .where(Protocol.processed.is_(False))
+        .order_by(Protocol.session_date, Protocol.id)
+    )
+    return list(result.scalars().all())
 
-    The legacy one-call processor has been removed. Until the new
-    ``PostPipeline.run(protocol, db)`` is wired in, this job intentionally does
-    nothing but keep the processing schedule slot and its stable job id.
+
+async def _editorial_plan_status(session, protocol_id: int) -> str | None:
+    result = await session.execute(
+        select(EditorialPlan.status).where(
+            EditorialPlan.protocol_id == protocol_id
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def process_protocols_wrapper():
+    """Process unprocessed protocols through the stateless post pipeline.
+
+    Each protocol runs in its own fresh session and is committed on its own.
+    A failed editorial plan is skipped so the scheduler never enters an
+    automatic replan loop; a manual reprocess handles those protocols. Failed
+    posts are terminal and are never retried automatically. Authentication and
+    account errors stop the whole job immediately, while any other
+    per-protocol error is logged and the remaining protocols still run.
     """
-    logger.info("Post pipeline is not implemented yet; skipping scheduled processing")
+    async with AsyncSessionLocal() as session:
+        protocol_ids = await _unprocessed_protocol_ids(session)
+
+    for protocol_id in protocol_ids:
+        outcome = await _process_protocol(protocol_id)
+        if outcome == "auth":
+            return
+
+
+async def _process_protocol(protocol_id: int) -> str:
+    """Process one protocol in a fresh session. Returns ok/skip/error/auth."""
+    async with AsyncSessionLocal() as session:
+        if await _editorial_plan_status(session, protocol_id) == "failed":
+            logger.info(
+                "Skipping protocol %s: editorial plan failed; "
+                "a manual reprocess is required",
+                protocol_id,
+            )
+            return "skip"
+
+        protocol = await session.get(Protocol, protocol_id)
+        if protocol is None:
+            return "skip"
+
+        try:
+            pipeline = PostPipeline(OpenRouterLLMClient(), ARTICLES_DIR)
+            await pipeline.run(protocol, session)
+            await session.commit()
+        except LLMAuthenticationError as exc:
+            await session.rollback()
+            logger.error(
+                "Post pipeline stopped on an authentication/account "
+                "error at protocol %s: %s",
+                protocol_id,
+                exc,
+            )
+            return "auth"
+        except Exception:
+            await session.rollback()
+            logger.exception(
+                "Post pipeline failed for protocol %s; continuing with "
+                "the remaining protocols",
+                protocol_id,
+            )
+            return "error"
+        return "ok"
 
 
 def setup_scheduler():
@@ -45,8 +117,8 @@ def setup_scheduler():
     )
 
     # Job 2: Process protocols (10:30 & 17:30)
-    # SEAM: ticket 02+ replaces the no-op wrapper with the stateless post
-    # pipeline. Do not reintroduce the removed one-call processor.
+    # Failed plans are skipped (manual reprocess), failed posts are never
+    # retried automatically, and authentication errors stop the job.
     scheduler.add_job(
         process_protocols_wrapper,
         trigger=CronTrigger(hour="10,17", minute="30", timezone="Europe/Berlin"),
