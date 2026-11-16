@@ -8,11 +8,21 @@ from PIL import Image
 from app.services.image_generation import (
     SUMMARY_ASPECT_RATIO,
     SUMMARY_IMAGE_SIZE,
+    TOPIC_ASPECT_RATIO,
+    TOPIC_IMAGE_SIZE,
+    TOPIC_PAIR_SIZE,
+    TOPIC_SINGLE_SIZE,
     ImageGenerationError,
     decode_image_bytes,
     generate_summary_cover,
+    generate_topic_cover,
+    generate_topic_pair_art,
+    generate_topic_single_art,
     normalize_image,
     summary_fallback_art,
+    topic_cover_fallback_art,
+    topic_pair_fallback_art,
+    topic_single_fallback_art,
 )
 from app.services.llm_client import (
     LLMAuthenticationError,
@@ -115,3 +125,114 @@ def test_summary_fallback_can_be_built_twice_without_side_effects():
 
     assert first.size == second.size == SUMMARY_IMAGE_SIZE
     assert first.tobytes() == second.tobytes()
+
+
+def _striped_png_bytes(size=(1080, 1350)) -> bytes:
+    image = Image.new("RGB", size, (40, 60, 80))
+    image.paste((200, 100, 50), (180, 0, 900, 1350))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _topic_png_bytes(size=(720, 900), color=(90, 140, 170)) -> bytes:
+    image = Image.new("RGB", size, color)
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+async def test_topic_cover_requests_4_5_and_normalizes_to_1080x1350():
+    fake = FakeLLMClient(
+        image_responses={"topic_cover": [_topic_png_bytes()]}
+    )
+
+    result = await generate_topic_cover(fake, "A wide calm civic scene")
+
+    assert result.status == "ready"
+    assert result.error is None
+    assert result.image.size == TOPIC_IMAGE_SIZE == (1080, 1350)
+    assert result.image.mode == "RGB"
+    assert result.image.getpixel((540, 675)) == (90, 140, 170)
+    assert len(fake.image_calls) == 1
+    assert fake.image_calls[0].role == "topic_cover"
+    assert fake.image_calls[0].aspect_ratio == TOPIC_ASPECT_RATIO == "4:5"
+    assert fake.image_calls[0].prompt == "A wide calm civic scene"
+
+
+async def test_topic_pair_art_center_crops_the_normalized_image_to_720x1350():
+    fake = FakeLLMClient(
+        image_responses={"topic_pair_art": [_striped_png_bytes()]}
+    )
+
+    result = await generate_topic_pair_art(fake, "Pair prompt")
+
+    assert result.status == "ready"
+    assert result.image.size == TOPIC_PAIR_SIZE == (720, 1350)
+    assert result.image.getpixel((0, 675)) == (200, 100, 50)
+    assert result.image.getpixel((719, 675)) == (200, 100, 50)
+    assert fake.image_calls[0].role == "topic_pair_art"
+    assert fake.image_calls[0].aspect_ratio == "4:5"
+
+
+async def test_topic_single_art_center_crops_to_a_standalone_360x1350_strip():
+    fake = FakeLLMClient(
+        image_responses={"topic_single_art": [_striped_png_bytes()]}
+    )
+
+    result = await generate_topic_single_art(fake, "Single prompt")
+
+    assert result.status == "ready"
+    assert result.image.size == TOPIC_SINGLE_SIZE == (360, 1350)
+    assert result.image.getpixel((0, 675)) == (200, 100, 50)
+    assert fake.image_calls[0].role == "topic_single_art"
+    assert fake.image_calls[0].aspect_ratio == "4:5"
+
+
+async def test_topic_image_failures_produce_orange_family_fallbacks():
+    fake = FakeLLMClient(
+        image_responses={
+            "topic_cover": [LLMTransportError("cover unavailable")],
+            "topic_pair_art": [LLMTransportError("pair unavailable")],
+            "topic_single_art": [b"not an image"],
+        }
+    )
+
+    cover = await generate_topic_cover(fake, "Cover")
+    pair = await generate_topic_pair_art(fake, "Pair")
+    single = await generate_topic_single_art(fake, "Single")
+
+    assert cover.status == pair.status == single.status == "fallback"
+    assert "cover unavailable" in cover.error
+    assert "pair unavailable" in pair.error
+    assert single.error
+    assert cover.image.size == TOPIC_IMAGE_SIZE
+    assert pair.image.size == TOPIC_PAIR_SIZE
+    assert single.image.size == TOPIC_SINGLE_SIZE
+    assert cover.image.getpixel((100, 100)) == (30, 30, 33)
+    assert cover.image.getpixel((900, 100)) == (201, 62, 24)
+    assert cover.image.getpixel((715, 500)) == (233, 79, 35)
+    assert pair.image.getpixel((300, 600)) == (201, 62, 24)
+    assert pair.image.getpixel((359, 100)) == (233, 79, 35)
+    assert single.image.getpixel((100, 600)) == (201, 62, 24)
+    assert single.image.tobytes() == topic_single_fallback_art().tobytes()
+
+
+async def test_topic_authentication_errors_propagate_without_fallback():
+    fake = FakeLLMClient(
+        image_responses={
+            "topic_cover": [LLMAuthenticationError("Insufficient credits")]
+        }
+    )
+
+    with pytest.raises(LLMAuthenticationError, match="Insufficient credits"):
+        await generate_topic_cover(fake, "Prompt")
+
+
+def test_topic_fallbacks_are_deterministic_and_match_the_design():
+    assert topic_cover_fallback_art().tobytes() == topic_cover_fallback_art().tobytes()
+    assert topic_pair_fallback_art().tobytes() == topic_pair_fallback_art().tobytes()
+    assert topic_single_fallback_art().size == TOPIC_SINGLE_SIZE
+    assert topic_pair_fallback_art().crop((180, 0, 540, 1350)).tobytes() == (
+        topic_single_fallback_art().tobytes()
+    )
