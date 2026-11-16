@@ -261,7 +261,13 @@ def ensure_title_contrast(
     return result
 
 
-def draw_organ_badge(canvas: Image.Image, organ: str, *, top: int = 300) -> tuple:
+def draw_organ_badge(
+    canvas: Image.Image,
+    organ: str,
+    *,
+    top: int = 300,
+    fill=BRAND_BLUE,
+) -> tuple:
     """Draw the right-aligned official Organ badge."""
     text = organ.strip().upper()
     if not text:
@@ -273,7 +279,7 @@ def draw_organ_badge(canvas: Image.Image, organ: str, *, top: int = 300) -> tupl
     right = 1016
     left = right - width
     draw = ImageDraw.Draw(canvas)
-    draw.rectangle((left, top, right - 1, top + height - 1), fill=BRAND_BLUE)
+    draw.rectangle((left, top, right - 1, top + height - 1), fill=fill)
     draw_tracked_text(
         draw,
         (left + 18, top + height / 2),
