@@ -2,8 +2,8 @@
 
 The application talks to OpenRouter's OpenAI-compatible chat endpoint for text
 and to the dedicated Image API for generated images. Keeping both calls in one
-module makes the service layer easy to test and avoids leaking HTTP details into
-the article/image generators.
+module makes the service layer easy to test and avoids leaking HTTP details
+into the post pipeline.
 """
 
 import base64

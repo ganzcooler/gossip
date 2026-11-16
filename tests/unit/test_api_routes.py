@@ -283,25 +283,6 @@ class TestPipelineEndpoints:
         finally:
             app.dependency_overrides.clear()
 
-    @patch('app.api.routes.process_protocols_job')
-    def test_trigger_process_protocols(self, mock_process):
-        """Test triggering protocol processing."""
-        mock_process.return_value = 3
-        mock_session = AsyncMock()
-        
-        async def override_get_db():
-            yield mock_session
-        
-        app.dependency_overrides[get_db] = override_get_db
-        
-        try:
-            response = client.post("/api/pipeline/process")
-            
-            # Should return 200 OK
-            assert response.status_code == 200
-        finally:
-            app.dependency_overrides.clear()
-
     def test_get_pipeline_status(self):
         """Test getting pipeline status."""
         mock_session = AsyncMock()

@@ -1,13 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from typing import Optional
 
 from app.database import get_db
 from app.models import Protocol, Article
 from app.services.protocol_fetcher import fetch_protocols_job
-from app.services.protocol_processor import process_protocols_job
-from app.services import generate_insta_images_job
 
 router = APIRouter()
 
@@ -116,7 +113,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 
 
 # ============================================================================
-# Pipeline Trigger Endpoints
+# Protocol Ingestion Trigger Endpoints
 # ============================================================================
 
 @router.post("/pipeline/fetch")
@@ -134,94 +131,6 @@ async def trigger_fetch_protocols(db: AsyncSession = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch protocols: {str(e)}")
-
-
-@router.post("/pipeline/process")
-async def trigger_process_protocols(db: AsyncSession = Depends(get_db)):
-    """
-    Manually trigger processing unprocessed protocols.
-    This generates articles, images, and Instagram content.
-    """
-    try:
-        processed_count = await process_protocols_job(db)
-        return {
-            "status": "success",
-            "processed": processed_count,
-            "message": f"{processed_count} protocols processed"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to process protocols: {str(e)}")
-
-
-@router.post("/pipeline/run")
-async def trigger_pipeline_run(db: AsyncSession = Depends(get_db)):
-    """
-    Manually trigger a full pipeline run:
-    1. Fetch protocols from SessionNet
-    2. Process unprocessed protocols
-    """
-    try:
-        # Step 1: Fetch protocols
-        protocols_found = await fetch_protocols_job(db)
-
-        # Step 2: Process protocols
-        processed_count = await process_protocols_job(db)
-
-        return {
-            "status": "success",
-            "fetch_result": {
-                "protocols_found": protocols_found
-            },
-            "process_result": {
-                "processed": processed_count
-            },
-            "message": f"Pipeline completed: {protocols_found} fetched, {processed_count} processed"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Pipeline run failed: {str(e)}")
-
-
-@router.post("/pipeline/generate-insta")
-async def trigger_generate_insta(
-    protocol_id: Optional[int] = None,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Manually trigger Instagram image generation.
-    - Gate 1: Folder exists on disk	({ARTICLES_DIR}/{session_date}_{normalized_title})
-    - Gate 2: Source images exist (image_*.jpg or image_*.png)
-    - Gate 3: Articles with content (articles with non-empty content in SQL-DB)
-    
-    Args:
-        protocol_id: Optional specific protocol ID to process.
-                    If not provided, processes all eligible protocols.
-    """
-    # Check if specific protocol exists (404 case)
-    if protocol_id is not None:
-        result = await db.execute(
-            select(Protocol).where(Protocol.id == protocol_id)
-        )
-        protocol = result.scalar_one_or_none()
-        if not protocol:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Protocol {protocol_id} not found"
-            )
-    
-    # Run the job
-    result = await generate_insta_images_job(db, protocol_id)
-    
-    # Handle validation failure for specific protocol (400 case)
-    if protocol_id is not None and result["failed"] == 1:
-        # Find the failed protocol detail
-        for detail in result.get("details", []):
-            if detail.get("protocol_id") == protocol_id and detail.get("reason"):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Validation failed: {detail['reason']}"
-                )
-    
-    return result
 
 
 @router.get("/pipeline/status")

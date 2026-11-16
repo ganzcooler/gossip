@@ -8,9 +8,7 @@ extend-exclude = [".agents", "local-testing"]
 select = ["E4", "E7", "E9", "F"]
 
 [tool.ruff.lint.per-file-ignores]
-"app/services/__init__.py" = ["E402"]
 "tests/conftest.py" = ["E402"]
-"tests/unit/test_insta_job.py" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
