@@ -25,6 +25,7 @@ from app.models import EditorialPlan as EditorialPlanRow
 from app.models import Post, PostAsset, PostSlide, Protocol
 from app.services.llm_client import LLMAuthenticationError, LLMSchemaError
 from app.services.post_pipeline import PostPipeline
+from app.services.slide_composer import compose_topic_slides
 from tests.support.fake_llm import FakeLLMClient
 
 pytestmark = pytest.mark.integration
@@ -193,16 +194,41 @@ def _script_summary_success(
     fake.script_image("summary_cover", _cover_png_bytes())
 
 
+def _script_topic_visuals(
+    fake: FakeLLMClient, drafts: list[TopicDraft]
+) -> None:
+    for draft in drafts:
+        composition = compose_topic_slides(draft)
+        content_count = len(composition.slides) - 1
+        pair_count = content_count // 2
+        artwork_count = pair_count + (1 if content_count % 2 else 0)
+        fake.script_json(
+            "topic_visual_prompts",
+            VisualPrompts(
+                cover_prompt=f"Cover für {draft.title}",
+                artwork_prompts=[
+                    f"Paar {index} für {draft.title}"
+                    for index in range(1, artwork_count + 1)
+                ],
+            ),
+        )
+        fake.script_image("topic_cover", _cover_png_bytes())
+        if pair_count:
+            fake.script_image(
+                "topic_pair_art", *[_cover_png_bytes() for _ in range(pair_count)]
+            )
+        if content_count % 2:
+            fake.script_image("topic_single_art", _cover_png_bytes())
+
+
 def _script_topics_success(
     fake: FakeLLMClient,
     *,
     plan: EditorialPlan,
     drafts: list[TopicDraft] | None = None,
 ) -> None:
-    fake.script_json(
-        "topic_writer",
-        *(drafts or [_topic_draft(brief) for brief in plan.topic_briefs]),
-    )
+    drafts = drafts or [_topic_draft(brief) for brief in plan.topic_briefs]
+    fake.script_json("topic_writer", *drafts)
     fake.script_json(
         "topic_fact_check",
         *[FactCheckResult(issues=[]) for _ in plan.topic_briefs],
@@ -214,6 +240,7 @@ def _script_topics_success(
             for index in range(1, len(plan.topic_briefs) + 1)
         ],
     )
+    _script_topic_visuals(fake, drafts)
 
 
 async def _run(
@@ -299,7 +326,7 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
         "Haushalt beschlossen",
         "Radweg kommt im Sommer",
     ]
-    assert [post.status for post in posts] == ["ready", "draft", "draft"]
+    assert [post.status for post in posts] == ["ready", "ready", "ready"]
     assert [post.failed_step for post in posts] == [None, None, None]
     assert {post.generator_version for post in posts} == {"post-pipeline-v1"}
 
@@ -358,9 +385,16 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     output_folder = tmp_path / "240115_gemeinderat"
     assert sorted(path.name for path in output_folder.iterdir()) == [
         "caption-summary-summary.txt",
+        "caption-topic-haushalt.txt",
+        "caption-topic-radweg.txt",
         "summary-2024-01-15-story-01.png",
         "summary-2024-01-15-story-02.png",
         "summary-2024-01-15-story-03.png",
+        "topic-2024-01-15-01.png",
+        "topic-2024-01-15-02.png",
+        "topic-2024-01-15-03.png",
+        "topic-2024-01-15-04.png",
+        "topic-2024-01-15-05.png",
     ]
     assert (
         output_folder / "caption-summary-summary.txt"
@@ -384,7 +418,7 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     )
 
     assert result.plan_status == "ready"
-    assert [post.status for post in result.posts] == ["ready", "draft", "draft"]
+    assert [post.status for post in result.posts] == ["ready", "ready", "ready"]
     assert protocol.processed is False
 
     assert [call.role for call in fake.calls] == [
@@ -397,9 +431,17 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
         "topic_writer",
         "topic_fact_check",
         "caption_writer",
+        "topic_visual_prompts",
+        "topic_cover",
+        "topic_pair_art",
+        "topic_pair_art",
         "topic_writer",
         "topic_fact_check",
         "caption_writer",
+        "topic_visual_prompts",
+        "topic_cover",
+        "topic_pair_art",
+        "topic_pair_art",
     ]
     assert PROTOCOL_TEXT in fake.calls[0].prompt
     for call in fake.calls[1:]:
@@ -411,6 +453,7 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     assert "Die wichtigsten Posten" not in visual_prompt_calls[0].prompt
     assert SUMMARY_ANCHOR_1 not in visual_prompt_calls[0].prompt
     assert fake.image_calls[0].aspect_ratio == "9:16"
+    assert all(call.aspect_ratio == "4:5" for call in fake.image_calls[1:])
 
     # The summary content is visible through the ticket-02 read API.
     async def override_get_db():
@@ -431,7 +474,7 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     assert list_response.status_code == 200
     listed = list_response.json()
     assert [post["slug"] for post in listed] == ["summary", "haushalt", "radweg"]
-    assert [post["status"] for post in listed] == ["ready", "draft", "draft"]
+    assert [post["status"] for post in listed] == ["ready", "ready", "ready"]
 
     assert summary_response.status_code == 200
     summary_detail = summary_response.json()
@@ -495,11 +538,11 @@ async def test_missing_summary_anchor_fails_only_the_summary(
     assert "Quellenanker" in summary.error
     assert len(summary.content_json["briefs"]) == 2
     assert summary.content_json["excerpts"] == []
-    assert haushalt.status == "draft"
+    assert haushalt.status == "ready"
     assert haushalt.content_json["draft"]["sections"]
-    assert radweg.status == "draft"
+    assert radweg.status == "ready"
     assert radweg.content_json["draft"]["sections"]
-    assert [post.status for post in result.posts] == ["failed", "draft", "draft"]
+    assert [post.status for post in result.posts] == ["failed", "ready", "ready"]
 
 
 async def test_missing_topic_anchor_fails_only_that_topic(postgres_session, tmp_path):
@@ -528,10 +571,10 @@ async def test_missing_topic_anchor_fails_only_that_topic(postgres_session, tmp_
     assert summary.status == "ready"
     assert haushalt.status == "failed"
     assert haushalt.failed_step == "source_retrieval"
-    assert radweg.status == "draft"
+    assert radweg.status == "ready"
     assert radweg.content_json["draft"]["sections"]
     assert radweg.content_json["excerpts"][0]["anchor"] == SUMMARY_ANCHOR_2
-    assert [post.status for post in result.posts] == ["ready", "failed", "draft"]
+    assert [post.status for post in result.posts] == ["ready", "failed", "ready"]
 
 
 async def test_planner_schema_failure_marks_the_plan_failed_without_posts(
@@ -592,11 +635,11 @@ async def test_summary_writer_failure_marks_only_the_summary_failed(
     assert summary.status == "failed"
     assert summary.failed_step == "writer"
     assert "second writer failure" in summary.error
-    assert haushalt.status == "draft"
+    assert haushalt.status == "ready"
     assert haushalt.content_json["draft"]["sections"]
-    assert radweg.status == "draft"
+    assert radweg.status == "ready"
     assert radweg.content_json["draft"]["sections"]
-    assert [post.status for post in result.posts] == ["failed", "draft", "draft"]
+    assert [post.status for post in result.posts] == ["failed", "ready", "ready"]
 
     plan_row = await _plan_row(postgres_session, protocol)
     assert plan_row.status == "ready"
@@ -608,9 +651,17 @@ async def test_summary_writer_failure_marks_only_the_summary_failed(
         "topic_writer",
         "topic_fact_check",
         "caption_writer",
+        "topic_visual_prompts",
+        "topic_cover",
+        "topic_pair_art",
+        "topic_pair_art",
         "topic_writer",
         "topic_fact_check",
         "caption_writer",
+        "topic_visual_prompts",
+        "topic_cover",
+        "topic_pair_art",
+        "topic_pair_art",
     ]
 
 
@@ -644,9 +695,9 @@ async def test_remaining_fact_check_issues_fail_at_fact_check_after_one_repair(
     assert issues[0] in summary.error
     assert summary.fact_check_json["passed"] is False
     assert summary.fact_check_json["issues"] == issues
-    assert haushalt.status == "draft"
-    assert radweg.status == "draft"
-    assert [post.status for post in result.posts] == ["failed", "draft", "draft"]
+    assert haushalt.status == "ready"
+    assert radweg.status == "ready"
+    assert [post.status for post in result.posts] == ["failed", "ready", "ready"]
     assert [call.role for call in fake.calls] == [
         "planner",
         "summary_writer",
@@ -656,9 +707,17 @@ async def test_remaining_fact_check_issues_fail_at_fact_check_after_one_repair(
         "topic_writer",
         "topic_fact_check",
         "caption_writer",
+        "topic_visual_prompts",
+        "topic_cover",
+        "topic_pair_art",
+        "topic_pair_art",
         "topic_writer",
         "topic_fact_check",
         "caption_writer",
+        "topic_visual_prompts",
+        "topic_cover",
+        "topic_pair_art",
+        "topic_pair_art",
     ]
     assert issues[0] in fake.calls[3].prompt
 
@@ -685,8 +744,8 @@ async def test_repair_call_failure_records_the_repair_step(
     assert summary.status == "failed"
     assert summary.failed_step == "repair"
     assert "repair returned bad JSON" in summary.error
-    assert haushalt.status == "draft"
-    assert radweg.status == "draft"
+    assert haushalt.status == "ready"
+    assert radweg.status == "ready"
 
 
 async def test_caption_failure_records_the_caption_step(postgres_session, tmp_path):
@@ -709,9 +768,9 @@ async def test_caption_failure_records_the_caption_step(postgres_session, tmp_pa
     assert summary.failed_step == "caption"
     assert "caption returned bad JSON" in summary.error
     assert summary.content_json["draft"]["cover_title"] == plan.summary_title
-    assert haushalt.status == "draft"
+    assert haushalt.status == "ready"
     assert haushalt.content_json["draft"]["sections"]
-    assert radweg.status == "draft"
+    assert radweg.status == "ready"
     assert radweg.content_json["draft"]["sections"]
 
 
@@ -748,8 +807,8 @@ async def test_unfittable_summary_layout_records_the_slide_composer_step(
         "planner",
         "summary_writer",
     ]
-    assert haushalt.status == "draft"
-    assert radweg.status == "draft"
+    assert haushalt.status == "ready"
+    assert radweg.status == "ready"
 
 
 async def test_rerun_resumes_draft_summary_and_topics_without_rewriting_content(
@@ -799,15 +858,15 @@ async def test_rerun_resumes_draft_summary_and_topics_without_rewriting_content(
     assert len(await _slides(postgres_session, summary)) == 3
     assert len(fake.calls_for("summary_writer")) == 1
     assert len(fake.calls_for("summary_visual_prompts")) == 2
-    assert len(fake.image_calls) == 1
-    assert len(fake.calls_for("topic_writer")) == 4
-    assert haushalt.status == haushalt_again.status == "draft"
-    assert radweg.status == radweg_again.status == "draft"
+    assert len(fake.image_calls) == 7
+    assert len(fake.calls_for("topic_writer")) == 2
+    assert haushalt.status == haushalt_again.status == "ready"
+    assert radweg.status == radweg_again.status == "ready"
     assert haushalt.content_json["draft"]["sections"]
     assert [post.status for post in second_result.posts] == [
         "ready",
-        "draft",
-        "draft",
+        "ready",
+        "ready",
     ]
 
 
@@ -839,10 +898,10 @@ async def test_rerun_never_retries_a_failed_summary(postgres_session, tmp_path):
     summary, haushalt, radweg = await _posts(postgres_session, protocol)
     assert summary.status == "failed"
     assert len(fake.calls_for("summary_writer")) == 2
-    assert len(fake.calls_for("topic_writer")) == 4
-    assert haushalt.status == "draft"
+    assert len(fake.calls_for("topic_writer")) == 2
+    assert haushalt.status == "ready"
     assert haushalt.content_json["draft"]["sections"]
-    assert radweg.status == "draft"
+    assert radweg.status == "ready"
 
 
 async def test_successful_repair_recomposes_the_summary_from_the_repaired_draft(

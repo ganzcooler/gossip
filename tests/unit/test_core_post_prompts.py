@@ -2,6 +2,8 @@
 
 from datetime import date
 
+import pytest
+
 from app.core.post_models import (
     CaptionDraft,
     SourceExcerpt,
@@ -9,6 +11,7 @@ from app.core.post_models import (
     SummaryDraft,
     SummaryPoint,
     TopicBrief,
+    TopicDraft,
 )
 from app.core.post_prompts import (
     build_caption_prompt,
@@ -17,6 +20,7 @@ from app.core.post_prompts import (
     build_repair_prompt,
     build_summary_visual_prompt,
     build_summary_writer_prompt,
+    build_topic_visual_prompt,
     build_topic_writer_prompt,
 )
 
@@ -268,3 +272,54 @@ def test_summary_visual_prompt_is_deterministic():
 
     assert first == second
     assert first.startswith("Du bist")
+
+
+TOPIC_DRAFT = TopicDraft(
+    title="Was der Rat zum Haushalt in Rosdorf entschieden hat",
+    sections=[
+        {
+            "h2": "Der Rat hat den Haushalt einstimmig beschlossen",
+            "paragraphs": ["Der Rat hat den Haushalt einstimmig beschlossen."],
+        },
+        {
+            "h2": "Was jetzt mit den Mitteln für die Ortsteile passiert",
+            "paragraphs": ["Die Verwaltung setzt die Mittel im Frühjahr um."],
+        },
+    ],
+)
+
+
+def test_topic_visual_prompt_contains_only_the_draft_and_pair_count():
+    prompt = build_topic_visual_prompt(TOPIC_DRAFT, 3)
+
+    assert TOPIC_DRAFT.title in prompt
+    for section in TOPIC_DRAFT.sections:
+        assert section.h2 in prompt
+    assert "genau 3 Prompts" in prompt
+    assert "4:5" in prompt
+    assert "durchgehend fortlaufender Horizont" in prompt
+    assert "Kein zentrales Motiv" in prompt
+    assert "40 px vom Paar-Seam" in prompt
+    assert "Kein Text" in prompt
+    assert "Logos" in prompt
+    assert "Parteisymbole" in prompt
+    assert "erkennbaren Minderjährigen" in prompt
+    assert "fotorealistischen" in prompt
+    assert "artwork_prompts" in prompt
+
+    # The topic visual writer sees no protocol, excerpts, Summary or other topics.
+    assert PROTOCOL_TEXT not in prompt
+    assert EXCERPTS[0].excerpt not in prompt
+    assert "Quellenauszüge" not in prompt
+    assert "Summary" not in prompt
+    assert "Themenbrief" not in prompt
+
+
+def test_topic_visual_prompt_is_deterministic_and_requires_pairs():
+    first = build_topic_visual_prompt(TOPIC_DRAFT, 2)
+    second = build_topic_visual_prompt(TOPIC_DRAFT, 2)
+
+    assert first == second
+    assert first.startswith("Du bist")
+    with pytest.raises(ValueError, match="pair_count"):
+        build_topic_visual_prompt(TOPIC_DRAFT, 0)

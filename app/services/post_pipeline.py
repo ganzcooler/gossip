@@ -3,18 +3,22 @@
 The pipeline plans first, persists the Redaktionsplan and one summary plus zero
 to five topic posts, then resolves the finite Organ and retrieves the source
 excerpts. The Summary branch writes its content once, then runs visual prompts,
-cover image generation, the 9:16 renderer and the caption file. Later tickets
-extend the topic branch and the retry/reprocess state machine.
+cover image generation, the 9:16 renderer and the caption file. Each topic
+branch writes its own article, then runs topic visual prompts, cover/pair/single
+image generation, the 4:5 renderer and the caption file. Ticket 08 owns retry
+and reprocess.
 
 Safe commit boundaries are deliberate: the plan and draft posts are committed
-before Organ/excerpt processing, and the per-post outcome is committed before
-``run`` returns. A caller or API can therefore read visible work even when a
-later step fails.
+before Organ/excerpt processing, and each post's outcome is committed before
+the next branch continues. A caller or API can therefore read visible work even
+when a later step fails.
 """
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy import delete, select
@@ -28,6 +32,7 @@ from app.core.post_models import (
     SummaryBrief,
     SummaryDraft,
     TopicBrief,
+    TopicDraft,
 )
 from app.models import EditorialPlan as EditorialPlanRow
 from app.models import Post, PostAsset, PostSlide, Protocol
@@ -42,7 +47,12 @@ from app.services.fact_checker import (
     fact_check_json,
     enforce_fact_check,
 )
-from app.services.image_generation import generate_summary_cover
+from app.services.image_generation import (
+    generate_summary_cover,
+    generate_topic_cover,
+    generate_topic_pair_art,
+    generate_topic_single_art,
+)
 from app.services.llm_client import LLMAuthenticationError, LLMClient
 from app.services.organs import UnknownOrganError, resolve_organ
 from app.services.post_renderer import (
@@ -56,13 +66,22 @@ from app.services.protocol_excerpts import (
 )
 from app.services.slide_composer import (
     SummaryComposition,
+    TopicComposition,
     compose_summary_slides,
     compose_topic_slides,
     render_summary_markdown,
 )
 from app.services.summary_writer import write_summary
+from app.services.topic_renderer import (
+    render_topic_frames,
+    topic_composition_from_stored,
+    write_topic_output,
+)
 from app.services.topic_writer import TopicWriterError, write_topic
-from app.services.visual_prompts import write_summary_visual_prompts
+from app.services.visual_prompts import (
+    write_summary_visual_prompts,
+    write_topic_visual_prompts,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -640,6 +659,52 @@ class PostPipeline:
         brief: TopicBrief,
         post: Post,
     ) -> None:
+        """Resume at visuals when content is cached, else run ticket-06 first."""
+        draft = self._stored_topic_draft(post)
+        composition: TopicComposition | None = None
+
+        if draft is not None and post.caption:
+            slides = await self._load_slides(db, post.id)
+            if slides and post.slide_plan_json:
+                try:
+                    composition = topic_composition_from_stored(
+                        draft, post.slide_plan_json, slides
+                    )
+                except Exception as exc:
+                    await self._fail_topic_post(db, post, "render", exc)
+                    return
+
+        if draft is None or composition is None:
+            written = await self._write_topic_content(
+                protocol, db, organ, brief, post
+            )
+            if written is None:
+                return
+            draft, composition = written
+
+        await self._render_topic_visuals(
+            protocol, db, organ, post, draft, composition
+        )
+
+    @staticmethod
+    def _stored_topic_draft(post: Post) -> TopicDraft | None:
+        content = post.content_json or {}
+        raw_draft = content.get("draft") if isinstance(content, dict) else None
+        if not isinstance(raw_draft, dict):
+            return None
+        try:
+            return TopicDraft.model_validate(raw_draft)
+        except (ValidationError, TypeError, ValueError):
+            return None
+
+    async def _write_topic_content(
+        self,
+        protocol: Protocol,
+        db: AsyncSession,
+        organ: str,
+        brief: TopicBrief,
+        post: Post,
+    ) -> tuple[TopicDraft, TopicComposition] | None:
         """Run writer+composition → fact-check/repair → caption for one topic."""
         content = post.content_json or {}
         try:
@@ -649,7 +714,7 @@ class PostPipeline:
             ]
         except (TypeError, ValueError) as exc:
             await self._fail_topic_post(db, post, "source_retrieval", exc)
-            return
+            return None
 
         if not excerpts:
             await self._fail_topic_post(
@@ -658,7 +723,7 @@ class PostPipeline:
                 "source_retrieval",
                 RuntimeError("No cached source excerpts for the topic post"),
             )
-            return
+            return None
 
         try:
             draft = await write_topic(
@@ -671,10 +736,10 @@ class PostPipeline:
             raise
         except TopicWriterError as exc:
             await self._fail_topic_post(db, post, exc.step, exc)
-            return
+            return None
         except Exception as exc:
             await self._fail_topic_post(db, post, "writer", exc)
-            return
+            return None
 
         post.content_json = {
             "draft": draft.model_dump(mode="json"),
@@ -687,7 +752,7 @@ class PostPipeline:
             composition = compose_topic_slides(draft)
         except Exception as exc:
             await self._fail_topic_post(db, post, "slide_composer", exc)
-            return
+            return None
 
         try:
             outcome = await enforce_fact_check(
@@ -706,12 +771,12 @@ class PostPipeline:
                 or exc.step == "repair",
             )
             await self._fail_topic_post(db, post, exc.step, exc)
-            return
+            return None
         except LLMAuthenticationError:
             raise
         except Exception as exc:
             await self._fail_topic_post(db, post, "fact_check", exc)
-            return
+            return None
 
         final_draft = outcome.draft
         if outcome.repaired:
@@ -721,7 +786,7 @@ class PostPipeline:
                 await self._fail_topic_post(
                     db, post, "slide_composer", exc
                 )
-                return
+                return None
 
         try:
             caption_draft = await write_caption_body(
@@ -740,7 +805,7 @@ class PostPipeline:
             raise
         except Exception as exc:
             await self._fail_topic_post(db, post, "caption", exc)
-            return
+            return None
 
         post.content_json = {
             "draft": final_draft.model_dump(mode="json"),
@@ -757,7 +822,7 @@ class PostPipeline:
             issues=outcome.issues,
             repaired=outcome.repaired,
         )
-        post.status = "draft"  # ticket 07 renders and flips to ready
+        post.status = "draft"  # visuals flip the post to ready
         post.failed_step = None
         post.error = None
 
@@ -783,6 +848,186 @@ class PostPipeline:
         )
         await db.flush()
         await db.commit()
+        return final_draft, composition
+
+    async def _render_topic_visuals(
+        self,
+        protocol: Protocol,
+        db: AsyncSession,
+        organ: str,
+        post: Post,
+        draft: TopicDraft,
+        composition: TopicComposition,
+    ) -> None:
+        """Visual prompts → assets → in-memory frames → caption file → ready."""
+        content_slides = len(composition.slides) - 1
+        pair_count = content_slides // 2
+        has_single = content_slides % 2 == 1
+        artwork_count = pair_count + (1 if has_single else 0)
+
+        try:
+            visual_prompts = await write_topic_visual_prompts(
+                draft, artwork_count, self.llm_client
+            )
+        except LLMAuthenticationError:
+            raise
+        except Exception as exc:
+            await self._fail_topic_post(db, post, "visual_prompts", exc)
+            return
+
+        roles: list[tuple[str, str]] = [("cover", visual_prompts.cover_prompt)]
+        for index in range(1, pair_count + 1):
+            roles.append(
+                (f"pair_{index}", visual_prompts.artwork_prompts[index - 1])
+            )
+        if has_single:
+            roles.append(("single_last", visual_prompts.artwork_prompts[-1]))
+
+        assets = await self._prepare_topic_assets(db, post, roles)
+
+        try:
+            generated_cover = await generate_topic_cover(
+                self.llm_client, visual_prompts.cover_prompt
+            )
+        except LLMAuthenticationError:
+            raise
+        except Exception as exc:
+            await self._fail_topic_asset(db, post, assets["cover"], exc)
+            return
+
+        generated_pairs: dict[int, Any] = {}
+        for index in range(1, pair_count + 1):
+            try:
+                generated = await generate_topic_pair_art(
+                    self.llm_client, visual_prompts.artwork_prompts[index - 1]
+                )
+            except LLMAuthenticationError:
+                raise
+            except Exception as exc:
+                await self._fail_topic_asset(
+                    db, post, assets[f"pair_{index}"], exc
+                )
+                return
+            generated_pairs[index] = generated
+
+        generated_single = None
+        if has_single:
+            try:
+                generated_single = await generate_topic_single_art(
+                    self.llm_client, visual_prompts.artwork_prompts[-1]
+                )
+            except LLMAuthenticationError:
+                raise
+            except Exception as exc:
+                await self._fail_topic_asset(
+                    db, post, assets["single_last"], exc
+                )
+                return
+
+        generated_by_role = {"cover": generated_cover}
+        generated_by_role.update(
+            {
+                f"pair_{index}": generated
+                for index, generated in generated_pairs.items()
+            }
+        )
+        if generated_single is not None:
+            generated_by_role["single_last"] = generated_single
+        for role, generated in generated_by_role.items():
+            asset = assets[role]
+            asset.status = generated.status
+            asset.error = generated.error
+            asset.path = None
+        await db.flush()
+
+        try:
+            frames = render_topic_frames(
+                draft,
+                composition,
+                cover_art=generated_cover.image,
+                pair_art={
+                    index: generated.image
+                    for index, generated in generated_pairs.items()
+                },
+                single_art=(
+                    generated_single.image
+                    if generated_single is not None
+                    else None
+                ),
+                organ=organ,
+            )
+        except Exception as exc:
+            await self._fail_topic_post(db, post, "render", exc)
+            return
+
+        try:
+            output = write_topic_output(
+                frames,
+                post=post,
+                protocol=protocol,
+                output_dir=self.output_dir,
+            )
+        except Exception as exc:
+            await self._fail_topic_post(db, post, "render", exc)
+            return
+
+        assets["cover"].path = str(output.image_paths[0])
+        for index in range(1, pair_count + 1):
+            first_content_position = 2 * index - 1
+            assets[f"pair_{index}"].path = str(
+                output.image_paths[first_content_position]
+            )
+        if has_single:
+            assets["single_last"].path = str(
+                output.image_paths[content_slides]
+            )
+
+        post.status = "ready"
+        post.failed_step = None
+        post.error = None
+        post.alt_text_json = list(composition.alt_texts)
+        await db.flush()
+        await db.commit()
+
+    async def _prepare_topic_assets(
+        self,
+        db: AsyncSession,
+        post: Post,
+        roles: Sequence[tuple[str, str]],
+    ) -> dict[str, PostAsset]:
+        result = await db.execute(
+            select(PostAsset).where(PostAsset.post_id == post.id)
+        )
+        existing = {asset.role: asset for asset in result.scalars().all()}
+        wanted = {role for role, _ in roles}
+        for role, asset in existing.items():
+            if role not in wanted:
+                await db.delete(asset)
+        assets: dict[str, PostAsset] = {}
+        for role, prompt in roles:
+            asset = existing.get(role)
+            if asset is None:
+                asset = PostAsset(post_id=post.id, role=role)
+                db.add(asset)
+            asset.prompt = prompt
+            asset.status = "pending"
+            asset.error = None
+            asset.path = None
+            asset.model = config.OPENROUTER_IMAGE_MODEL
+            assets[role] = asset
+        await db.flush()
+        return assets
+
+    async def _fail_topic_asset(
+        self,
+        db: AsyncSession,
+        post: Post,
+        asset: PostAsset,
+        exc: Exception,
+    ) -> None:
+        asset.status = "failed"
+        asset.error = str(exc) or exc.__class__.__name__
+        await self._fail_topic_post(db, post, "image_generation", exc)
 
     async def _fail_topic_post(
         self,

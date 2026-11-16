@@ -23,6 +23,7 @@ from app.main import app
 from app.models import Post, PostSlide, Protocol
 from app.services.llm_client import LLMSchemaError
 from app.services.post_pipeline import PostPipeline
+from app.services.slide_composer import compose_topic_slides
 from tests.support.fake_llm import FakeLLMClient
 
 pytestmark = pytest.mark.integration
@@ -179,6 +180,33 @@ def _script_happy_path(
     )
 
 
+def _script_topic_visuals(
+    fake: FakeLLMClient, drafts: list[TopicDraft]
+) -> None:
+    for draft in drafts:
+        composition = compose_topic_slides(draft)
+        content_count = len(composition.slides) - 1
+        pair_count = content_count // 2
+        artwork_count = pair_count + (1 if content_count % 2 else 0)
+        fake.script_json(
+            "topic_visual_prompts",
+            VisualPrompts(
+                cover_prompt=f"Cover für {draft.title}",
+                artwork_prompts=[
+                    f"Paar {index} für {draft.title}"
+                    for index in range(1, artwork_count + 1)
+                ],
+            ),
+        )
+        fake.script_image("topic_cover", _cover_png_bytes())
+        if pair_count:
+            fake.script_image(
+                "topic_pair_art", *[_cover_png_bytes() for _ in range(pair_count)]
+            )
+        if content_count % 2:
+            fake.script_image("topic_single_art", _cover_png_bytes())
+
+
 async def _add_protocol(session) -> Protocol:
     protocol = Protocol(
         session_date=date(2024, 1, 15),
@@ -241,19 +269,22 @@ async def test_summary_failure_does_not_block_topic_content(
             ],
         }
     )
+    _script_topic_visuals(
+        fake, [_topic_draft(brief) for brief in plan.topic_briefs]
+    )
 
     protocol, result = await _run(postgres_session, tmp_path, plan, fake)
     summary, haushalt, radweg = await _posts(postgres_session, protocol)
 
     assert summary.status == "failed"
     assert summary.failed_step == "writer"
-    assert haushalt.status == "draft"
-    assert radweg.status == "draft"
+    assert haushalt.status == "ready"
+    assert radweg.status == "ready"
     assert result.plan_status == "ready"
     assert [post.status for post in result.posts] == [
         "failed",
-        "draft",
-        "draft",
+        "ready",
+        "ready",
     ]
 
     for post, brief in zip((haushalt, radweg), plan.topic_briefs):
@@ -320,7 +351,7 @@ async def test_summary_failure_does_not_block_topic_content(
     assert detail_response.status_code == 200
     detail = detail_response.json()
     assert detail["post_type"] == "topic"
-    assert detail["status"] == "draft"
+    assert detail["status"] == "ready"
     assert detail["content_json"]["draft"]["sections"]
     assert detail["content_markdown"].startswith("# ")
     assert detail["slide_plan_json"]["family"] == "topic"
@@ -359,6 +390,7 @@ async def test_one_topic_fact_check_failure_leaves_other_topics_draft(
             ],
         }
     )
+    _script_topic_visuals(fake, [haushalt_draft, radweg_draft])
 
     protocol, result = await _run(postgres_session, tmp_path, plan, fake)
     summary, haushalt, radweg = await _posts(postgres_session, protocol)
@@ -377,13 +409,13 @@ async def test_one_topic_fact_check_failure_leaves_other_topics_draft(
         "repaired": True,
     }
 
-    assert radweg.status == "draft"
+    assert radweg.status == "ready"
     assert radweg.content_json["draft"]["title"] == radweg_draft.title
     assert radweg.fact_check_json["passed"] is True
     assert [post.status for post in result.posts] == [
         "ready",
         "failed",
-        "draft",
+        "ready",
     ]
 
     repair_calls = fake.calls_for("topic_repair")
@@ -414,6 +446,7 @@ async def test_composition_failure_retries_the_writer_with_feedback(
             ],
         }
     )
+    _script_topic_visuals(fake, [valid, radweg])
 
     protocol, _ = await _run(postgres_session, tmp_path, plan, fake)
     _, haushalt, radweg_post = await _posts(postgres_session, protocol)
@@ -429,10 +462,10 @@ async def test_composition_failure_retries_the_writer_with_feedback(
     assert "content slides" in haushalt_calls[1].prompt
     assert PROTOCOL_TEXT not in haushalt_calls[1].prompt
 
-    assert haushalt.status == "draft"
+    assert haushalt.status == "ready"
     assert haushalt.failed_step is None
     assert 4 <= len(haushalt.slide_plan_json["slides"]) <= 7
-    assert radweg_post.status == "draft"
+    assert radweg_post.status == "ready"
 
 
 async def test_persistent_composition_failure_fails_at_slide_composer(
@@ -454,6 +487,7 @@ async def test_persistent_composition_failure_fails_at_slide_composer(
             ],
         }
     )
+    _script_topic_visuals(fake, [radweg])
 
     protocol, _ = await _run(postgres_session, tmp_path, plan, fake)
     _, haushalt, radweg_post = await _posts(postgres_session, protocol)
@@ -461,7 +495,7 @@ async def test_persistent_composition_failure_fails_at_slide_composer(
     assert haushalt.status == "failed"
     assert haushalt.failed_step == "slide_composer"
     assert "content slides" in haushalt.error
-    assert radweg_post.status == "draft"
+    assert radweg_post.status == "ready"
     assert len(fake.calls_for("topic_writer")) == 3
 
 
@@ -484,6 +518,7 @@ async def test_topic_writer_failure_marks_only_that_topic_failed(
             ],
         }
     )
+    _script_topic_visuals(fake, [radweg])
 
     protocol, _ = await _run(postgres_session, tmp_path, plan, fake)
     summary, haushalt, radweg_post = await _posts(postgres_session, protocol)
@@ -493,7 +528,7 @@ async def test_topic_writer_failure_marks_only_that_topic_failed(
     assert haushalt.status == "failed"
     assert haushalt.failed_step == "writer"
     assert "after retry" in haushalt.error
-    assert radweg_post.status == "draft"
+    assert radweg_post.status == "ready"
 
 
 async def test_topic_caption_failure_records_the_caption_step(
@@ -516,6 +551,7 @@ async def test_topic_caption_failure_records_the_caption_step(
             ],
         }
     )
+    _script_topic_visuals(fake, [_topic_draft(plan.topic_briefs[1])])
 
     protocol, _ = await _run(postgres_session, tmp_path, plan, fake)
     summary, haushalt, radweg = await _posts(postgres_session, protocol)
@@ -524,7 +560,7 @@ async def test_topic_caption_failure_records_the_caption_step(
     assert haushalt.status == "failed"
     assert haushalt.failed_step == "caption"
     assert "caption returned bad JSON" in haushalt.error
-    assert radweg.status == "draft"
+    assert radweg.status == "ready"
 
 
 async def test_topic_repair_call_failure_records_the_repair_step(
@@ -552,6 +588,9 @@ async def test_topic_repair_call_failure_records_the_repair_step(
             ],
         }
     )
+    _script_topic_visuals(
+        fake, [_topic_draft(plan.topic_briefs[1])]
+    )
 
     protocol, _ = await _run(postgres_session, tmp_path, plan, fake)
     summary, haushalt, radweg = await _posts(postgres_session, protocol)
@@ -560,7 +599,7 @@ async def test_topic_repair_call_failure_records_the_repair_step(
     assert haushalt.status == "failed"
     assert haushalt.failed_step == "repair"
     assert "repair returned bad JSON" in haushalt.error
-    assert radweg.status == "draft"
+    assert radweg.status == "ready"
 
 
 async def test_successful_topic_repair_recomposes_the_topic(
@@ -596,11 +635,14 @@ async def test_successful_topic_repair_recomposes_the_topic(
             ],
         }
     )
+    _script_topic_visuals(
+        fake, [repaired, _topic_draft(plan.topic_briefs[1])]
+    )
 
     protocol, _ = await _run(postgres_session, tmp_path, plan, fake)
     _, haushalt, radweg = await _posts(postgres_session, protocol)
 
-    assert haushalt.status == "draft"
+    assert haushalt.status == "ready"
     assert haushalt.failed_step is None
     assert haushalt.content_json["draft"]["title"] == repaired.title
     assert haushalt.content_markdown.startswith(f"# {repaired.title}")
@@ -612,4 +654,4 @@ async def test_successful_topic_repair_recomposes_the_topic(
     slides = await _slides(postgres_session, haushalt)
     bodies = " ".join(slide.body for slide in slides if slide.body)
     assert "Der korrigierte Beschluss ist belegt" in bodies
-    assert radweg.status == "draft"
+    assert radweg.status == "ready"

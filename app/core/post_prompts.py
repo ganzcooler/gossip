@@ -16,6 +16,7 @@ from app.core.post_models import (
     SummaryBrief,
     SummaryDraft,
     TopicBrief,
+    TopicDraft,
 )
 
 
@@ -376,6 +377,59 @@ werden deterministisch ergänzt.
 
 Antworte ausschließlich mit einem einzigen JSON-Objekt mit dem Feld body. Kein \
 Markdown, keine Erklärungen und kein Text außerhalb des JSON.
+"""
+
+
+def build_topic_visual_prompt(draft: TopicDraft, pair_count: int) -> str:
+    """Build the Themen visual-prompt prompt from the topic draft only.
+
+    The writer gets the immutable article draft and the number of artwork
+    prompts needed for the pair grid. It never sees the protocol, excerpts,
+    the Summary draft, other topic drafts, or any conversation history.
+    """
+    if pair_count < 1:
+        raise ValueError("pair_count must be at least 1")
+    return f"""Du bist der Visual-Prompt-Writer von Gossip Rosdorf. Du schreibst \
+Bildprompts für das Cover und die Bildpaare eines Themenbeitrags.
+
+## Themenentwurf
+
+```json
+{_json(draft)}
+```
+
+## Aufgabe
+
+- cover_prompt: ein englischer oder deutscher Prompt für das Cover im \
+4:5-Feed-Format. Das Cover trägt später Titel, Logo, Organ-Badge und Kicker.
+- artwork_prompts: genau {pair_count} Prompts, einer pro 720×1350-Bildpaar. \
+Die Paare werden später in zwei 360×1350-Hälften geteilt; die linke Hälfte \
+erscheint auf einer Folie, die rechte auf der nächsten.
+
+## Design-Guardrails
+
+- Eine atmosphärische Illustration, keine Dokumentarfotografie und keine \
+gefälschte Beweisfotografie.
+- Ein weiter, ruhiger, durchgehend fortlaufender Horizont ohne zentrales \
+Motiv; die Szene passt zu einer kommunalpolitischen Sitzung in Rosdorf.
+- Kein zentrales Motiv und keine Personen im Vordergrund; der Platz für \
+Titel, Logo und Badge bleibt ruhig.
+- 4:5-feed-sichere Komposition: wichtige Motive im zentralen Bereich, keine \
+kritischen Inhalte am oberen oder unteren Rand.
+- Die Bildpaare werden in der Mitte geteilt. Wichtige Inhalte liegen \
+mindestens 40 px vom Paar-Seam entfernt; keine harte Kante und kein Motiv, \
+das über die Naht hinweg zerschnitten wirkt.
+- Kein Text, keine Buchstaben, keine Zahlen, keine Logos, keine Wappen und \
+keine Parteisymbole im Bild.
+- Keine erkennbaren Minderjährigen und keine fotorealistischen, namentlich \
+erkennbaren Politikerinnen oder Politiker.
+- Das Branding kommt ausschließlich aus dem Renderer, nie aus dem Bild.
+
+## Ausgabeformat
+
+Antworte ausschließlich mit einem einzigen JSON-Objekt, das dem vorgegebenen \
+Schema entspricht. Kein Markdown, keine Erklärungen und kein Text außerhalb \
+des JSON.
 """
 
 

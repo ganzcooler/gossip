@@ -5,19 +5,15 @@ Gossip is a Python service that fetches municipal council protocols from
 in PostgreSQL. It runs as a containerized FastAPI application with an
 in-process APScheduler.
 
-The stateless post pipeline is being built in stages. The editorial planning
-stage, the Summary content path, the Summary visual output and the topic
-content path are implemented: a protocol becomes a persisted Redaktionsplan
-plus draft Summary and topic posts with deterministic source excerpts. The
-Summary post gets a validated writer draft, a hard fact-check gate with one
-repair, deterministic Summary cards, a composed caption, Alt-Texte, an AI cover
-image with a brand fallback, and the blue 9:16 story PNGs plus one caption file
-in the protocol folder. Each topic post gets a validated article (H1, two to
-six H2 sections and paragraphs), the same hard fact-check gate, four to seven
-deterministic content slides, a composed caption and Alt-Texte. Topic visuals,
-retry/reprocess endpoints, and scheduler wiring are still to come. The legacy
-one-call article, caption, image, and Instagram pipeline has been removed;
-legacy articles remain readable through the API.
+The stateless post pipeline is feature-complete for generation. A protocol
+becomes a persisted Redaktionsplan plus one Summary post and zero to five topic
+posts with deterministic source excerpts. Every post gets a validated writer
+draft, the hard fact-check gate with one repair, deterministic slides, a
+composed caption, Alt-Texte and rendered images with brand fallbacks. The
+Summary is a blue 9:16 story; each topic is an orange 4:5 feed carousel with
+pair-sliced artwork. Retry/reprocess endpoints and scheduler wiring are still
+to come. The legacy one-call article, caption, image, and Instagram pipeline
+has been removed; legacy articles remain readable through the API.
 
 ## What it does
 
@@ -38,29 +34,35 @@ legacy articles remain readable through the API.
    hard gate with one repair attempt, and the 9:16 Summary cards are composed
    deterministically at one post-wide body size. The Summary post also gets a
    composed caption and deterministic Alt-Texte.
-6. **Visualise** — a stateless visual-prompt call writes the cover prompt from
-   the Summary draft only. Image generation requests a 9:16 image through the
-   LLM port, center-fits it to exactly 1080×1920, and substitutes the
-   deterministic blue brand fallback if the provider or payload fails. The
+6. **Visualise the Summary** — a stateless visual-prompt call writes the cover
+   prompt from the Summary draft only. Image generation requests a 9:16 image
+   through the LLM port, center-fits it to exactly 1080×1920, and substitutes
+   the deterministic blue brand fallback if the provider or payload fails. The
    renderer writes the cover and two to six cards as
    `summary-<date>-story-<frame>.png` plus exactly one
-   `caption-summary-summary.txt` into the protocol folder. Alt-Texte stay in
+   `caption-summary-summary.txt` into the protocol folder. Only after the whole
+   story and caption are written does the Summary post become `ready`.
+7. **Write and visualise topics** — for each planned Themenbrief, the
+   Themen-Writer sees only that brief and its excerpts and writes an H1 plus
+   two to six H2 sections with paragraphs under a hard 3,000-character budget.
+   The same Fact-Check gate applies, and the 4:5 content slides are composed
+   deterministically: every H2 starts a new slide, overflow continues with the
+   short chapter label at one post-wide body size, and the article text is
+   never reworded or truncated. A stateless topic visual-prompt call writes a
+   cover and `ceil(content_slides / 2)` pair prompts from the topic draft only.
+   Image generation requests 4:5 artwork, normalizes the cover to 1080×1350,
+   and center-crops each pair to 720×1350 or a final unpaired strip to
+   360×1350. The renderer slices pairs into the zigzag layout and writes
+   `topic-<date>-<slide>.png` plus exactly one `caption-topic-<slug>.txt`.
+   Topic image failures produce orange brand fallbacks and the post still
+   becomes `ready`; authentication errors stop the job. Alt-Texte stay in
    PostgreSQL and the API; no JSON, Markdown, prompt, or manifest files are
-   written. Only after the whole story and caption are written does the
-   Summary post become `ready`.
-7. **Write topics** — for each planned Themenbrief, the Themen-Writer sees only
-   that brief and its excerpts and writes an H1 plus two to six H2 sections
-   with paragraphs under a hard 3,000-character budget. The same Fact-Check
-   gate applies, and the 4:5 content slides are composed deterministically:
-   every H2 starts a new slide, overflow continues with the short chapter label
-   at one post-wide body size, and the article text is never reworded or
-   truncated. Topics also get a caption and Alt-Texte and stay `draft` until
-   the topic visual ticket runs.
+   written.
 
 The fetch workflow is triggered by APScheduler and can also be started manually
-through the API. The planning, Summary content and visual, and topic content
-stages are callable through `PostPipeline.run`; scheduler wiring arrives with
-the later pipeline tickets.
+through the API. The full planning, content and visual pipeline is callable
+through `PostPipeline.run`; scheduler wiring and retry/reprocess operations
+arrive with ticket 08.
 The processing schedule slot is reserved but currently a no-op.
 
 ## Architecture
@@ -101,6 +103,7 @@ app/
 │   ├── visual_prompts.py      Stateless visual-prompt role for covers/artwork
 │   ├── image_generation.py    Image decode, deterministic fit, brand fallbacks
 │   ├── post_renderer.py       Deterministic Summary story renderer
+│   ├── topic_renderer.py      Deterministic topic carousel renderer
 │   ├── render_common.py       Shared colors, logo plate, scrim, badge, folders
 │   ├── text_layout.py         Shared font loading, wrapping and fit primitives
 │   ├── organs.py              Finite Organ seed and deterministic resolver
@@ -208,9 +211,9 @@ Configuration is read from `.env` (see `.env.example`):
 | `GET` | `/api/pipeline/status` | Pipeline backlog, article counts, and `post_counts` |
 | `GET` | `/docs` | Swagger UI |
 
-The fetch endpoint calls the same job as the scheduler. Post generation
-endpoints will return with the stateless post pipeline; the old process, run,
-and generate-insta triggers are gone.
+The fetch endpoint calls the same job as the scheduler. Retry and reprocess
+endpoints will return with ticket 08; the old process, run, and generate-insta
+triggers are gone.
 
 Planned Beiträge are already persisted and readable. The planning stage stores
 the Redaktionsplan and creates the summary post (`slug="summary"`,
@@ -223,10 +226,13 @@ writer, fact-check, composition and caption calls, with one-based
 cover/heading/continuation `post_slides`. The Summary visual stage writes the
 cover prompt and asset row, generates or falls back for the cover art, renders
 all 1080×1920 frames in memory, and writes the PNGs plus the caption file
-before flipping the Summary to `ready`. Rerunning a protocol reuses a cached
-Summary draft and composed slides and resumes at visuals instead of calling the
-Summary writer again; a `ready` Summary is skipped entirely. Topic posts stay
-`draft` until the topic visual ticket renders them.
+before flipping the Summary to `ready`. Each topic post then runs its own
+visual-prompt call, generates or falls back for the cover and each pair / final
+strip, renders all 1080×1350 frames in memory, writes the carousel images plus
+its caption file, and only then flips to `ready`. Rerunning a protocol reuses a
+cached Summary or topic draft, composed slides and caption and resumes at
+visuals instead of calling the writer again; a `ready` post is skipped
+entirely.
 An unknown protocol title marks all planned posts `failed` at `organ`, and a
 missing source anchor marks only the affected Beitrag `failed` at
 `source_retrieval`. Summary and topic branches are independent: a Summary
@@ -255,6 +261,33 @@ failures produce the blue brand fallback and the post still becomes `ready`;
 authentication errors stop the job immediately. Text overflow, a missing
 font/logo, or a caption/render write failure marks the Summary `failed` at
 `render` and writes no partial story.
+
+### Topic output files
+
+A topic writes the same protocol folder, for example:
+
+```
+topic-2024-01-15-01.png   # cover
+topic-2024-01-15-02.png   # first content slide, heading layout
+topic-2024-01-15-03.png   # second content slide, continuation layout
+topic-2024-01-15-04.png   # third content slide, heading layout
+topic-2024-01-15-05.png   # fourth content slide, continuation layout
+caption-topic-haushalt.txt
+```
+
+A topic carousel has five to eight images (cover plus four to seven content
+slides). Content slides alternate text-left/image-right and
+image-left/text-right; each 720×1350 pair artwork is split into the left and
+right 360×1350 strips, and an unpaired final slide uses a standalone strip. The
+first slide gets the large orange number, one-word kicker, 3 px rule and fitted
+H2; continuation slides show the short chapter label, the `n/N` counter and a
+1 px hairline. Every content slide carries the colored logo on its white plate
+at the bottom-right of the text block. The caption file is UTF-8, starts with
+`Illustration: KI-generiert.` and carries source/date plus the SessionNet link
+or the manual-link hint. Image failures produce the orange brand fallback and
+the post still becomes `ready`; authentication errors stop the job. Text
+overflow, a missing font/logo, or a render/write failure marks only that topic
+`failed` at `render` and writes no partial carousel.
 
 ### Post read API
 
@@ -406,12 +439,11 @@ been removed. Manual tests are excluded from the default run and from hooks.
 
 ## Known limitations / next steps
 
-- The planning stage, both content paths and the Summary visual output are
-  implemented; topic visuals, retry/reprocess endpoints, and scheduler wiring
-  remain.
-- Summary posts are group-pure blue and written as 9:16 story PNGs plus one
-  caption file; topic posts remain `draft` until the orange 4:5 carousel
-  renderer lands.
+- The planning stage, both content paths and both visual outputs are
+  implemented; retry/reprocess endpoints and scheduler wiring remain.
+- Summary posts are family-pure blue 9:16 story PNGs; topic posts are
+  family-pure orange 4:5 carousels. Both write only PNGs plus one caption file
+  per Beitrag.
 - Add Alembic migrations instead of `create_all()`.
 - Move the scheduler and long-running pipeline jobs into a dedicated worker.
 - Add authentication and rate limiting for the API and pipeline triggers.
