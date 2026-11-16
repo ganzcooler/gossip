@@ -241,7 +241,15 @@ class TestGetStats:
         mock_articles = MagicMock()
         mock_articles.scalar.return_value = 15
         
-        mock_session.execute.side_effect = [mock_total, mock_processed, mock_articles]
+        mock_post_counts = MagicMock()
+        mock_post_counts.all.return_value = [("draft", 5), ("ready", 2)]
+
+        mock_session.execute.side_effect = [
+            mock_total,
+            mock_processed,
+            mock_articles,
+            mock_post_counts,
+        ]
         
         async def override_get_db():
             yield mock_session
@@ -257,6 +265,7 @@ class TestGetStats:
             assert "processed_protocols" in data
             assert "unprocessed_protocols" in data
             assert "total_articles" in data
+            assert data["post_counts"] == {"draft": 5, "ready": 2, "failed": 0}
         finally:
             app.dependency_overrides.clear()
 
@@ -296,7 +305,15 @@ class TestPipelineEndpoints:
         mock_articles = MagicMock()
         mock_articles.scalar.return_value = 15
         
-        mock_session.execute.side_effect = [mock_total, mock_unprocessed, mock_articles]
+        mock_post_counts = MagicMock()
+        mock_post_counts.all.return_value = []
+
+        mock_session.execute.side_effect = [
+            mock_total,
+            mock_unprocessed,
+            mock_articles,
+            mock_post_counts,
+        ]
         
         async def override_get_db():
             yield mock_session
@@ -312,5 +329,6 @@ class TestPipelineEndpoints:
             assert "total_protocols" in data
             assert "total_articles" in data
             assert "ready_to_process" in data
+            assert data["post_counts"] == {"draft": 0, "ready": 0, "failed": 0}
         finally:
             app.dependency_overrides.clear()

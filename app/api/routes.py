@@ -1,12 +1,91 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models import Protocol, Article
+from app.models import Protocol, Article, Post
 from app.services.protocol_fetcher import fetch_protocols_job
 
 router = APIRouter()
+
+
+def _isoformat(value):
+    return value.isoformat() if value is not None else None
+
+
+def _serialize_post_summary(post):
+    """Compact post representation for protocol post listings."""
+    return {
+        "id": post.id,
+        "protocol_id": post.protocol_id,
+        "post_type": post.post_type,
+        "slug": post.slug,
+        "post_index": post.post_index,
+        "title": post.title,
+        "status": post.status,
+        "failed_step": post.failed_step,
+        "caption": post.caption,
+        "slide_count": len(post.slides),
+        "created_at": _isoformat(post.created_at),
+        "updated_at": _isoformat(post.updated_at),
+    }
+
+
+def _serialize_slide(slide):
+    return {
+        "id": slide.id,
+        "slide_index": slide.slide_index,
+        "slide_type": slide.slide_type,
+        "pair_index": slide.pair_index,
+        "label": slide.label,
+        "headline": slide.headline,
+        "body": slide.body,
+        "alt_text": slide.alt_text,
+    }
+
+
+def _serialize_asset(asset):
+    return {
+        "id": asset.id,
+        "role": asset.role,
+        "prompt": asset.prompt,
+        "path": asset.path,
+        "status": asset.status,
+        "error": asset.error,
+        "model": asset.model,
+    }
+
+
+def _serialize_post_detail(post):
+    """Full post representation including ordered Folien and assets."""
+    data = _serialize_post_summary(post)
+    data.update(
+        {
+            "content_json": post.content_json,
+            "content_markdown": post.content_markdown,
+            "slide_plan_json": post.slide_plan_json,
+            "alt_text_json": post.alt_text_json,
+            "fact_check_json": post.fact_check_json,
+            "error": post.error,
+            "generator_version": post.generator_version,
+            "slides": [_serialize_slide(slide) for slide in post.slides],
+            "assets": [_serialize_asset(asset) for asset in post.assets],
+        }
+    )
+    return data
+
+
+async def _get_post_counts(db):
+    """Count Beiträge per status, with all three statuses always present."""
+    result = await db.execute(
+        select(Post.status, func.count(Post.id)).group_by(Post.status)
+    )
+    counts = {"draft": 0, "ready": 0, "failed": 0}
+    for status, count in result.all():
+        if status in counts:
+            counts[status] = count
+    return counts
 
 
 @router.get("/health")
@@ -87,6 +166,42 @@ async def get_protocol_articles(protocol_id: int, db: AsyncSession = Depends(get
     ]
 
 
+@router.get("/protocols/{protocol_id}/posts")
+async def get_protocol_posts(protocol_id: int, db: AsyncSession = Depends(get_db)):
+    """List a protocol's Beiträge ordered by their position."""
+    protocol_result = await db.execute(
+        select(Protocol.id).where(Protocol.id == protocol_id)
+    )
+    if protocol_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+
+    result = await db.execute(
+        select(Post)
+        .options(selectinload(Post.slides))
+        .where(Post.protocol_id == protocol_id)
+        .order_by(Post.post_index, Post.id)
+    )
+    posts = result.scalars().all()
+
+    return [_serialize_post_summary(post) for post in posts]
+
+
+@router.get("/posts/{post_id}")
+async def get_post(post_id: int, db: AsyncSession = Depends(get_db)):
+    """Get one Beitrag with its ordered Folien and assets."""
+    result = await db.execute(
+        select(Post)
+        .options(selectinload(Post.slides), selectinload(Post.assets))
+        .where(Post.id == post_id)
+    )
+    post = result.scalar_one_or_none()
+
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    return _serialize_post_detail(post)
+
+
 @router.get("/stats")
 async def get_stats(db: AsyncSession = Depends(get_db)):
     """Get system statistics."""
@@ -108,7 +223,8 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         "total_protocols": total_protocols,
         "processed_protocols": processed_protocols,
         "unprocessed_protocols": total_protocols - processed_protocols,
-        "total_articles": total_articles
+        "total_articles": total_articles,
+        "post_counts": await _get_post_counts(db),
     }
 
 
@@ -159,5 +275,6 @@ async def get_pipeline_status(db: AsyncSession = Depends(get_db)):
         "unprocessed_protocols": unprocessed_protocols,
         "total_protocols": total_protocols,
         "total_articles": total_articles,
-        "ready_to_process": unprocessed_protocols > 0
+        "ready_to_process": unprocessed_protocols > 0,
+        "post_counts": await _get_post_counts(db),
     }
