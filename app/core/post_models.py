@@ -159,6 +159,62 @@ class SummaryDraft(PipelineModel):
         return value
 
 
+class TopicSection(PipelineModel):
+    """One H2 Themenabschnitt with its paragraphs."""
+
+    h2: str
+    paragraphs: list[str] = Field(min_length=1)
+
+    @field_validator("h2")
+    @classmethod
+    def _h2_length(cls, value: str) -> str:
+        value = value.strip()
+        if not 20 <= len(value) <= 60:
+            raise ValueError(
+                "h2 must contain 20 to 60 characters including spaces"
+            )
+        return value
+
+    @field_validator("paragraphs")
+    @classmethod
+    def _require_paragraphs(cls, paragraphs: list[str]) -> list[str]:
+        cleaned = [paragraph.strip() for paragraph in paragraphs]
+        if not cleaned or any(not paragraph for paragraph in cleaned):
+            raise ValueError("paragraphs must contain at least one non-empty paragraph")
+        return cleaned
+
+
+class TopicDraft(PipelineModel):
+    """The Themen-Writer's article: H1 plus two to six H2 sections."""
+
+    title: str
+    sections: list[TopicSection] = Field(min_length=2, max_length=6)
+
+    @field_validator("title")
+    @classmethod
+    def _title_length(cls, value: str) -> str:
+        value = value.strip()
+        if not 20 <= len(value) <= 100:
+            raise ValueError(
+                "title must contain 20 to 100 characters including spaces"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _total_text_budget(self) -> "TopicDraft":
+        total = len(self.title) + sum(
+            len(section.h2)
+            + sum(len(paragraph) for paragraph in section.paragraphs)
+            for section in self.sections
+        )
+        if total > 3000:
+            raise ValueError(
+                "topic article text must not exceed 3000 characters including "
+                f"spaces (got {total})"
+            )
+        return self
+
+
 class FactCheckResult(PipelineModel):
     """The Faktenprüfung result; an empty issue list means the draft passes."""
 

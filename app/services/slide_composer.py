@@ -1,10 +1,9 @@
-"""Deterministic composition of a Summary draft into cover and cards.
+"""Deterministic composition of drafts into Summary cards and topic slides.
 
-No LLM is involved here. The composer chooses one post-wide body size from
-42/39/36, fits every heading and the cover title on the approved 1080×1920
-geometry, and splits an overlong point onto at most two consecutive cards
-without rewording, truncating, or hyphenating it. The resulting plan gives the
-renderer exact line boxes and deterministic Alt-Texte.
+No LLM is involved here. The composers choose one post-wide body size from
+42/39/36, fit every heading and the cover title, and split overlong text
+without rewording, truncating, or hyphenating it. The resulting plans give the
+renderers exact line boxes and deterministic Alt-Texte.
 """
 
 from __future__ import annotations
@@ -12,13 +11,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.core.post_models import SummaryDraft, SummaryPoint
+from app.core.post_models import SummaryDraft, SummaryPoint, TopicDraft
 from app.services.text_layout import (
     FitResult,
+    TextLine,
     TextOverflowError,
     body_size_that_fits,
     fit_lines,
     inter_font,
+    normalize_whitespace,
     split_text_to_fit,
     wrap_text,
 )
@@ -296,6 +297,589 @@ def render_summary_markdown(draft: SummaryDraft) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
+# ---------------------------------------------------------------------------
+# Topic composition: orange 1080×1350 carousel.
+# ---------------------------------------------------------------------------
+
+TOPIC_BODY_SIZES = (42, 39, 36)
+TOPIC_COVER_TITLE_SIZES = (96, 92, 88, 84, 80, 76, 72, 68, 64)
+TOPIC_H2_SIZES = (72, 68, 64)
+
+TOPIC_COVER_TITLE_WIDTH = 930
+TOPIC_COVER_TITLE_X = 64
+TOPIC_COVER_INSET_X = 48
+TOPIC_COVER_INSET_WIDTH = 984
+TOPIC_COVER_TITLE_MAX_LINES = 4
+TOPIC_COVER_TITLE_LINE_HEIGHT = 1.0
+
+TOPIC_TEXT_WIDTH = 600
+TOPIC_H2_TOP = 263
+TOPIC_H2_LINE_HEIGHT = 1.06
+TOPIC_H2_MAX_LINES = 3
+TOPIC_H2_ZONE = 160
+TOPIC_H2_EXPANDED_ZONE = 204
+TOPIC_H2_BODY_GAP = 24
+TOPIC_BODY_BOTTOM = 1100
+TOPIC_CONTINUATION_TOP = 136
+TOPIC_BODY_LINE_HEIGHT = 1.4
+TOPIC_PARAGRAPH_GAP_FACTOR = 0.72
+
+TOPIC_COVER_LABEL = "THEMA IM FOKUS"
+TOPIC_FALLBACK_LABEL = "THEMA"
+TOPIC_MAX_CHAPTER_SHORT = 28
+TOPIC_MIN_CONTENT_SLIDES = 4
+TOPIC_MAX_CONTENT_SLIDES = 7
+
+_LABEL_PUNCTUATION = ".,;:!?()[]{}\"'„“”‚‘’–—…"
+_KICKER_STOPWORDS = frozenset(
+    {
+        "der",
+        "die",
+        "das",
+        "den",
+        "dem",
+        "des",
+        "ein",
+        "eine",
+        "einen",
+        "einem",
+        "eines",
+        "einer",
+        "und",
+        "oder",
+        "aber",
+        "im",
+        "in",
+        "am",
+        "an",
+        "auf",
+        "aus",
+        "bei",
+        "für",
+        "mit",
+        "von",
+        "vor",
+        "zu",
+        "zur",
+        "zum",
+        "über",
+        "unter",
+        "um",
+        "was",
+        "wie",
+        "warum",
+        "wann",
+        "wo",
+        "wer",
+        "auch",
+        "nicht",
+        "mehr",
+        "neue",
+        "neuer",
+        "neues",
+        "neuen",
+    }
+)
+
+
+class TopicCompositionError(Exception):
+    """The topic draft cannot be composed without changing its text."""
+
+
+@dataclass(frozen=True)
+class ComposedTopicSlide:
+    """One deterministic topic Folie before rendering."""
+
+    slide_index: int
+    slide_type: str
+    label: str | None
+    headline: str | None
+    body: str | None
+    alt_text: str
+    pair_index: int | None = None
+    content_position: int | None = None
+    section_index: int | None = None
+    chapter_short: str | None = None
+    heading_size: int | None = None
+    heading_zone: int | None = None
+    heading_lines: tuple[str, ...] = ()
+    body_size: int | None = None
+    body_lines: tuple[str, ...] = ()
+    body_paragraphs: tuple[tuple[str, ...], ...] = ()
+
+
+@dataclass(frozen=True)
+class TopicComposition:
+    """The composed Folien plus the persisted slide-plan and Markdown."""
+
+    slides: tuple[ComposedTopicSlide, ...]
+    body_size: int
+    cover_title_size: int
+    slide_plan: dict[str, Any]
+    alt_texts: tuple[str, ...]
+    markdown: str
+
+
+@dataclass(frozen=True)
+class _TopicBodyChunk:
+    paragraph_index: int
+    lines: tuple[TextLine, ...]
+
+
+def derive_topic_kicker(h2: str) -> str:
+    """Derive the one-word uppercase kicker from an H2.
+
+    Leading articles and other filler words are skipped so the label stays
+    meaningful. When every word is filler (or punctuation), the neutral
+    ``THEMA`` label is used.
+    """
+    for raw_word in normalize_whitespace(h2).split(" "):
+        word = raw_word.strip(_LABEL_PUNCTUATION)
+        if len(word) < 2 or not any(character.isalpha() for character in word):
+            continue
+        if word.casefold() in _KICKER_STOPWORDS:
+            continue
+        return word.upper()
+    return TOPIC_FALLBACK_LABEL
+
+
+def derive_chapter_short(h2: str) -> str:
+    """Derive the continuation label as a word-boundary prefix of the H2.
+
+    The result is at most 28 characters and never gains an ellipsis. If the
+    first word alone exceeds the limit, the neutral ``THEMA`` label is used;
+    the article text itself is never changed.
+    """
+    words: list[str] = []
+    length = 0
+    for word in normalize_whitespace(h2).split(" "):
+        candidate = len(word) if not words else length + 1 + len(word)
+        if candidate > TOPIC_MAX_CHAPTER_SHORT:
+            break
+        words.append(word)
+        length = candidate
+    if not words:
+        return TOPIC_FALLBACK_LABEL
+    return " ".join(words)
+
+
+def _fit_topic_cover_title(title: str) -> tuple[FitResult, int, int]:
+    fit = fit_lines(
+        title,
+        family="oswald",
+        sizes=TOPIC_COVER_TITLE_SIZES,
+        width=TOPIC_COVER_TITLE_WIDTH,
+        max_lines=TOPIC_COVER_TITLE_MAX_LINES,
+        line_height=TOPIC_COVER_TITLE_LINE_HEIGHT,
+        weight=700,
+    )
+    if fit is not None:
+        return fit, TOPIC_COVER_TITLE_X, TOPIC_COVER_TITLE_WIDTH
+
+    fit = fit_lines(
+        title,
+        family="oswald",
+        sizes=TOPIC_COVER_TITLE_SIZES,
+        width=TOPIC_COVER_INSET_WIDTH,
+        max_lines=TOPIC_COVER_TITLE_MAX_LINES,
+        line_height=TOPIC_COVER_TITLE_LINE_HEIGHT,
+        weight=700,
+    )
+    if fit is not None:
+        return fit, TOPIC_COVER_INSET_X, TOPIC_COVER_INSET_WIDTH
+
+    fit = fit_lines(
+        title,
+        family="oswald",
+        sizes=(TOPIC_COVER_TITLE_SIZES[-1],),
+        width=TOPIC_COVER_INSET_WIDTH,
+        max_lines=5,
+        line_height=TOPIC_COVER_TITLE_LINE_HEIGHT,
+        weight=700,
+    )
+    if fit is not None:
+        return fit, TOPIC_COVER_INSET_X, TOPIC_COVER_INSET_WIDTH
+
+    raise TopicCompositionError(
+        "Topic cover title does not fit four lines at 64px (or five lines "
+        f"at 64px with the inset fallback): {title!r}"
+    )
+
+
+def _fit_topic_h2(heading: str) -> tuple[FitResult, int]:
+    for size in TOPIC_H2_SIZES:
+        fit = fit_lines(
+            heading,
+            family="oswald",
+            sizes=(size,),
+            width=TOPIC_TEXT_WIDTH,
+            max_lines=TOPIC_H2_MAX_LINES,
+            line_height=TOPIC_H2_LINE_HEIGHT,
+            weight=600,
+        )
+        if fit is None:
+            continue
+        zone = (
+            TOPIC_H2_EXPANDED_ZONE
+            if len(fit.lines) == 3
+            else TOPIC_H2_ZONE
+        )
+        if fit.height <= zone + 1e-9:
+            return fit, zone
+    raise TopicCompositionError(
+        "Topic H2 does not fit three lines at 64px within its 160/204px zone: "
+        f"{heading!r}"
+    )
+
+
+def _wrap_topic_paragraph(
+    paragraph: str,
+    *,
+    font,
+) -> tuple[TextLine, ...]:
+    try:
+        lines = wrap_text(
+            paragraph,
+            font,
+            TOPIC_TEXT_WIDTH,
+            allow_char_split=False,
+        )
+    except TextOverflowError as exc:
+        raise TopicCompositionError(
+            "Topic body contains a word that is wider than the 600px column: "
+            f"{paragraph[:80]!r}"
+        ) from exc
+    if not lines:
+        raise TopicCompositionError("Topic body contains an empty paragraph")
+    return tuple(lines)
+
+
+def _balance_topic_slides(
+    slides: list[list[_TopicBodyChunk]],
+) -> list[list[_TopicBodyChunk]]:
+    """Move one line forward when the final slide would be a one-line orphan."""
+    if len(slides) < 2:
+        return slides
+    last, previous = slides[-1], slides[-2]
+    if not last or not previous:
+        return slides
+    last_lines = sum(len(chunk.lines) for chunk in last)
+    if last_lines >= 2:
+        return slides
+    if last[0].paragraph_index != previous[-1].paragraph_index:
+        return slides
+    previous_chunk = previous[-1]
+    if len(previous_chunk.lines) < 2:
+        return slides
+    moved = previous_chunk.lines[-1]
+    previous[-1] = _TopicBodyChunk(
+        previous_chunk.paragraph_index, previous_chunk.lines[:-1]
+    )
+    last.insert(0, _TopicBodyChunk(previous_chunk.paragraph_index, (moved,)))
+    return slides
+
+
+def _pack_topic_section(
+    paragraphs: list[str],
+    *,
+    font,
+    body_size: int,
+    first_capacity: float,
+) -> list[list[_TopicBodyChunk]]:
+    line_height = body_size * TOPIC_BODY_LINE_HEIGHT
+    paragraph_gap = round(body_size * TOPIC_PARAGRAPH_GAP_FACTOR)
+    wrapped = [
+        _wrap_topic_paragraph(paragraph, font=font)
+        for paragraph in paragraphs
+    ]
+
+    slides: list[list[_TopicBodyChunk]] = []
+    current: list[_TopicBodyChunk] = []
+    used = 0.0
+    capacity = first_capacity
+
+    for paragraph_index, lines in enumerate(wrapped):
+        remaining = lines
+        while remaining:
+            gap = paragraph_gap if current else 0
+            available = capacity - used - gap
+            whole_height = len(remaining) * line_height
+
+            if whole_height <= available + 1e-9:
+                current.append(_TopicBodyChunk(paragraph_index, remaining))
+                used += gap + whole_height
+                remaining = ()
+                continue
+
+            if current:
+                # Prefer starting a new slide over splitting this paragraph.
+                slides.append(current)
+                current = []
+                used = 0.0
+                capacity = TOPIC_BODY_BOTTOM - TOPIC_CONTINUATION_TOP
+                continue
+
+            fitting = int((available + 1e-9) // line_height)
+            if fitting >= len(remaining):
+                current.append(_TopicBodyChunk(paragraph_index, remaining))
+                used = len(remaining) * line_height
+                remaining = ()
+                continue
+            if fitting < 1:
+                raise TopicCompositionError(
+                    "Topic body line does not fit any content slide"
+                )
+
+            current.append(
+                _TopicBodyChunk(paragraph_index, remaining[:fitting])
+            )
+            used = fitting * line_height
+            remaining = remaining[fitting:]
+            slides.append(current)
+            current = []
+            used = 0.0
+            capacity = TOPIC_BODY_BOTTOM - TOPIC_CONTINUATION_TOP
+
+    if current:
+        slides.append(current)
+    return _balance_topic_slides(slides)
+
+
+def _topic_body_text(chunks: list[_TopicBodyChunk]) -> str:
+    parts: list[str] = []
+    previous_paragraph: int | None = None
+    for chunk in chunks:
+        text = " ".join(line.text for line in chunk.lines)
+        if parts and chunk.paragraph_index == previous_paragraph:
+            parts[-1] = f"{parts[-1]} {text}"
+        else:
+            parts.append(text)
+        previous_paragraph = chunk.paragraph_index
+    return "\n\n".join(parts)
+
+
+def _topic_body_lines(chunks: list[_TopicBodyChunk]) -> tuple[str, ...]:
+    return tuple(line.text for chunk in chunks for line in chunk.lines)
+
+
+def _topic_body_paragraphs(
+    chunks: list[_TopicBodyChunk],
+) -> tuple[tuple[str, ...], ...]:
+    return tuple(
+        tuple(line.text for line in chunk.lines) for chunk in chunks
+    )
+
+
+def _topic_cover_alt_text(title: str) -> str:
+    return f"Titelbild des Themenbeitrags: {title}"
+
+
+def _topic_content_alt_text(
+    *,
+    position: int,
+    total: int,
+    label: str,
+    headline: str | None,
+    body: str,
+) -> str:
+    prefix = f"Themen-Folie {position:02d} von {total:02d}: {label}."
+    if headline:
+        return f"{prefix} {headline}. {body}"
+    return f"{prefix} {body}"
+
+
+def compose_topic_slides(draft: TopicDraft) -> TopicComposition:
+    """Compose the cover and 4–7 content slides for a topic ``draft``.
+
+    Raises :class:`TopicCompositionError` when the draft cannot be laid out
+    within the approved limits. The composer never shortens, rewords or
+    truncates article text; overflow continues on separate slides.
+    """
+    cover_fit, cover_x, cover_width = _fit_topic_cover_title(draft.title)
+    section_fits = [
+        _fit_topic_h2(section.h2) for section in draft.sections
+    ]
+
+    def try_size(
+        size: int,
+    ) -> tuple[list[list[list[_TopicBodyChunk]]], int] | None:
+        font = inter_font(size, weight=400)
+        section_parts: list[list[list[_TopicBodyChunk]]] = []
+        total = 0
+        for section, (_, zone) in zip(draft.sections, section_fits):
+            body_top = TOPIC_H2_TOP + zone + TOPIC_H2_BODY_GAP
+            try:
+                parts = _pack_topic_section(
+                    section.paragraphs,
+                    font=font,
+                    body_size=size,
+                    first_capacity=TOPIC_BODY_BOTTOM - body_top,
+                )
+            except TopicCompositionError:
+                # A word may be too wide at this size; a smaller body size
+                # gets its own chance before the draft is rejected.
+                return None
+            section_parts.append(parts)
+            total += len(parts)
+        if TOPIC_MIN_CONTENT_SLIDES <= total <= TOPIC_MAX_CONTENT_SLIDES:
+            return section_parts, total
+        return None
+
+    found = body_size_that_fits(try_size, TOPIC_BODY_SIZES)
+    if found is None:
+        # Report the smallest-size outcome for the writer's retry feedback.
+        font = inter_font(TOPIC_BODY_SIZES[-1], weight=400)
+        total = 0
+        for section, (_, zone) in zip(draft.sections, section_fits):
+            body_top = TOPIC_H2_TOP + zone + TOPIC_H2_BODY_GAP
+            total += len(
+                _pack_topic_section(
+                    section.paragraphs,
+                    font=font,
+                    body_size=TOPIC_BODY_SIZES[-1],
+                    first_capacity=TOPIC_BODY_BOTTOM - body_top,
+                )
+            )
+        raise TopicCompositionError(
+            "Topic draft yields "
+            f"{total} content slides at {TOPIC_BODY_SIZES[-1]}px; "
+            f"{TOPIC_MIN_CONTENT_SLIDES} to {TOPIC_MAX_CONTENT_SLIDES} are "
+            "required. Shorten the article text or adjust the section "
+            "structure without dropping facts."
+        )
+    body_size, (section_parts, content_count) = found
+
+    content_plans: list[
+        tuple[int, int, int, list[_TopicBodyChunk]]
+    ] = []  # section index, part index, content position, chunks
+    position = 0
+    for section_index, parts in enumerate(section_parts):
+        for part_index, chunks in enumerate(parts):
+            position += 1
+            content_plans.append((section_index, part_index, position, chunks))
+
+    slides: list[ComposedTopicSlide] = [
+        ComposedTopicSlide(
+            slide_index=1,
+            slide_type="cover",
+            label=TOPIC_COVER_LABEL,
+            headline=draft.title,
+            body=None,
+            alt_text=_topic_cover_alt_text(draft.title),
+        )
+    ]
+    slide_plan_entries: list[dict[str, Any]] = []
+
+    for section_index, part_index, content_position, chunks in content_plans:
+        section = draft.sections[section_index]
+        heading_fit, heading_zone = section_fits[section_index]
+        kicker = derive_topic_kicker(section.h2)
+        chapter_short = derive_chapter_short(section.h2)
+        body = _topic_body_text(chunks)
+        body_lines = _topic_body_lines(chunks)
+        body_paragraphs = _topic_body_paragraphs(chunks)
+        pair_index = (content_position + 1) // 2
+        slide_index = content_position + 1
+
+        if part_index == 0:
+            slide_type = "heading"
+            label = kicker
+            headline = section.h2
+            alt_label = kicker
+            alt_headline = section.h2
+        else:
+            slide_type = "continuation"
+            label = chapter_short
+            headline = None
+            alt_label = chapter_short
+            alt_headline = None
+
+        alt_text = _topic_content_alt_text(
+            position=content_position,
+            total=content_count,
+            label=alt_label,
+            headline=alt_headline,
+            body=body,
+        )
+        slides.append(
+            ComposedTopicSlide(
+                slide_index=slide_index,
+                slide_type=slide_type,
+                label=label,
+                headline=headline,
+                body=body,
+                alt_text=alt_text,
+                pair_index=pair_index,
+                content_position=content_position,
+                section_index=section_index,
+                chapter_short=chapter_short,
+                heading_size=heading_fit.size if part_index == 0 else None,
+                heading_zone=heading_zone if part_index == 0 else None,
+                heading_lines=(
+                    tuple(line.text for line in heading_fit.lines)
+                    if part_index == 0
+                    else ()
+                ),
+                body_size=body_size,
+                body_lines=body_lines,
+                body_paragraphs=body_paragraphs,
+            )
+        )
+        entry: dict[str, Any] = {
+            "slide_index": slide_index,
+            "slide_type": slide_type,
+            "content_position": content_position,
+            "pair_index": pair_index,
+            "section_index": section_index,
+            "part_index": part_index,
+            "kicker": kicker,
+            "chapter_short": chapter_short,
+            "body": body,
+            "body_lines": list(body_lines),
+            "body_paragraphs": [list(lines) for lines in body_paragraphs],
+        }
+        if part_index == 0:
+            entry["headline"] = section.h2
+            entry["heading_size"] = heading_fit.size
+            entry["heading_zone"] = heading_zone
+            entry["heading_lines"] = [
+                line.text for line in heading_fit.lines
+            ]
+        slide_plan_entries.append(entry)
+
+    slide_plan = {
+        "family": "topic",
+        "body_size": body_size,
+        "content_slides": content_count,
+        "total_slides": content_count + 1,
+        "cover": {
+            "label": TOPIC_COVER_LABEL,
+            "title_size": cover_fit.size,
+            "title_x": cover_x,
+            "title_width": cover_width,
+            "title_lines": [line.text for line in cover_fit.lines],
+        },
+        "slides": slide_plan_entries,
+    }
+    return TopicComposition(
+        slides=tuple(slides),
+        body_size=body_size,
+        cover_title_size=cover_fit.size,
+        slide_plan=slide_plan,
+        alt_texts=tuple(slide.alt_text for slide in slides),
+        markdown=render_topic_markdown(draft),
+    )
+
+
+def render_topic_markdown(draft: TopicDraft) -> str:
+    """Render the persisted Markdown representation of a topic draft."""
+    blocks = [f"# {draft.title}"]
+    for section in draft.sections:
+        blocks.append(f"## {section.h2}")
+        blocks.extend(section.paragraphs)
+    return "\n\n".join(blocks) + "\n"
+
+
 __all__ = [
     "CARD_BODY_BOTTOM",
     "CARD_BODY_LINE_HEIGHT",
@@ -305,9 +889,27 @@ __all__ = [
     "COVER_LABEL",
     "MAX_CARDS",
     "SUMMARY_BODY_SIZES",
+    "TOPIC_BODY_BOTTOM",
+    "TOPIC_BODY_LINE_HEIGHT",
+    "TOPIC_BODY_SIZES",
+    "TOPIC_CONTINUATION_TOP",
+    "TOPIC_COVER_LABEL",
+    "TOPIC_H2_EXPANDED_ZONE",
+    "TOPIC_H2_ZONE",
+    "TOPIC_MAX_CHAPTER_SHORT",
+    "TOPIC_MAX_CONTENT_SLIDES",
+    "TOPIC_MIN_CONTENT_SLIDES",
+    "TOPIC_TEXT_WIDTH",
     "ComposedSummarySlide",
+    "ComposedTopicSlide",
     "SummaryComposition",
     "SummaryCompositionError",
+    "TopicComposition",
+    "TopicCompositionError",
     "compose_summary_slides",
+    "compose_topic_slides",
+    "derive_chapter_short",
+    "derive_topic_kicker",
     "render_summary_markdown",
+    "render_topic_markdown",
 ]

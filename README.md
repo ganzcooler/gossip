@@ -6,14 +6,16 @@ in PostgreSQL. It runs as a containerized FastAPI application with an
 in-process APScheduler.
 
 The stateless post pipeline is being built in stages. The editorial planning
-stage and the Summary content path are implemented: a protocol becomes a
-persisted Redaktionsplan plus draft Summary and topic posts with deterministic
-source excerpts, and the Summary post gets a validated writer draft, a hard
-fact-check gate with one repair, deterministic Summary cards, a composed
-caption and Alt-Texte. Topic writers, visual prompts, rendering, and scheduler
-wiring are still to come. The legacy one-call article, caption, image, and
-Instagram pipeline has been removed; legacy articles remain readable through
-the API.
+stage, the Summary content path, and the topic content path are implemented: a
+protocol becomes a persisted Redaktionsplan plus draft Summary and topic posts
+with deterministic source excerpts. The Summary post gets a validated writer
+draft, a hard fact-check gate with one repair, deterministic Summary cards, a
+composed caption and Alt-Texte. Each topic post gets a validated article (H1,
+two to six H2 sections and paragraphs), the same hard fact-check gate, four to
+seven deterministic content slides, a composed caption and Alt-Texte. Visual
+prompts, rendering, and scheduler wiring are still to come. The legacy one-call
+article, caption, image, and Instagram pipeline has been removed; legacy
+articles remain readable through the API.
 
 ## What it does
 
@@ -35,10 +37,19 @@ the API.
    deterministically at one post-wide body size. The Summary post also gets a
    composed caption and deterministic Alt-Texte; it stays `draft` until the
    Visual-Prompts and renderer tickets run.
+6. **Write topics** — for each planned Themenbrief, the Themen-Writer sees only
+   that brief and its excerpts and writes an H1 plus two to six H2 sections
+   with paragraphs under a hard 3,000-character budget. The same Fact-Check
+   gate applies, and the 4:5 content slides are composed deterministically:
+   every H2 starts a new slide, overflow continues with the short chapter label
+   at one post-wide body size, and the article text is never reworded or
+   truncated. Topics also get a caption and Alt-Texte and stay `draft` until
+   the topic visual ticket runs.
 
 The fetch workflow is triggered by APScheduler and can also be started manually
-through the API. The planning and Summary content stages are callable through
-`PostPipeline.run`; scheduler wiring arrives with the later pipeline tickets.
+through the API. The planning, Summary content, and topic content stages are
+callable through `PostPipeline.run`; scheduler wiring arrives with the later
+pipeline tickets.
 The processing schedule slot is reserved but currently a no-op.
 
 ## Architecture
@@ -72,13 +83,14 @@ app/
 │   ├── llm_client.py          Stateless LLM port and OpenRouter adapter
 │   ├── editorial_planner.py   Redaktionsplaner role
 │   ├── summary_writer.py      Summary-Writer role with one validation retry
+│   ├── topic_writer.py        Themen-Writer role with one validation retry
 │   ├── fact_checker.py        Shared fact-check + one-repair hard gate
-│   ├── slide_composer.py      Deterministic Summary cover/card composition
+│   ├── slide_composer.py      Deterministic Summary cards and topic slides
 │   ├── caption_writer.py      Caption body role and deterministic composition
 │   ├── text_layout.py         Shared font loading, wrapping and fit primitives
 │   ├── organs.py              Finite Organ seed and deterministic resolver
 │   ├── protocol_excerpts.py   Deterministic source-anchor retrieval
-│   └── post_pipeline.py       Planning and Summary-content orchestrator
+│   └── post_pipeline.py       Planning and content-path orchestrator
 ├── utils/                     Folder and SessionNet helpers
 └── res/                       Logo and runtime fonts for the renderer
 
@@ -185,13 +197,17 @@ the Redaktionsplan and creates the summary post (`slug="summary"`,
 content path then replaces the summary's `content_json` with the validated
 draft plus source excerpts and fills `content_markdown`, `slide_plan_json`,
 `caption`, `alt_text_json`, `fact_check_json` and the one-based cover/card
-`post_slides`. The Summary stays `draft` until the visual pipeline can render
-it; topic posts remain planned drafts until the topic writer ticket.
+`post_slides`. Each topic post gets the same persisted fields from its own
+writer, fact-check, composition and caption calls, with one-based
+cover/heading/continuation `post_slides`. Both post families stay `draft`
+until the visual pipeline can render them.
 An unknown protocol title marks all planned posts `failed` at `organ`, and a
 missing source anchor marks only the affected Beitrag `failed` at
-`source_retrieval`. A Summary failure at `writer`, `fact_check`, `repair`,
-`caption` or `slide_composer` does not touch the topic drafts, and a failed
-Summary is not retried automatically on the next run.
+`source_retrieval`. Summary and topic branches are independent: a Summary
+failure at `writer`, `fact_check`, `repair`, `caption` or `slide_composer`
+does not touch the topic drafts, and a failed topic does not block the Summary
+or the other topics. Failed posts are not retried automatically on the next
+run.
 
 ### Post read API
 
@@ -343,11 +359,12 @@ been removed. Manual tests are excluded from the default run and from hooks.
 
 ## Known limitations / next steps
 
-- The planning stage and the Summary content path are implemented; the topic
-  writer, visual prompts, rendering, caption files, and scheduler wiring
+- The planning stage and both content paths are implemented; visual prompts,
+  rendering, caption files, retry/reprocess endpoints, and scheduler wiring
   remain.
-- Summary posts intentionally stay `draft` until visuals can be rendered; the
-  caption is stored on the post but no caption file is written yet.
+- Summary and topic posts intentionally stay `draft` until visuals can be
+  rendered; the caption is stored on the post but no caption file is written
+  yet.
 - Add Alembic migrations instead of `create_all()`.
 - Move the scheduler and long-running pipeline jobs into a dedicated worker.
 - Add authentication and rate limiting for the API and pipeline triggers.

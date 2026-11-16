@@ -12,6 +12,8 @@ from app.core.post_models import (
     SummaryDraft,
     SummaryPoint,
     TopicBrief,
+    TopicDraft,
+    TopicSection,
 )
 
 
@@ -210,6 +212,150 @@ def test_fact_check_issues_must_be_non_empty_and_actionable_strings():
         FactCheckResult(issues=["   "])
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         FactCheckResult(issues=[], ok=True)
+
+
+def _topic_section(**overrides):
+    values = {
+        "h2": "Der Rat hat den Haushalt beschlossen",
+        "paragraphs": [
+            "Der Rat hat den Haushalt einstimmig beschlossen und die Mittel "
+            "für alle Ortsteile freigegeben."
+        ],
+    }
+    values.update(overrides)
+    return TopicSection(**values)
+
+
+def _topic_draft(**overrides):
+    values = {
+        "title": "Was der Rat in Rosdorf entschieden hat",
+        "sections": [
+            _topic_section(),
+            _topic_section(
+                h2="Der Radweg wird im Sommer gebaut",
+                paragraphs=[
+                    "Der Radweg an der Hauptstraße wird im Sommer gebaut."
+                ],
+            ),
+        ],
+    }
+    values.update(overrides)
+    return TopicDraft(**values)
+
+
+@pytest.mark.parametrize("length", [20, 100])
+def test_topic_title_accepts_the_inclusive_bounds(length):
+    draft = _topic_draft(title="T" * length)
+
+    assert draft.title == "T" * length
+
+
+@pytest.mark.parametrize("length", [19, 101])
+def test_topic_title_rejects_out_of_bounds_lengths(length):
+    with pytest.raises(ValidationError, match="20"):
+        _topic_draft(title="T" * length)
+
+
+@pytest.mark.parametrize("length", [20, 60])
+def test_topic_section_h2_accepts_the_inclusive_bounds(length):
+    section = _topic_section(h2="H" * length)
+
+    assert section.h2 == "H" * length
+
+
+@pytest.mark.parametrize("length", [19, 61])
+def test_topic_section_h2_rejects_out_of_bounds_lengths(length):
+    with pytest.raises(ValidationError, match="20"):
+        _topic_section(h2="H" * length)
+
+
+@pytest.mark.parametrize("count", [2, 6])
+def test_topic_draft_accepts_two_to_six_sections(count):
+    draft = _topic_draft(sections=[_topic_section() for _ in range(count)])
+
+    assert len(draft.sections) == count
+
+
+@pytest.mark.parametrize("count", [1, 7])
+def test_topic_draft_rejects_out_of_bounds_section_counts(count):
+    with pytest.raises(ValidationError, match="sections"):
+        _topic_draft(sections=[_topic_section() for _ in range(count)])
+
+
+def test_topic_draft_accepts_exactly_3000_characters_and_rejects_3001():
+    accepted = _topic_draft(
+        title="T" * 20,
+        sections=[
+            _topic_section(h2="H" * 20, paragraphs=["x" * 1470]),
+            _topic_section(h2="H" * 20, paragraphs=["y" * 1470]),
+        ],
+    )
+    assert (
+        len(accepted.title)
+        + sum(
+            len(section.h2) + sum(len(p) for p in section.paragraphs)
+            for section in accepted.sections
+        )
+        == 3000
+    )
+
+    with pytest.raises(ValidationError, match="3000"):
+        _topic_draft(
+            title="T" * 20,
+            sections=[
+                _topic_section(h2="H" * 20, paragraphs=["x" * 1471]),
+                _topic_section(h2="H" * 20, paragraphs=["y" * 1470]),
+            ],
+        )
+
+
+def test_topic_paragraphs_have_no_individual_length_limit():
+    draft = _topic_draft(
+        title="T" * 20,
+        sections=[
+            _topic_section(h2="H" * 20, paragraphs=["x" * 2900]),
+            _topic_section(h2="H" * 20, paragraphs=["y"]),
+        ],
+    )
+
+    assert len(draft.sections[0].paragraphs[0]) == 2900
+
+
+@pytest.mark.parametrize("paragraphs", [[], ["   "], [""]])
+def test_topic_section_requires_non_empty_paragraphs(paragraphs):
+    with pytest.raises(ValidationError, match="paragraph"):
+        _topic_section(paragraphs=paragraphs)
+
+
+def test_topic_models_strip_whitespace():
+    section = _topic_section(h2="  Der Rat hat den Haushalt beschlossen  ")
+    draft = _topic_draft(
+        title="  Was der Rat in Rosdorf entschieden hat  ",
+        sections=[
+            _topic_section(
+                h2="  Der Rat hat den Haushalt beschlossen  ",
+                paragraphs=["  Der Rat hat den Haushalt beschlossen.  "],
+            ),
+            _topic_section(h2="  Der Radweg wird im Sommer gebaut  "),
+        ],
+    )
+
+    assert section.h2 == "Der Rat hat den Haushalt beschlossen"
+    assert draft.title == "Was der Rat in Rosdorf entschieden hat"
+    assert draft.sections[0].paragraphs == [
+        "Der Rat hat den Haushalt beschlossen."
+    ]
+
+
+def test_topic_draft_forbids_lead_takeaways_kicker_and_extra_fields():
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        _topic_draft(lead="Ein Lead")
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        _topic_draft(takeaways=["Ein Punkt"])
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        _topic_section(kicker="Haushalt")
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        _topic_section(extra_field=True)
 
 
 def test_caption_draft_strips_and_requires_body_text():

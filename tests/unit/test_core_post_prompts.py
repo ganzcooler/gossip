@@ -8,6 +8,7 @@ from app.core.post_models import (
     SummaryBrief,
     SummaryDraft,
     SummaryPoint,
+    TopicBrief,
 )
 from app.core.post_prompts import (
     build_caption_prompt,
@@ -15,6 +16,7 @@ from app.core.post_prompts import (
     build_planner_prompt,
     build_repair_prompt,
     build_summary_writer_prompt,
+    build_topic_writer_prompt,
 )
 
 PROTOCOL_TEXT = (
@@ -132,6 +134,66 @@ def test_summary_writer_prompt_appends_validation_feedback_without_new_inputs():
     assert "120 to 320" in prompt
     assert PROTOCOL_TEXT not in prompt
     assert prompt.count(BRIEFS[0].point) == 1
+
+
+TOPIC_BRIEF = TopicBrief(
+    slug="haushalt",
+    title="Haushalt beschlossen",
+    focus="Die wichtigsten Posten im Gemeindehaushalt",
+    relevance="Die Entscheidung betrifft alle Ortsteile.",
+    source_anchors=["Der Rat beschließt den Haushalt einstimmig."],
+)
+
+TOPIC_EXCERPTS = [EXCERPTS[0]]
+
+
+def test_topic_writer_prompt_contains_only_the_brief_excerpts_and_rules():
+    prompt = build_topic_writer_prompt(
+        brief=TOPIC_BRIEF, excerpts=TOPIC_EXCERPTS
+    )
+
+    assert TOPIC_BRIEF.slug in prompt
+    assert TOPIC_BRIEF.title in prompt
+    assert TOPIC_BRIEF.focus in prompt
+    assert TOPIC_BRIEF.relevance in prompt
+    assert TOPIC_BRIEF.source_anchors[0] in prompt
+    assert TOPIC_EXCERPTS[0].excerpt in prompt
+    assert "20 bis 100" in prompt
+    assert "20 bis 60" in prompt
+    assert "2 bis 6" in prompt
+    assert "3000" in prompt
+    assert "Personennamen" in prompt
+    assert "Partei" in prompt
+    assert "Clickbait" in prompt
+    assert "Emojis" in prompt
+    assert "JSON" in prompt
+
+    # The topic writer never sees the protocol, Summary briefs or other topics.
+    assert PROTOCOL_TEXT not in prompt
+    assert "TOP 5 Haushalt" not in prompt
+    assert "Summary" not in prompt
+    assert "Radweg an der Hauptstraße" not in prompt
+
+
+def test_topic_writer_prompt_appends_feedback_without_new_inputs():
+    prompt = build_topic_writer_prompt(
+        brief=TOPIC_BRIEF,
+        excerpts=TOPIC_EXCERPTS,
+        feedback="Der Entwurf ergibt nur drei Content-Slides.",
+    )
+
+    assert "Korrekturhinweis" in prompt
+    assert "drei Content-Slides" in prompt
+    assert prompt.count(TOPIC_BRIEF.focus) == 1
+    assert PROTOCOL_TEXT not in prompt
+
+
+def test_topic_writer_prompt_is_a_pure_deterministic_string_builder():
+    arguments = {"brief": TOPIC_BRIEF, "excerpts": TOPIC_EXCERPTS}
+
+    assert build_topic_writer_prompt(**arguments) == build_topic_writer_prompt(
+        **arguments
+    )
 
 
 def test_fact_check_prompt_contains_the_draft_and_excerpts_only():
