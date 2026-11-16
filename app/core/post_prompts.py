@@ -11,7 +11,12 @@ from datetime import date, datetime
 
 from pydantic import BaseModel
 
-from app.core.post_models import SourceExcerpt, SummaryBrief, TopicBrief
+from app.core.post_models import (
+    SourceExcerpt,
+    SummaryBrief,
+    SummaryDraft,
+    TopicBrief,
+)
 
 
 def _format_date(value: date | datetime | str) -> str:
@@ -371,4 +376,47 @@ werden deterministisch ergänzt.
 
 Antworte ausschließlich mit einem einzigen JSON-Objekt mit dem Feld body. Kein \
 Markdown, keine Erklärungen und kein Text außerhalb des JSON.
+"""
+
+
+def build_summary_visual_prompt(draft: SummaryDraft) -> str:
+    """Build the Summary visual-prompt prompt from the Summary draft only."""
+    return f"""Du bist der Visual-Prompt-Writer von Gossip Rosdorf. Du schreibst \
+genau einen Bildprompt für das Cover des Summary-Beitrags.
+
+## Summary-Entwurf
+
+```json
+{_json(draft)}
+```
+
+## Aufgabe
+
+- cover_prompt: ein englischer oder deutscher Prompt für eine atmosphärische \
+Illustration im 9:16-Story-Format.
+- artwork_prompts: für den Summary-Beitrag immer eine leere Liste. Die \
+Summary-Cards nutzen dasselbe Cover-Bild.
+
+## Design-Guardrails
+
+- Eine atmosphärische Illustration, keine Dokumentarfotografie und keine gefälschte \
+Beweisfotografie.
+- Eine breite, ruhige, zivile Szene mit einem durchgehenden Horizont, passend zu \
+einer kommunalpolitischen Sitzung in Rosdorf.
+- Kein zentrales Motiv und keine Personen im Vordergrund; der Platz für Titel, \
+Logo und Badge bleibt ruhig.
+- 9:16-Story-sichere Komposition: wichtige Motive in der oberen und mittleren \
+Bildhälfte, keine kritischen Inhalte am oberen oder unteren Rand.
+- Kein Text, keine Buchstaben, keine Zahlen, keine Logos und keine Parteisymbole \
+im Bild.
+- Keine erkennbaren Minderjährigen und keine fotorealistischen, namentlich \
+erkennbaren Politikerinnen oder Politiker.
+- Keine Logos, Wappen oder Schriftzüge; das Branding kommt ausschließlich aus \
+dem Renderer.
+
+## Ausgabeformat
+
+Antworte ausschließlich mit einem einzigen JSON-Objekt, das dem vorgegebenen \
+Schema entspricht. Kein Markdown, keine Erklärungen und kein Text außerhalb \
+des JSON.
 """

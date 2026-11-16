@@ -14,6 +14,7 @@ from app.core.post_models import (
     TopicBrief,
     TopicDraft,
     TopicSection,
+    VisualPrompts,
 )
 
 
@@ -366,3 +367,32 @@ def test_caption_draft_strips_and_requires_body_text():
         CaptionDraft(body="   ")
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         CaptionDraft(body="Text", prefix="Illustration")
+
+
+def test_visual_prompts_require_a_cover_and_allow_empty_artwork_for_summary():
+    prompts = VisualPrompts(cover_prompt="  Weite, ruhige Szene am Ortsrand.  ")
+
+    assert prompts.cover_prompt == "Weite, ruhige Szene am Ortsrand."
+    assert prompts.artwork_prompts == []
+
+
+def test_visual_prompts_accept_artwork_prompts_and_strip_them():
+    prompts = VisualPrompts(
+        cover_prompt="Cover",
+        artwork_prompts=["  Paar 1  ", "Paar 2"],
+    )
+
+    assert prompts.artwork_prompts == ["Paar 1", "Paar 2"]
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_visual_prompts_reject_empty_prompts(value):
+    with pytest.raises(ValidationError):
+        VisualPrompts(cover_prompt=value)
+    with pytest.raises(ValidationError):
+        VisualPrompts(cover_prompt="Cover", artwork_prompts=[value])
+
+
+def test_visual_prompts_forbid_unknown_fields():
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        VisualPrompts(cover_prompt="Cover", style="photorealistic")

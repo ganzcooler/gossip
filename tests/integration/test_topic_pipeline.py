@@ -1,9 +1,11 @@
 """End-to-end topic content path against a real PostgreSQL schema."""
 
+import io
 from datetime import date
 
 import httpx
 import pytest
+from PIL import Image
 from sqlalchemy import select
 
 from app.core.post_models import (
@@ -14,6 +16,7 @@ from app.core.post_models import (
     SummaryDraft,
     TopicBrief,
     TopicDraft,
+    VisualPrompts,
 )
 from app.database import get_db
 from app.main import app
@@ -46,6 +49,13 @@ def _summary_body(index: int) -> str:
         "Die Verwaltung setzt die Mittel im Frühjahr um. "
         "Das betrifft alle Ortsteile gleichermaßen."
     )[:120].ljust(120, "x")
+
+
+def _cover_png_bytes() -> bytes:
+    image = Image.new("RGB", (540, 960), (80, 120, 100))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def _plan() -> EditorialPlan:
@@ -182,6 +192,11 @@ async def _add_protocol(session) -> Protocol:
 
 
 async def _run(session, tmp_path, plan, fake):
+    fake.script_json(
+        "summary_visual_prompts",
+        VisualPrompts(cover_prompt="Weite, ruhige Szene am Ortsrand."),
+    )
+    fake.script_image("summary_cover", _cover_png_bytes())
     protocol = await _add_protocol(session)
     result = await PostPipeline(fake, output_dir=tmp_path).run(protocol, session)
     return protocol, result
@@ -348,7 +363,7 @@ async def test_one_topic_fact_check_failure_leaves_other_topics_draft(
     protocol, result = await _run(postgres_session, tmp_path, plan, fake)
     summary, haushalt, radweg = await _posts(postgres_session, protocol)
 
-    assert summary.status == "draft"
+    assert summary.status == "ready"
     assert summary.content_json["draft"]["cover_title"] == plan.summary_title
     assert summary.fact_check_json["passed"] is True
     assert summary.caption.startswith("Illustration: KI-generiert.")
@@ -366,7 +381,7 @@ async def test_one_topic_fact_check_failure_leaves_other_topics_draft(
     assert radweg.content_json["draft"]["title"] == radweg_draft.title
     assert radweg.fact_check_json["passed"] is True
     assert [post.status for post in result.posts] == [
-        "draft",
+        "ready",
         "failed",
         "draft",
     ]
@@ -473,7 +488,7 @@ async def test_topic_writer_failure_marks_only_that_topic_failed(
     protocol, _ = await _run(postgres_session, tmp_path, plan, fake)
     summary, haushalt, radweg_post = await _posts(postgres_session, protocol)
 
-    assert summary.status == "draft"
+    assert summary.status == "ready"
     assert summary.content_json["draft"]["cover_title"] == plan.summary_title
     assert haushalt.status == "failed"
     assert haushalt.failed_step == "writer"
@@ -505,7 +520,7 @@ async def test_topic_caption_failure_records_the_caption_step(
     protocol, _ = await _run(postgres_session, tmp_path, plan, fake)
     summary, haushalt, radweg = await _posts(postgres_session, protocol)
 
-    assert summary.status == "draft"
+    assert summary.status == "ready"
     assert haushalt.status == "failed"
     assert haushalt.failed_step == "caption"
     assert "caption returned bad JSON" in haushalt.error
@@ -541,7 +556,7 @@ async def test_topic_repair_call_failure_records_the_repair_step(
     protocol, _ = await _run(postgres_session, tmp_path, plan, fake)
     summary, haushalt, radweg = await _posts(postgres_session, protocol)
 
-    assert summary.status == "draft"
+    assert summary.status == "ready"
     assert haushalt.status == "failed"
     assert haushalt.failed_step == "repair"
     assert "repair returned bad JSON" in haushalt.error

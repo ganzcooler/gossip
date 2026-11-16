@@ -68,3 +68,18 @@ def ensure_directories(base_paths: list[Path]):
     for path in base_paths:
         path.mkdir(parents=True, exist_ok=True)
         logger.debug(f"Ensured directory exists: {path}")
+
+def protocol_folder_path(base_dir: Path | str, session_date: date, title: str) -> Path:
+    """Return the deterministic ``YYMMDD_<normalized title>`` protocol folder."""
+    normalized = normalize_for_folder_name(title)
+    folder_name = f"{session_date.strftime('%y%m%d')}_{normalized}"
+    return Path(base_dir) / folder_name
+
+
+def ensure_protocol_folder(
+    base_dir: Path | str, session_date: date, title: str
+) -> Path:
+    """Create the protocol folder if needed and reuse it idempotently."""
+    folder_path = protocol_folder_path(base_dir, session_date, title)
+    folder_path.mkdir(parents=True, exist_ok=True)
+    return folder_path

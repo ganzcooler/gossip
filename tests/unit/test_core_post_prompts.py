@@ -15,6 +15,7 @@ from app.core.post_prompts import (
     build_fact_check_prompt,
     build_planner_prompt,
     build_repair_prompt,
+    build_summary_visual_prompt,
     build_summary_writer_prompt,
     build_topic_writer_prompt,
 )
@@ -233,3 +234,37 @@ def test_caption_prompt_contains_draft_and_metadata_only():
     assert "http" not in prompt
     assert PROTOCOL_TEXT not in prompt
     assert EXCERPTS[0].excerpt not in prompt
+
+
+def test_summary_visual_prompt_contains_only_the_draft_and_design_guardrails():
+    prompt = build_summary_visual_prompt(DRAFT)
+
+    assert DRAFT.cover_title in prompt
+    for point in DRAFT.points:
+        assert point.heading in prompt
+    assert "9:16" in prompt
+    assert "Eine atmosphärische Illustration" in prompt
+    assert "breite, ruhige" in prompt
+    assert "durchgehenden Horizont" in prompt
+    assert "Kein zentrales Motiv" in prompt
+    assert "Kein Text" in prompt
+    assert "Logos" in prompt
+    assert "Parteisymbole" in prompt
+    assert "erkennbaren Minderjährigen" in prompt
+    assert "fotorealistischen" in prompt
+    assert "Politiker" in prompt
+    assert "artwork_prompts" in prompt
+
+    # The visual prompt writer never sees protocol text, excerpts or topic briefs.
+    assert PROTOCOL_TEXT not in prompt
+    assert EXCERPTS[0].excerpt not in prompt
+    assert "Themenbrief" not in prompt
+    assert "Quellenauszüge" not in prompt
+
+
+def test_summary_visual_prompt_is_deterministic():
+    first = build_summary_visual_prompt(DRAFT)
+    second = build_summary_visual_prompt(DRAFT)
+
+    assert first == second
+    assert first.startswith("Du bist")
