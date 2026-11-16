@@ -1,9 +1,10 @@
-"""Ticket-03 orchestrator: plan a protocol into persisted draft Beiträge.
+"""Stateless post-pipeline orchestrator: plan, write and render Beiträge.
 
 The pipeline plans first, persists the Redaktionsplan and one summary plus zero
 to five topic posts, then resolves the finite Organ and retrieves the source
-excerpts. Later tickets extend the processing helpers with writers, fact-check,
-captions, visuals and rendering.
+excerpts. The Summary branch writes its content once, then runs visual prompts,
+cover image generation, the 9:16 renderer and the caption file. Later tickets
+extend the topic branch and the retry/reprocess state machine.
 
 Safe commit boundaries are deliberate: the plan and draft posts are committed
 before Organ/excerpt processing, and the per-post outcome is committed before
@@ -19,10 +20,11 @@ from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import config
 from app.core.config import ARTICLES_DIR
-from app.core.post_models import EditorialPlan, SourceExcerpt, SummaryBrief, TopicBrief
+from app.core.post_models import EditorialPlan, SourceExcerpt, SummaryBrief, SummaryDraft, TopicBrief
 from app.models import EditorialPlan as EditorialPlanRow
-from app.models import Post, PostSlide, Protocol
+from app.models import Post, PostAsset, PostSlide, Protocol
 from app.services.caption_writer import (
     compose_caption,
     write_caption_body,
@@ -34,17 +36,25 @@ from app.services.fact_checker import (
     fact_check_json,
     enforce_fact_check,
 )
+from app.services.image_generation import generate_summary_cover
 from app.services.llm_client import LLMAuthenticationError, LLMClient
 from app.services.organs import UnknownOrganError, resolve_organ
+from app.services.post_renderer import (
+    render_summary_frames,
+    summary_composition_from_stored,
+    write_summary_output,
+)
 from app.services.protocol_excerpts import (
     MissingSourceAnchor,
     retrieve_source_excerpts,
 )
 from app.services.slide_composer import (
+    SummaryComposition,
     compose_summary_slides,
     render_summary_markdown,
 )
 from app.services.summary_writer import write_summary
+from app.services.visual_prompts import write_summary_visual_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +63,7 @@ GENERATOR_VERSION = "post-pipeline-v1"
 
 @dataclass(frozen=True)
 class PostRunResult:
-    """Outcome for one planned Beitrag after ticket-03 processing."""
+    """Outcome for one planned Beitrag after a pipeline run."""
 
     post_id: int
     post_type: str
@@ -246,7 +256,11 @@ class PostPipeline:
         summary_post = next(
             (post for post in posts if post.post_type == "summary"), None
         )
-        if summary_post is not None and not self._is_terminal(summary_post):
+        if (
+            summary_post is not None
+            and not self._is_terminal(summary_post)
+            and not self._summary_excerpts_cached(summary_post)
+        ):
             self._retrieve_summary_excerpts(protocol, plan, summary_post)
 
         topic_by_slug = {
@@ -283,6 +297,74 @@ class PostPipeline:
         organ: str,
         post: Post,
     ) -> None:
+        """Write content once, then always run visuals on top of the cached draft."""
+        draft = self._stored_summary_draft(post)
+        composition: SummaryComposition | None = None
+
+        if draft is not None:
+            if not post.caption:
+                await self._fail_summary_post(
+                    db,
+                    post,
+                    "caption",
+                    RuntimeError("Cached Summary draft has no composed caption"),
+                )
+                return
+            slides = await self._load_slides(db, post.id)
+            if slides:
+                try:
+                    composition = summary_composition_from_stored(
+                        draft, post.slide_plan_json, slides
+                    )
+                except Exception as exc:
+                    await self._fail_summary_post(db, post, "render", exc)
+                    return
+
+        if draft is None or composition is None:
+            written = await self._write_summary_content(
+                protocol, db, plan, organ, post
+            )
+            if written is None:
+                return
+            draft, composition = written
+
+        await self._render_summary_visuals(protocol, db, organ, post, draft, composition)
+
+    @staticmethod
+    def _summary_excerpts_cached(post: Post) -> bool:
+        content = post.content_json or {}
+        excerpts = content.get("excerpts") if isinstance(content, dict) else None
+        return isinstance(excerpts, list) and bool(excerpts)
+
+    @staticmethod
+    def _stored_summary_draft(post: Post) -> SummaryDraft | None:
+        content = post.content_json or {}
+        raw_draft = content.get("draft") if isinstance(content, dict) else None
+        if not isinstance(raw_draft, dict):
+            return None
+        try:
+            return SummaryDraft.model_validate(raw_draft)
+        except (ValidationError, TypeError, ValueError):
+            return None
+
+    async def _load_slides(
+        self, db: AsyncSession, post_id: int
+    ) -> list[PostSlide]:
+        result = await db.execute(
+            select(PostSlide)
+            .where(PostSlide.post_id == post_id)
+            .order_by(PostSlide.slide_index)
+        )
+        return list(result.scalars().all())
+
+    async def _write_summary_content(
+        self,
+        protocol: Protocol,
+        db: AsyncSession,
+        plan: EditorialPlan,
+        organ: str,
+        post: Post,
+    ) -> tuple[SummaryDraft, SummaryComposition] | None:
         """Run writer → compose → fact-check/repair → caption for one draft."""
         content = post.content_json or {}
         try:
@@ -300,7 +382,7 @@ class PostPipeline:
             await self._fail_summary_post(
                 db, post, "source_retrieval", exc
             )
-            return
+            return None
 
         if not excerpts:
             await self._fail_summary_post(
@@ -309,7 +391,7 @@ class PostPipeline:
                 "source_retrieval",
                 RuntimeError("No cached source excerpts for the Summary post"),
             )
-            return
+            return None
 
         try:
             draft = await write_summary(briefs, excerpts, self.llm_client)
@@ -317,7 +399,7 @@ class PostPipeline:
             raise
         except Exception as exc:
             await self._fail_summary_post(db, post, "writer", exc)
-            return
+            return None
 
         post.content_json = {
             "draft": draft.model_dump(mode="json"),
@@ -330,7 +412,7 @@ class PostPipeline:
             composition = compose_summary_slides(draft)
         except Exception as exc:
             await self._fail_summary_post(db, post, "slide_composer", exc)
-            return
+            return None
 
         try:
             outcome = await enforce_fact_check(
@@ -349,12 +431,12 @@ class PostPipeline:
                 or exc.step == "repair",
             )
             await self._fail_summary_post(db, post, exc.step, exc)
-            return
+            return None
         except LLMAuthenticationError:
             raise
         except Exception as exc:
             await self._fail_summary_post(db, post, "fact_check", exc)
-            return
+            return None
 
         final_draft = outcome.draft
         if outcome.repaired:
@@ -364,7 +446,7 @@ class PostPipeline:
                 await self._fail_summary_post(
                     db, post, "slide_composer", exc
                 )
-                return
+                return None
 
         try:
             caption_draft = await write_caption_body(
@@ -383,7 +465,7 @@ class PostPipeline:
             raise
         except Exception as exc:
             await self._fail_summary_post(db, post, "caption", exc)
-            return
+            return None
 
         post.content_json = {
             "draft": final_draft.model_dump(mode="json"),
@@ -400,7 +482,7 @@ class PostPipeline:
             issues=outcome.issues,
             repaired=outcome.repaired,
         )
-        post.status = "draft"  # ticket 05 flips to ready after visuals
+        post.status = "draft"  # visuals flip the post to ready
         post.failed_step = None
         post.error = None
 
@@ -425,6 +507,95 @@ class PostPipeline:
             ]
         )
         await db.flush()
+        return final_draft, composition
+
+    async def _render_summary_visuals(
+        self,
+        protocol: Protocol,
+        db: AsyncSession,
+        organ: str,
+        post: Post,
+        draft: SummaryDraft,
+        composition: SummaryComposition,
+    ) -> None:
+        """Visual prompts → cover image → in-memory frames → caption file → ready."""
+        try:
+            visual_prompts = await write_summary_visual_prompts(
+                draft, self.llm_client
+            )
+        except LLMAuthenticationError:
+            raise
+        except Exception as exc:
+            await self._fail_summary_post(db, post, "visual_prompts", exc)
+            return
+
+        asset = await self._prepare_cover_asset(db, post, visual_prompts.cover_prompt)
+
+        try:
+            generated = await generate_summary_cover(
+                self.llm_client, visual_prompts.cover_prompt
+            )
+        except LLMAuthenticationError:
+            raise
+        except Exception as exc:
+            asset.status = "failed"
+            asset.error = str(exc) or exc.__class__.__name__
+            await self._fail_summary_post(db, post, "image_generation", exc)
+            return
+
+        asset.status = generated.status
+        asset.error = generated.error
+        asset.path = None
+        await db.flush()
+
+        try:
+            frames = render_summary_frames(
+                draft,
+                composition,
+                cover_art=generated.image,
+                organ=organ,
+            )
+        except Exception as exc:
+            await self._fail_summary_post(db, post, "render", exc)
+            return
+
+        try:
+            output = write_summary_output(
+                frames,
+                post=post,
+                protocol=protocol,
+                output_dir=self.output_dir,
+            )
+        except Exception as exc:
+            await self._fail_summary_post(db, post, "render", exc)
+            return
+
+        asset.path = str(output.image_paths[0])
+        post.status = "ready"
+        post.failed_step = None
+        post.error = None
+        post.alt_text_json = list(composition.alt_texts)
+        await db.flush()
+
+    async def _prepare_cover_asset(
+        self, db: AsyncSession, post: Post, prompt: str
+    ) -> PostAsset:
+        result = await db.execute(
+            select(PostAsset).where(
+                PostAsset.post_id == post.id, PostAsset.role == "cover"
+            )
+        )
+        asset = result.scalar_one_or_none()
+        if asset is None:
+            asset = PostAsset(post_id=post.id, role="cover")
+            db.add(asset)
+        asset.prompt = prompt
+        asset.status = "pending"
+        asset.error = None
+        asset.path = None
+        asset.model = config.OPENROUTER_IMAGE_MODEL
+        await db.flush()
+        return asset
 
     async def _fail_summary_post(
         self,

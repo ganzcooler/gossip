@@ -6,14 +6,15 @@ in PostgreSQL. It runs as a containerized FastAPI application with an
 in-process APScheduler.
 
 The stateless post pipeline is being built in stages. The editorial planning
-stage and the Summary content path are implemented: a protocol becomes a
-persisted Redaktionsplan plus draft Summary and topic posts with deterministic
-source excerpts, and the Summary post gets a validated writer draft, a hard
-fact-check gate with one repair, deterministic Summary cards, a composed
-caption and Alt-Texte. Topic writers, visual prompts, rendering, and scheduler
-wiring are still to come. The legacy one-call article, caption, image, and
-Instagram pipeline has been removed; legacy articles remain readable through
-the API.
+stage, the Summary content path and the Summary visual output are implemented:
+a protocol becomes a persisted Redaktionsplan plus draft Summary and topic
+posts with deterministic source excerpts, and the Summary post gets a validated
+writer draft, a hard fact-check gate with one repair, deterministic Summary
+cards, a composed caption, Alt-Texte, an AI cover image with a brand fallback,
+and the blue 9:16 story PNGs plus one caption file in the protocol folder.
+Topic writers, topic visuals, retry/reprocess endpoints, and scheduler wiring
+are still to come. The legacy one-call article, caption, image, and Instagram
+pipeline has been removed; legacy articles remain readable through the API.
 
 ## What it does
 
@@ -33,8 +34,17 @@ the API.
    into a cover title and two to six Summary-Punkte. The Faktenprüfung is a
    hard gate with one repair attempt, and the 9:16 Summary cards are composed
    deterministically at one post-wide body size. The Summary post also gets a
-   composed caption and deterministic Alt-Texte; it stays `draft` until the
-   Visual-Prompts and renderer tickets run.
+   composed caption and deterministic Alt-Texte.
+6. **Visualise** — a stateless visual-prompt call writes the cover prompt from
+   the Summary draft only. Image generation requests a 9:16 image through the
+   LLM port, center-fits it to exactly 1080×1920, and substitutes the
+   deterministic blue brand fallback if the provider or payload fails. The
+   renderer writes the cover and two to six cards as
+   `summary-<date>-story-<frame>.png` plus exactly one
+   `caption-summary-summary.txt` into the protocol folder. Alt-Texte stay in
+   PostgreSQL and the API; no JSON, Markdown, prompt, or manifest files are
+   written. Only after the whole story and caption are written does the
+   Summary post become `ready`.
 
 The fetch workflow is triggered by APScheduler and can also be started manually
 through the API. The planning and Summary content stages are callable through
@@ -75,6 +85,10 @@ app/
 │   ├── fact_checker.py        Shared fact-check + one-repair hard gate
 │   ├── slide_composer.py      Deterministic Summary cover/card composition
 │   ├── caption_writer.py      Caption body role and deterministic composition
+│   ├── visual_prompts.py      Stateless visual-prompt role for covers/artwork
+│   ├── image_generation.py    Image decode, deterministic fit, brand fallbacks
+│   ├── post_renderer.py       Deterministic Summary story renderer
+│   ├── render_common.py       Shared colors, logo plate, scrim, badge, folders
 │   ├── text_layout.py         Shared font loading, wrapping and fit primitives
 │   ├── organs.py              Finite Organ seed and deterministic resolver
 │   ├── protocol_excerpts.py   Deterministic source-anchor retrieval
@@ -91,6 +105,12 @@ tests/
 docs/agents/                   Agent workflow configuration (Pocock skills)
 local-testing/                 Local compose file and database dump
 ```
+
+The renderer requires three committed runtime assets in `app/res/`:
+`logo-gossip.png` (colored RGBA logo, placed on the white plate),
+`Oswald-var.ttf` (titles, headings, numbers, kickers) and `Inter-var.ttf`
+(body copy, badges, page labels). A missing asset is a hard render failure; it
+never falls back to another font or logo.
 
 `src/`, `alembic/`, and a root `main.py` no longer exist. Database tables are
 created with SQLAlchemy `create_all()` on startup; migrations have not been
@@ -185,13 +205,39 @@ the Redaktionsplan and creates the summary post (`slug="summary"`,
 content path then replaces the summary's `content_json` with the validated
 draft plus source excerpts and fills `content_markdown`, `slide_plan_json`,
 `caption`, `alt_text_json`, `fact_check_json` and the one-based cover/card
-`post_slides`. The Summary stays `draft` until the visual pipeline can render
-it; topic posts remain planned drafts until the topic writer ticket.
+`post_slides`. The visual stage writes the cover prompt and asset row, generates
+or falls back for the cover art, renders all 1080×1920 frames in memory, and
+writes the PNGs plus the caption file before flipping the Summary to `ready`.
+Rerunning a protocol reuses a cached draft and composed slides and resumes at
+visuals instead of calling the writer again; a `ready` Summary is skipped
+entirely. Topic posts remain planned drafts until the topic writer ticket.
 An unknown protocol title marks all planned posts `failed` at `organ`, and a
 missing source anchor marks only the affected Beitrag `failed` at
 `source_retrieval`. A Summary failure at `writer`, `fact_check`, `repair`,
-`caption` or `slide_composer` does not touch the topic drafts, and a failed
-Summary is not retried automatically on the next run.
+`caption`, `slide_composer`, `visual_prompts`, `image_generation` or `render`
+does not touch the topic drafts, and a failed Summary is not retried
+automatically on the next run.
+
+### Summary output files
+
+For a protocol titled `Gemeinderat` from 2024-01-15, the renderer writes into
+`<ARTICLES_DIR>/240115_gemeinderat/`:
+
+```
+summary-2024-01-15-story-01.png   # cover
+summary-2024-01-15-story-02.png   # first card
+summary-2024-01-15-story-03.png   # second card
+caption-summary-summary.txt
+```
+
+The folder is reused idempotently. A Summary story has three to seven frames
+(cover plus two to six cards) and exactly one caption file whose content is the
+stored `post.caption`, starting with `Illustration: KI-generiert.` and carrying
+the source/date plus the SessionNet link or the manual-link hint. Image
+failures produce the blue brand fallback and the post still becomes `ready`;
+authentication errors stop the job immediately. Text overflow, a missing
+font/logo, or a caption/render write failure marks the Summary `failed` at
+`render` and writes no partial story.
 
 ### Post read API
 
@@ -343,11 +389,11 @@ been removed. Manual tests are excluded from the default run and from hooks.
 
 ## Known limitations / next steps
 
-- The planning stage and the Summary content path are implemented; the topic
-  writer, visual prompts, rendering, caption files, and scheduler wiring
-  remain.
-- Summary posts intentionally stay `draft` until visuals can be rendered; the
-  caption is stored on the post but no caption file is written yet.
+- The planning stage, the Summary content path and the Summary visual output
+  are implemented; the topic writer, topic visuals, retry/reprocess endpoints,
+  and scheduler wiring remain.
+- Summary posts are group-pure blue; topic posts will use the orange 4:5
+  carousel renderer in a later ticket.
 - Add Alembic migrations instead of `create_all()`.
 - Move the scheduler and long-running pipeline jobs into a dedicated worker.
 - Add authentication and rate limiting for the API and pipeline triggers.

@@ -189,3 +189,30 @@ class CaptionDraft(PipelineModel):
         if not value:
             raise ValueError("caption body must not be empty")
         return value
+
+
+class VisualPrompts(PipelineModel):
+    """The Visual-Prompt-Writer's cover plus optional artwork prompts.
+
+    The Summary-Beitrag uses only the cover prompt; its cards reuse the cover
+    art. Topic posts use one artwork prompt per pair.
+    """
+
+    cover_prompt: str
+    artwork_prompts: list[str] = Field(default_factory=list)
+
+    @field_validator("cover_prompt")
+    @classmethod
+    def _require_cover_prompt(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("cover_prompt must not be empty")
+        return value
+
+    @field_validator("artwork_prompts")
+    @classmethod
+    def _require_artwork_prompts(cls, prompts: list[str]) -> list[str]:
+        cleaned = [prompt.strip() for prompt in prompts]
+        if any(not prompt for prompt in cleaned):
+            raise ValueError("artwork_prompts must contain non-empty prompts")
+        return cleaned
