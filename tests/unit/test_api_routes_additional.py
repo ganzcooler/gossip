@@ -64,13 +64,19 @@ class TestGetPipelineStatus:
         mock_articles = MagicMock()
         mock_articles.scalar.return_value = 0
 
-        mock_db_session.execute = AsyncMock(side_effect=[mock_total, mock_unprocessed, mock_articles])
+        mock_post_counts = MagicMock()
+        mock_post_counts.all.return_value = []
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=[mock_total, mock_unprocessed, mock_articles, mock_post_counts]
+        )
 
         result = await get_pipeline_status(mock_db_session)
 
         assert result["total_protocols"] == 0
         assert result["unprocessed_protocols"] == 0
         assert result["total_articles"] == 0
+        assert result["post_counts"] == {"draft": 0, "ready": 0, "failed": 0}
 
     @pytest.mark.asyncio
     async def test_get_pipeline_status_with_data(self, mock_db_session):
@@ -84,13 +90,19 @@ class TestGetPipelineStatus:
         mock_articles = MagicMock()
         mock_articles.scalar.return_value = 25
 
-        mock_db_session.execute = AsyncMock(side_effect=[mock_total, mock_unprocessed, mock_articles])
+        mock_post_counts = MagicMock()
+        mock_post_counts.all.return_value = [("ready", 5)]
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=[mock_total, mock_unprocessed, mock_articles, mock_post_counts]
+        )
 
         result = await get_pipeline_status(mock_db_session)
 
         assert result["total_protocols"] == 10
         assert result["unprocessed_protocols"] == 3
         assert result["total_articles"] == 25
+        assert result["post_counts"] == {"draft": 0, "ready": 5, "failed": 0}
 
 
 class TestGetStats:
@@ -110,7 +122,12 @@ class TestGetStats:
         mock_articles = MagicMock()
         mock_articles.scalar.return_value = 250
 
-        mock_db_session.execute = AsyncMock(side_effect=[mock_total, mock_processed, mock_articles])
+        mock_post_counts = MagicMock()
+        mock_post_counts.all.return_value = [("draft", 1), ("ready", 2), ("failed", 3)]
+
+        mock_db_session.execute = AsyncMock(
+            side_effect=[mock_total, mock_processed, mock_articles, mock_post_counts]
+        )
 
         result = await get_stats(mock_db_session)
 
@@ -118,3 +135,4 @@ class TestGetStats:
         assert result["processed_protocols"] == 75
         assert result["unprocessed_protocols"] == 25
         assert result["total_articles"] == 250
+        assert result["post_counts"] == {"draft": 1, "ready": 2, "failed": 3}

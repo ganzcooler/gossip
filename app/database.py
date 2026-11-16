@@ -40,7 +40,14 @@ async def create_tables():
     It imports all models to ensure they are registered with the Base metadata.
     """
     # Import models to ensure they are registered with Base.metadata
-    from app.models import Protocol, Article  # noqa: F401
+    from app.models import (  # noqa: F401
+        Protocol,
+        Article,
+        EditorialPlan,
+        Post,
+        PostSlide,
+        PostAsset,
+    )
     
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
