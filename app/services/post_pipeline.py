@@ -20,16 +20,31 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import ARTICLES_DIR
-from app.core.post_models import EditorialPlan, TopicBrief
+from app.core.post_models import EditorialPlan, SourceExcerpt, SummaryBrief, TopicBrief
 from app.models import EditorialPlan as EditorialPlanRow
-from app.models import Post, Protocol
+from app.models import Post, PostSlide, Protocol
+from app.services.caption_writer import (
+    compose_caption,
+    write_caption_body,
+)
 from app.services.editorial_planner import plan_protocol
+from app.services.fact_checker import (
+    FactCheckError,
+    FactCheckFailedError,
+    fact_check_json,
+    enforce_fact_check,
+)
 from app.services.llm_client import LLMAuthenticationError, LLMClient
 from app.services.organs import UnknownOrganError, resolve_organ
 from app.services.protocol_excerpts import (
     MissingSourceAnchor,
     retrieve_source_excerpts,
 )
+from app.services.slide_composer import (
+    compose_summary_slides,
+    render_summary_markdown,
+)
+from app.services.summary_writer import write_summary
 
 logger = logging.getLogger(__name__)
 
@@ -74,12 +89,13 @@ class PostPipeline:
         plan_row = await self._load_plan_row(db, protocol.id)
 
         # A ready plan is expensive to rebuild. Reuse it when its posts are
-        # present; ticket 08 owns the explicit reprocess/replace semantics.
+        # present and let _process_posts continue any still-draft branches;
+        # ticket 08 owns the explicit reprocess/replace semantics.
         if plan_row is not None and plan_row.status == "ready" and plan_row.plan_json:
             plan = self._load_plan(plan_row)
             posts = await self._load_posts(db, protocol.id)
             if plan is not None and self._posts_match_plan(plan, posts):
-                return self._result(protocol, plan_row.status, posts)
+                return await self._process_posts(protocol, db, plan, posts)
 
             if plan is not None:
                 posts = await self._replace_posts(db, protocol, plan)
@@ -219,7 +235,7 @@ class PostPipeline:
         posts: list[Post],
     ) -> PostPipelineResult:
         try:
-            resolve_organ(protocol.title)
+            organ = resolve_organ(protocol.title)
         except UnknownOrganError as exc:
             for post in posts:
                 post.status = "failed"
@@ -230,7 +246,7 @@ class PostPipeline:
         summary_post = next(
             (post for post in posts if post.post_type == "summary"), None
         )
-        if summary_post is not None:
+        if summary_post is not None and not self._is_terminal(summary_post):
             self._retrieve_summary_excerpts(protocol, plan, summary_post)
 
         topic_by_slug = {
@@ -238,11 +254,189 @@ class PostPipeline:
         }
         for brief in plan.topic_briefs:
             post = topic_by_slug.get(brief.slug)
-            if post is None:
+            if post is None or self._is_terminal(post):
                 continue
             self._retrieve_topic_excerpts(protocol, brief, post)
 
+        # The summary branch is independent: a failure there must not touch
+        # topic drafts, and the topics remain planned for a later ticket.
+        if (
+            summary_post is not None
+            and summary_post.status == "draft"
+            and summary_post.failed_step is None
+        ):
+            await self._process_summary_branch(
+                protocol, db, plan, organ, summary_post
+            )
+
         return await self._commit_and_result(protocol, db, "ready", posts)
+
+    @staticmethod
+    def _is_terminal(post: Post) -> bool:
+        return post.status in {"ready", "failed"}
+
+    async def _process_summary_branch(
+        self,
+        protocol: Protocol,
+        db: AsyncSession,
+        plan: EditorialPlan,
+        organ: str,
+        post: Post,
+    ) -> None:
+        """Run writer → compose → fact-check/repair → caption for one draft."""
+        content = post.content_json or {}
+        try:
+            raw_briefs = content.get("briefs")
+            briefs = (
+                [SummaryBrief.model_validate(brief) for brief in raw_briefs]
+                if raw_briefs
+                else list(plan.summary_briefs)
+            )
+            excerpts = [
+                SourceExcerpt.model_validate(excerpt)
+                for excerpt in content.get("excerpts", [])
+            ]
+        except (TypeError, ValueError) as exc:
+            await self._fail_summary_post(
+                db, post, "source_retrieval", exc
+            )
+            return
+
+        if not excerpts:
+            await self._fail_summary_post(
+                db,
+                post,
+                "source_retrieval",
+                RuntimeError("No cached source excerpts for the Summary post"),
+            )
+            return
+
+        try:
+            draft = await write_summary(briefs, excerpts, self.llm_client)
+        except LLMAuthenticationError:
+            raise
+        except Exception as exc:
+            await self._fail_summary_post(db, post, "writer", exc)
+            return
+
+        post.content_json = {
+            "draft": draft.model_dump(mode="json"),
+            "excerpts": [
+                excerpt.model_dump(mode="json") for excerpt in excerpts
+            ],
+        }
+
+        try:
+            composition = compose_summary_slides(draft)
+        except Exception as exc:
+            await self._fail_summary_post(db, post, "slide_composer", exc)
+            return
+
+        try:
+            outcome = await enforce_fact_check(
+                draft,
+                excerpts,
+                self.llm_client,
+                draft_schema=type(draft),
+                fact_check_role="summary_fact_check",
+                repair_role="summary_repair",
+            )
+        except FactCheckError as exc:
+            post.fact_check_json = fact_check_json(
+                passed=False,
+                issues=exc.issues or [str(exc)],
+                repaired=isinstance(exc, FactCheckFailedError)
+                or exc.step == "repair",
+            )
+            await self._fail_summary_post(db, post, exc.step, exc)
+            return
+        except LLMAuthenticationError:
+            raise
+        except Exception as exc:
+            await self._fail_summary_post(db, post, "fact_check", exc)
+            return
+
+        final_draft = outcome.draft
+        if outcome.repaired:
+            try:
+                composition = compose_summary_slides(final_draft)
+            except Exception as exc:
+                await self._fail_summary_post(
+                    db, post, "slide_composer", exc
+                )
+                return
+
+        try:
+            caption_draft = await write_caption_body(
+                final_draft,
+                self.llm_client,
+                organ=organ,
+                session_date=protocol.session_date,
+            )
+            caption = compose_caption(
+                body=caption_draft.body,
+                organ=organ,
+                session_date=protocol.session_date,
+                protocol=protocol,
+            )
+        except LLMAuthenticationError:
+            raise
+        except Exception as exc:
+            await self._fail_summary_post(db, post, "caption", exc)
+            return
+
+        post.content_json = {
+            "draft": final_draft.model_dump(mode="json"),
+            "excerpts": [
+                excerpt.model_dump(mode="json") for excerpt in excerpts
+            ],
+        }
+        post.content_markdown = render_summary_markdown(final_draft)
+        post.slide_plan_json = composition.slide_plan
+        post.caption = caption
+        post.alt_text_json = list(composition.alt_texts)
+        post.fact_check_json = fact_check_json(
+            passed=True,
+            issues=outcome.issues,
+            repaired=outcome.repaired,
+        )
+        post.status = "draft"  # ticket 05 flips to ready after visuals
+        post.failed_step = None
+        post.error = None
+
+        await db.execute(
+            delete(PostSlide)
+            .where(PostSlide.post_id == post.id)
+            .execution_options(synchronize_session=False)
+        )
+        db.add_all(
+            [
+                PostSlide(
+                    post_id=post.id,
+                    slide_index=slide.slide_index,
+                    slide_type=slide.slide_type,
+                    pair_index=slide.pair_index,
+                    label=slide.label,
+                    headline=slide.headline,
+                    body=slide.body,
+                    alt_text=slide.alt_text,
+                )
+                for slide in composition.slides
+            ]
+        )
+        await db.flush()
+
+    async def _fail_summary_post(
+        self,
+        db: AsyncSession,
+        post: Post,
+        step: str,
+        exc: Exception,
+    ) -> None:
+        post.status = "failed"
+        post.failed_step = step
+        post.error = str(exc) or exc.__class__.__name__
+        await db.commit()
 
     @staticmethod
     def _retrieve_summary_excerpts(

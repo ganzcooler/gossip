@@ -106,3 +106,86 @@ class EditorialPlan(PipelineModel):
         if len(slugs) != len(set(slugs)):
             raise ValueError("topic_briefs must have unique slugs")
         return self
+
+
+class SummaryPoint(PipelineModel):
+    """One Summary-Punkt: kicker, heading and a 120–320 character body."""
+
+    kicker: str
+    heading: str
+    body: str
+
+    @field_validator("kicker")
+    @classmethod
+    def _one_word_kicker(cls, value: str) -> str:
+        value = value.strip()
+        if len(value.split()) != 1:
+            raise ValueError("kicker must be exactly one word")
+        return value
+
+    @field_validator("heading")
+    @classmethod
+    def _require_heading(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("heading must not be empty")
+        return value
+
+    @field_validator("body")
+    @classmethod
+    def _body_length(cls, value: str) -> str:
+        value = value.strip()
+        if not 120 <= len(value) <= 320:
+            raise ValueError(
+                "body must contain 120 to 320 characters including spaces"
+            )
+        return value
+
+
+class SummaryDraft(PipelineModel):
+    """The Summary-Writer's complete draft: cover title plus two to six points."""
+
+    cover_title: str
+    points: list[SummaryPoint] = Field(min_length=2, max_length=6)
+
+    @field_validator("cover_title")
+    @classmethod
+    def _cover_title_length(cls, value: str) -> str:
+        value = value.strip()
+        if not 20 <= len(value) <= 100:
+            raise ValueError(
+                "cover_title must contain 20 to 100 characters including spaces"
+            )
+        return value
+
+
+class FactCheckResult(PipelineModel):
+    """The Faktenprüfung result; an empty issue list means the draft passes."""
+
+    issues: list[str] = Field(default_factory=list)
+
+    @field_validator("issues")
+    @classmethod
+    def _actionable_issues(cls, issues: list[str]) -> list[str]:
+        cleaned = [issue.strip() for issue in issues]
+        if any(not issue for issue in cleaned):
+            raise ValueError("each issue must be a non-empty, actionable sentence")
+        return cleaned
+
+    @property
+    def passed(self) -> bool:
+        return not self.issues
+
+
+class CaptionDraft(PipelineModel):
+    """The LLM-written caption body before deterministic source/link composition."""
+
+    body: str
+
+    @field_validator("body")
+    @classmethod
+    def _require_body(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("caption body must not be empty")
+        return value
