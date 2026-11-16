@@ -16,6 +16,7 @@ from app.core.post_models import (
     SummaryBrief,
     SummaryDraft,
     TopicBrief,
+    TopicDraft,
     VisualPrompts,
 )
 from app.database import get_db
@@ -124,6 +125,52 @@ def _cover_png_bytes() -> bytes:
     return buffer.getvalue()
 
 
+def _topic_paragraph(
+    seed: str = (
+        "Der Rat hat zu diesem Thema beraten und eine Entscheidung getroffen. "
+        "Die Verwaltung setzt die Mittel im Frühjahr um."
+    ),
+    length: int = 700,
+) -> str:
+    text = ""
+    while len(text) < length:
+        text = f"{text} {seed}".strip()
+    if len(text) > length:
+        text = text[:length].rsplit(" ", 1)[0]
+    return text.rstrip(" ,;") + "."
+
+
+def _topic_draft(brief: TopicBrief, *, short: bool = False) -> TopicDraft:
+    title = f"{brief.title}: Was der Rat in Rosdorf entschieden hat"[:100]
+    if short:
+        return TopicDraft(
+            title=title,
+            sections=[
+                {
+                    "h2": f"Der Rat hat zu {brief.slug} entschieden",
+                    "paragraphs": ["Kurz."],
+                },
+                {
+                    "h2": f"Was jetzt für {brief.slug} passiert",
+                    "paragraphs": ["Auch kurz."],
+                },
+            ],
+        )
+    return TopicDraft(
+        title=title,
+        sections=[
+            {
+                "h2": f"Der Rat hat zu {brief.slug} entschieden",
+                "paragraphs": [_topic_paragraph()],
+            },
+            {
+                "h2": f"Was jetzt für {brief.slug} passiert",
+                "paragraphs": [_topic_paragraph()],
+            },
+        ],
+    )
+
+
 def _script_summary_success(
     fake: FakeLLMClient,
     *,
@@ -146,6 +193,29 @@ def _script_summary_success(
     fake.script_image("summary_cover", _cover_png_bytes())
 
 
+def _script_topics_success(
+    fake: FakeLLMClient,
+    *,
+    plan: EditorialPlan,
+    drafts: list[TopicDraft] | None = None,
+) -> None:
+    fake.script_json(
+        "topic_writer",
+        *(drafts or [_topic_draft(brief) for brief in plan.topic_briefs]),
+    )
+    fake.script_json(
+        "topic_fact_check",
+        *[FactCheckResult(issues=[]) for _ in plan.topic_briefs],
+    )
+    fake.script_json(
+        "caption_writer",
+        *[
+            CaptionDraft(body=f"Thema {index} im Überblick")
+            for index in range(1, len(plan.topic_briefs) + 1)
+        ],
+    )
+
+
 async def _run(
     session,
     tmp_path,
@@ -154,12 +224,15 @@ async def _run(
     title: str = "Gemeinderat",
     fake: FakeLLMClient | None = None,
     script_summary: bool = True,
+    script_topics: bool = True,
 ):
     fake = fake or FakeLLMClient()
     if plan is not None:
         fake.script_json("planner", plan)
         if script_summary:
             _script_summary_success(fake, plan=plan)
+        if script_topics:
+            _script_topics_success(fake, plan=plan)
     protocol = await _add_protocol(session, title=title)
     pipeline = PostPipeline(fake, output_dir=tmp_path)
     result = await pipeline.run(protocol, session)
@@ -294,8 +367,21 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     ).read_text(encoding="utf-8") == summary.caption
 
     haushalt = posts[1]
-    assert haushalt.content_json["brief"]["slug"] == "haushalt"
+    assert haushalt.content_json["draft"]["title"]
+    assert haushalt.content_json["draft"]["sections"]
     assert haushalt.content_json["excerpts"][0]["anchor"] == SUMMARY_ANCHOR_1
+    assert haushalt.content_markdown.startswith("# ")
+    assert haushalt.slide_plan_json["family"] == "topic"
+    assert haushalt.caption.startswith("Illustration: KI-generiert.\n")
+    assert all(haushalt.alt_text_json)
+    haushalt_slides = await _slides(postgres_session, haushalt)
+    assert haushalt_slides[0].slide_type == "cover"
+    assert haushalt_slides[0].label == "THEMA IM FOKUS"
+    assert haushalt_slides[1].slide_type == "heading"
+    assert haushalt_slides[1].pair_index == 1
+    assert [slide.slide_index for slide in haushalt_slides] == list(
+        range(1, len(haushalt_slides) + 1)
+    )
 
     assert result.plan_status == "ready"
     assert [post.status for post in result.posts] == ["ready", "draft", "draft"]
@@ -308,6 +394,12 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
         "caption_writer",
         "summary_visual_prompts",
         "summary_cover",
+        "topic_writer",
+        "topic_fact_check",
+        "caption_writer",
+        "topic_writer",
+        "topic_fact_check",
+        "caption_writer",
     ]
     assert PROTOCOL_TEXT in fake.calls[0].prompt
     for call in fake.calls[1:]:
@@ -364,8 +456,12 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     assert detail_response.status_code == 200
     detail = detail_response.json()
     assert detail["title"] == "Haushalt beschlossen"
-    assert detail["content_json"]["brief"]["slug"] == "haushalt"
+    assert detail["content_json"]["draft"]["sections"]
     assert detail["content_json"]["excerpts"][0]["anchor"] == SUMMARY_ANCHOR_1
+    assert detail["content_markdown"].startswith("# ")
+    assert detail["slide_plan_json"]["family"] == "topic"
+    assert detail["caption"].startswith("Illustration: KI-generiert.")
+    assert len(detail["slides"]) == len(detail["alt_text_json"])
 
 
 async def test_unknown_organ_fails_every_planned_post_but_keeps_the_plan(
@@ -400,7 +496,9 @@ async def test_missing_summary_anchor_fails_only_the_summary(
     assert len(summary.content_json["briefs"]) == 2
     assert summary.content_json["excerpts"] == []
     assert haushalt.status == "draft"
+    assert haushalt.content_json["draft"]["sections"]
     assert radweg.status == "draft"
+    assert radweg.content_json["draft"]["sections"]
     assert [post.status for post in result.posts] == ["failed", "draft", "draft"]
 
 
@@ -431,7 +529,8 @@ async def test_missing_topic_anchor_fails_only_that_topic(postgres_session, tmp_
     assert haushalt.status == "failed"
     assert haushalt.failed_step == "source_retrieval"
     assert radweg.status == "draft"
-    assert radweg.content_json["brief"]["slug"] == "radweg"
+    assert radweg.content_json["draft"]["sections"]
+    assert radweg.content_json["excerpts"][0]["anchor"] == SUMMARY_ANCHOR_2
     assert [post.status for post in result.posts] == ["ready", "failed", "draft"]
 
 
@@ -482,6 +581,7 @@ async def test_summary_writer_failure_marks_only_the_summary_failed(
             ],
         }
     )
+    _script_topics_success(fake, plan=plan)
     protocol = await _add_protocol(postgres_session)
     result = await PostPipeline(fake, output_dir=tmp_path).run(
         protocol, postgres_session
@@ -493,7 +593,9 @@ async def test_summary_writer_failure_marks_only_the_summary_failed(
     assert summary.failed_step == "writer"
     assert "second writer failure" in summary.error
     assert haushalt.status == "draft"
+    assert haushalt.content_json["draft"]["sections"]
     assert radweg.status == "draft"
+    assert radweg.content_json["draft"]["sections"]
     assert [post.status for post in result.posts] == ["failed", "draft", "draft"]
 
     plan_row = await _plan_row(postgres_session, protocol)
@@ -503,6 +605,12 @@ async def test_summary_writer_failure_marks_only_the_summary_failed(
         "planner",
         "summary_writer",
         "summary_writer",
+        "topic_writer",
+        "topic_fact_check",
+        "caption_writer",
+        "topic_writer",
+        "topic_fact_check",
+        "caption_writer",
     ]
 
 
@@ -523,6 +631,7 @@ async def test_remaining_fact_check_issues_fail_at_fact_check_after_one_repair(
             "summary_repair": [draft],
         }
     )
+    _script_topics_success(fake, plan=plan)
     protocol = await _add_protocol(postgres_session)
     result = await PostPipeline(fake, output_dir=tmp_path).run(
         protocol, postgres_session
@@ -544,6 +653,12 @@ async def test_remaining_fact_check_issues_fail_at_fact_check_after_one_repair(
         "summary_fact_check",
         "summary_repair",
         "summary_fact_check",
+        "topic_writer",
+        "topic_fact_check",
+        "caption_writer",
+        "topic_writer",
+        "topic_fact_check",
+        "caption_writer",
     ]
     assert issues[0] in fake.calls[3].prompt
 
@@ -561,14 +676,17 @@ async def test_repair_call_failure_records_the_repair_step(
             "summary_repair": [LLMSchemaError("repair returned bad JSON")],
         }
     )
+    _script_topics_success(fake, plan=plan)
     protocol = await _add_protocol(postgres_session)
     await PostPipeline(fake, output_dir=tmp_path).run(protocol, postgres_session)
 
-    summary, _, _ = await _posts(postgres_session, protocol)
+    summary, haushalt, radweg = await _posts(postgres_session, protocol)
 
     assert summary.status == "failed"
     assert summary.failed_step == "repair"
     assert "repair returned bad JSON" in summary.error
+    assert haushalt.status == "draft"
+    assert radweg.status == "draft"
 
 
 async def test_caption_failure_records_the_caption_step(postgres_session, tmp_path):
@@ -581,6 +699,7 @@ async def test_caption_failure_records_the_caption_step(postgres_session, tmp_pa
             "caption_writer": [LLMSchemaError("caption returned bad JSON")],
         }
     )
+    _script_topics_success(fake, plan=plan)
     protocol = await _add_protocol(postgres_session)
     await PostPipeline(fake, output_dir=tmp_path).run(protocol, postgres_session)
 
@@ -591,7 +710,9 @@ async def test_caption_failure_records_the_caption_step(postgres_session, tmp_pa
     assert "caption returned bad JSON" in summary.error
     assert summary.content_json["draft"]["cover_title"] == plan.summary_title
     assert haushalt.status == "draft"
+    assert haushalt.content_json["draft"]["sections"]
     assert radweg.status == "draft"
+    assert radweg.content_json["draft"]["sections"]
 
 
 async def test_unfittable_summary_layout_records_the_slide_composer_step(
@@ -614,18 +735,24 @@ async def test_unfittable_summary_layout_records_the_slide_composer_step(
             "caption_writer": [CaptionDraft(body="Caption")],
         }
     )
+    _script_topics_success(fake, plan=plan)
     protocol = await _add_protocol(postgres_session)
     await PostPipeline(fake, output_dir=tmp_path).run(protocol, postgres_session)
 
-    summary, _, _ = await _posts(postgres_session, protocol)
+    summary, haushalt, radweg = await _posts(postgres_session, protocol)
 
     assert summary.status == "failed"
     assert summary.failed_step == "slide_composer"
     assert "heading" in summary.error
-    assert [call.role for call in fake.calls] == ["planner", "summary_writer"]
+    assert [call.role for call in fake.calls[:2]] == [
+        "planner",
+        "summary_writer",
+    ]
+    assert haushalt.status == "draft"
+    assert radweg.status == "draft"
 
 
-async def test_rerun_resumes_a_draft_summary_at_visuals_without_rewriting_content(
+async def test_rerun_resumes_draft_summary_and_topics_without_rewriting_content(
     postgres_session, tmp_path
 ):
     plan = _plan()
@@ -637,6 +764,7 @@ async def test_rerun_resumes_a_draft_summary_at_visuals_without_rewriting_conten
             "caption_writer": [CaptionDraft(body="Der Rat hat entschieden.")],
         }
     )
+    _script_topics_success(fake, plan=plan)
     protocol = await _add_protocol(postgres_session)
     await PostPipeline(fake, output_dir=tmp_path).run(protocol, postgres_session)
 
@@ -645,6 +773,7 @@ async def test_rerun_resumes_a_draft_summary_at_visuals_without_rewriting_conten
     assert summary.failed_step == "visual_prompts"
     assert len(await _slides(postgres_session, summary)) == 3
     assert len(fake.calls_for("summary_writer")) == 1
+    assert len(fake.calls_for("topic_writer")) == 2
 
     # Simulate a job that saved the content but stopped before the terminal
     # transition, so the next run resumes at the visual stage.
@@ -658,6 +787,7 @@ async def test_rerun_resumes_a_draft_summary_at_visuals_without_rewriting_conten
         VisualPrompts(cover_prompt="Weite, ruhige Szene am Ortsrand."),
     )
     fake.script_image("summary_cover", _cover_png_bytes())
+    _script_topics_success(fake, plan=plan)
     second_result = await PostPipeline(fake, output_dir=tmp_path).run(
         protocol, postgres_session
     )
@@ -670,9 +800,10 @@ async def test_rerun_resumes_a_draft_summary_at_visuals_without_rewriting_conten
     assert len(fake.calls_for("summary_writer")) == 1
     assert len(fake.calls_for("summary_visual_prompts")) == 2
     assert len(fake.image_calls) == 1
+    assert len(fake.calls_for("topic_writer")) == 4
     assert haushalt.status == haushalt_again.status == "draft"
     assert radweg.status == radweg_again.status == "draft"
-    assert haushalt.content_json["brief"]["slug"] == "haushalt"
+    assert haushalt.content_json["draft"]["sections"]
     assert [post.status for post in second_result.posts] == [
         "ready",
         "draft",
@@ -691,6 +822,7 @@ async def test_rerun_never_retries_a_failed_summary(postgres_session, tmp_path):
             ],
         }
     )
+    _script_topics_success(fake, plan=plan)
     protocol = await _add_protocol(postgres_session)
     pipeline = PostPipeline(fake, output_dir=tmp_path)
     await pipeline.run(protocol, postgres_session)
@@ -698,14 +830,18 @@ async def test_rerun_never_retries_a_failed_summary(postgres_session, tmp_path):
     summary, _, _ = await _posts(postgres_session, protocol)
     assert summary.status == "failed"
     assert len(fake.calls_for("summary_writer")) == 2
+    assert len(fake.calls_for("topic_writer")) == 2
 
     _script_summary_success(fake, plan=plan)
+    _script_topics_success(fake, plan=plan)
     await pipeline.run(protocol, postgres_session)
 
     summary, haushalt, radweg = await _posts(postgres_session, protocol)
     assert summary.status == "failed"
     assert len(fake.calls_for("summary_writer")) == 2
+    assert len(fake.calls_for("topic_writer")) == 4
     assert haushalt.status == "draft"
+    assert haushalt.content_json["draft"]["sections"]
     assert radweg.status == "draft"
 
 
@@ -735,6 +871,7 @@ async def test_successful_repair_recomposes_the_summary_from_the_repaired_draft(
         },
         image_responses={"summary_cover": [_cover_png_bytes()]},
     )
+    _script_topics_success(fake, plan=plan)
     protocol = await _add_protocol(postgres_session)
     await PostPipeline(fake, output_dir=tmp_path).run(protocol, postgres_session)
 

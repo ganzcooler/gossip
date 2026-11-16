@@ -6,15 +6,18 @@ in PostgreSQL. It runs as a containerized FastAPI application with an
 in-process APScheduler.
 
 The stateless post pipeline is being built in stages. The editorial planning
-stage, the Summary content path and the Summary visual output are implemented:
-a protocol becomes a persisted Redaktionsplan plus draft Summary and topic
-posts with deterministic source excerpts, and the Summary post gets a validated
-writer draft, a hard fact-check gate with one repair, deterministic Summary
-cards, a composed caption, Alt-Texte, an AI cover image with a brand fallback,
-and the blue 9:16 story PNGs plus one caption file in the protocol folder.
-Topic writers, topic visuals, retry/reprocess endpoints, and scheduler wiring
-are still to come. The legacy one-call article, caption, image, and Instagram
-pipeline has been removed; legacy articles remain readable through the API.
+stage, the Summary content path, the Summary visual output and the topic
+content path are implemented: a protocol becomes a persisted Redaktionsplan
+plus draft Summary and topic posts with deterministic source excerpts. The
+Summary post gets a validated writer draft, a hard fact-check gate with one
+repair, deterministic Summary cards, a composed caption, Alt-Texte, an AI cover
+image with a brand fallback, and the blue 9:16 story PNGs plus one caption file
+in the protocol folder. Each topic post gets a validated article (H1, two to
+six H2 sections and paragraphs), the same hard fact-check gate, four to seven
+deterministic content slides, a composed caption and Alt-Texte. Topic visuals,
+retry/reprocess endpoints, and scheduler wiring are still to come. The legacy
+one-call article, caption, image, and Instagram pipeline has been removed;
+legacy articles remain readable through the API.
 
 ## What it does
 
@@ -45,10 +48,19 @@ pipeline has been removed; legacy articles remain readable through the API.
    PostgreSQL and the API; no JSON, Markdown, prompt, or manifest files are
    written. Only after the whole story and caption are written does the
    Summary post become `ready`.
+7. **Write topics** — for each planned Themenbrief, the Themen-Writer sees only
+   that brief and its excerpts and writes an H1 plus two to six H2 sections
+   with paragraphs under a hard 3,000-character budget. The same Fact-Check
+   gate applies, and the 4:5 content slides are composed deterministically:
+   every H2 starts a new slide, overflow continues with the short chapter label
+   at one post-wide body size, and the article text is never reworded or
+   truncated. Topics also get a caption and Alt-Texte and stay `draft` until
+   the topic visual ticket runs.
 
 The fetch workflow is triggered by APScheduler and can also be started manually
-through the API. The planning and Summary content stages are callable through
-`PostPipeline.run`; scheduler wiring arrives with the later pipeline tickets.
+through the API. The planning, Summary content and visual, and topic content
+stages are callable through `PostPipeline.run`; scheduler wiring arrives with
+the later pipeline tickets.
 The processing schedule slot is reserved but currently a no-op.
 
 ## Architecture
@@ -82,8 +94,9 @@ app/
 │   ├── llm_client.py          Stateless LLM port and OpenRouter adapter
 │   ├── editorial_planner.py   Redaktionsplaner role
 │   ├── summary_writer.py      Summary-Writer role with one validation retry
+│   ├── topic_writer.py        Themen-Writer role with one validation retry
 │   ├── fact_checker.py        Shared fact-check + one-repair hard gate
-│   ├── slide_composer.py      Deterministic Summary cover/card composition
+│   ├── slide_composer.py      Deterministic Summary cards and topic slides
 │   ├── caption_writer.py      Caption body role and deterministic composition
 │   ├── visual_prompts.py      Stateless visual-prompt role for covers/artwork
 │   ├── image_generation.py    Image decode, deterministic fit, brand fallbacks
@@ -92,7 +105,7 @@ app/
 │   ├── text_layout.py         Shared font loading, wrapping and fit primitives
 │   ├── organs.py              Finite Organ seed and deterministic resolver
 │   ├── protocol_excerpts.py   Deterministic source-anchor retrieval
-│   └── post_pipeline.py       Planning and Summary-content orchestrator
+│   └── post_pipeline.py       Planning, content and Summary visual orchestrator
 ├── utils/                     Folder and SessionNet helpers
 └── res/                       Logo and runtime fonts for the renderer
 
@@ -205,18 +218,22 @@ the Redaktionsplan and creates the summary post (`slug="summary"`,
 content path then replaces the summary's `content_json` with the validated
 draft plus source excerpts and fills `content_markdown`, `slide_plan_json`,
 `caption`, `alt_text_json`, `fact_check_json` and the one-based cover/card
-`post_slides`. The visual stage writes the cover prompt and asset row, generates
-or falls back for the cover art, renders all 1080×1920 frames in memory, and
-writes the PNGs plus the caption file before flipping the Summary to `ready`.
-Rerunning a protocol reuses a cached draft and composed slides and resumes at
-visuals instead of calling the writer again; a `ready` Summary is skipped
-entirely. Topic posts remain planned drafts until the topic writer ticket.
+`post_slides`. Each topic post gets the same persisted fields from its own
+writer, fact-check, composition and caption calls, with one-based
+cover/heading/continuation `post_slides`. The Summary visual stage writes the
+cover prompt and asset row, generates or falls back for the cover art, renders
+all 1080×1920 frames in memory, and writes the PNGs plus the caption file
+before flipping the Summary to `ready`. Rerunning a protocol reuses a cached
+Summary draft and composed slides and resumes at visuals instead of calling the
+Summary writer again; a `ready` Summary is skipped entirely. Topic posts stay
+`draft` until the topic visual ticket renders them.
 An unknown protocol title marks all planned posts `failed` at `organ`, and a
 missing source anchor marks only the affected Beitrag `failed` at
-`source_retrieval`. A Summary failure at `writer`, `fact_check`, `repair`,
-`caption`, `slide_composer`, `visual_prompts`, `image_generation` or `render`
-does not touch the topic drafts, and a failed Summary is not retried
-automatically on the next run.
+`source_retrieval`. Summary and topic branches are independent: a Summary
+failure at `writer`, `fact_check`, `repair`, `caption`, `slide_composer`,
+`visual_prompts`, `image_generation` or `render` does not touch the topic
+drafts, and a failed topic does not block the Summary or the other topics.
+Failed posts are not retried automatically on the next run.
 
 ### Summary output files
 
@@ -389,11 +406,12 @@ been removed. Manual tests are excluded from the default run and from hooks.
 
 ## Known limitations / next steps
 
-- The planning stage, the Summary content path and the Summary visual output
-  are implemented; the topic writer, topic visuals, retry/reprocess endpoints,
-  and scheduler wiring remain.
-- Summary posts are group-pure blue; topic posts will use the orange 4:5
-  carousel renderer in a later ticket.
+- The planning stage, both content paths and the Summary visual output are
+  implemented; topic visuals, retry/reprocess endpoints, and scheduler wiring
+  remain.
+- Summary posts are group-pure blue and written as 9:16 story PNGs plus one
+  caption file; topic posts remain `draft` until the orange 4:5 carousel
+  renderer lands.
 - Add Alembic migrations instead of `create_all()`.
 - Move the scheduler and long-running pipeline jobs into a dedicated worker.
 - Add authentication and rate limiting for the API and pipeline triggers.
