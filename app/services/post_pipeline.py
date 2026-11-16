@@ -20,7 +20,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import ARTICLES_DIR
-from app.core.post_models import EditorialPlan, SourceExcerpt, SummaryBrief, TopicBrief
+from app.core.post_models import (
+    EditorialPlan,
+    SourceExcerpt,
+    SummaryBrief,
+    TopicBrief,
+)
 from app.models import EditorialPlan as EditorialPlanRow
 from app.models import Post, PostSlide, Protocol
 from app.services.caption_writer import (
@@ -42,9 +47,11 @@ from app.services.protocol_excerpts import (
 )
 from app.services.slide_composer import (
     compose_summary_slides,
+    compose_topic_slides,
     render_summary_markdown,
 )
 from app.services.summary_writer import write_summary
+from app.services.topic_writer import TopicWriterError, write_topic
 
 logger = logging.getLogger(__name__)
 
@@ -269,6 +276,21 @@ class PostPipeline:
                 protocol, db, plan, organ, summary_post
             )
 
+        # Each topic is its own branch. A failed topic never blocks the
+        # Summary or the other topics, and a failed Summary above never
+        # prevents these branches from running.
+        for brief in plan.topic_briefs:
+            post = topic_by_slug.get(brief.slug)
+            if (
+                post is None
+                or post.status != "draft"
+                or post.failed_step is not None
+            ):
+                continue
+            await self._process_topic_branch(
+                protocol, db, organ, brief, post
+            )
+
         return await self._commit_and_result(protocol, db, "ready", posts)
 
     @staticmethod
@@ -427,6 +449,170 @@ class PostPipeline:
         await db.flush()
 
     async def _fail_summary_post(
+        self,
+        db: AsyncSession,
+        post: Post,
+        step: str,
+        exc: Exception,
+    ) -> None:
+        post.status = "failed"
+        post.failed_step = step
+        post.error = str(exc) or exc.__class__.__name__
+        await db.commit()
+
+    async def _process_topic_branch(
+        self,
+        protocol: Protocol,
+        db: AsyncSession,
+        organ: str,
+        brief: TopicBrief,
+        post: Post,
+    ) -> None:
+        """Run writer+composition → fact-check/repair → caption for one topic."""
+        content = post.content_json or {}
+        try:
+            excerpts = [
+                SourceExcerpt.model_validate(excerpt)
+                for excerpt in content.get("excerpts", [])
+            ]
+        except (TypeError, ValueError) as exc:
+            await self._fail_topic_post(db, post, "source_retrieval", exc)
+            return
+
+        if not excerpts:
+            await self._fail_topic_post(
+                db,
+                post,
+                "source_retrieval",
+                RuntimeError("No cached source excerpts for the topic post"),
+            )
+            return
+
+        try:
+            draft = await write_topic(
+                brief,
+                excerpts,
+                self.llm_client,
+                compose=compose_topic_slides,
+            )
+        except LLMAuthenticationError:
+            raise
+        except TopicWriterError as exc:
+            await self._fail_topic_post(db, post, exc.step, exc)
+            return
+        except Exception as exc:
+            await self._fail_topic_post(db, post, "writer", exc)
+            return
+
+        post.content_json = {
+            "draft": draft.model_dump(mode="json"),
+            "excerpts": [
+                excerpt.model_dump(mode="json") for excerpt in excerpts
+            ],
+        }
+
+        try:
+            composition = compose_topic_slides(draft)
+        except Exception as exc:
+            await self._fail_topic_post(db, post, "slide_composer", exc)
+            return
+
+        try:
+            outcome = await enforce_fact_check(
+                draft,
+                excerpts,
+                self.llm_client,
+                draft_schema=type(draft),
+                fact_check_role="topic_fact_check",
+                repair_role="topic_repair",
+            )
+        except FactCheckError as exc:
+            post.fact_check_json = fact_check_json(
+                passed=False,
+                issues=exc.issues or [str(exc)],
+                repaired=isinstance(exc, FactCheckFailedError)
+                or exc.step == "repair",
+            )
+            await self._fail_topic_post(db, post, exc.step, exc)
+            return
+        except LLMAuthenticationError:
+            raise
+        except Exception as exc:
+            await self._fail_topic_post(db, post, "fact_check", exc)
+            return
+
+        final_draft = outcome.draft
+        if outcome.repaired:
+            try:
+                composition = compose_topic_slides(final_draft)
+            except Exception as exc:
+                await self._fail_topic_post(
+                    db, post, "slide_composer", exc
+                )
+                return
+
+        try:
+            caption_draft = await write_caption_body(
+                final_draft,
+                self.llm_client,
+                organ=organ,
+                session_date=protocol.session_date,
+            )
+            caption = compose_caption(
+                body=caption_draft.body,
+                organ=organ,
+                session_date=protocol.session_date,
+                protocol=protocol,
+            )
+        except LLMAuthenticationError:
+            raise
+        except Exception as exc:
+            await self._fail_topic_post(db, post, "caption", exc)
+            return
+
+        post.content_json = {
+            "draft": final_draft.model_dump(mode="json"),
+            "excerpts": [
+                excerpt.model_dump(mode="json") for excerpt in excerpts
+            ],
+        }
+        post.content_markdown = composition.markdown
+        post.slide_plan_json = composition.slide_plan
+        post.caption = caption
+        post.alt_text_json = list(composition.alt_texts)
+        post.fact_check_json = fact_check_json(
+            passed=True,
+            issues=outcome.issues,
+            repaired=outcome.repaired,
+        )
+        post.status = "draft"  # ticket 07 renders and flips to ready
+        post.failed_step = None
+        post.error = None
+
+        await db.execute(
+            delete(PostSlide)
+            .where(PostSlide.post_id == post.id)
+            .execution_options(synchronize_session=False)
+        )
+        db.add_all(
+            [
+                PostSlide(
+                    post_id=post.id,
+                    slide_index=slide.slide_index,
+                    slide_type=slide.slide_type,
+                    pair_index=slide.pair_index,
+                    label=slide.label,
+                    headline=slide.headline,
+                    body=slide.body,
+                    alt_text=slide.alt_text,
+                )
+                for slide in composition.slides
+            ]
+        )
+        await db.flush()
+        await db.commit()
+
+    async def _fail_topic_post(
         self,
         db: AsyncSession,
         post: Post,
