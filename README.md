@@ -53,8 +53,9 @@ has been removed; legacy articles remain readable through the API.
    Image generation requests 4:5 artwork, normalizes the cover to 1080×1350,
    and center-crops each pair to 720×1350 or a final unpaired strip to
    360×1350. The renderer slices pairs into the zigzag layout and writes
-   `topic-<date>-<slide>.png` plus exactly one `caption-topic-<slug>.txt`.
-   Topic image failures produce orange brand fallbacks and the post still
+   `topic-<date>-<slide>.png` plus exactly one `caption-topic-<slug>.txt`
+   inside the topic's own `topic-<slug>/` subfolder. Topic image failures
+   produce orange brand fallbacks and the post still
    becomes `ready`; authentication errors stop the job. Alt-Texte stay in
    PostgreSQL and the API; no JSON, Markdown, prompt, or manifest files are
    written.
@@ -264,7 +265,8 @@ font/logo, or a caption/render write failure marks the Summary `failed` at
 
 ### Topic output files
 
-A topic writes the same protocol folder, for example:
+Each topic writes into its own stable subfolder inside the protocol folder,
+for example `<ARTICLES_DIR>/240115_gemeinderat/topic-haushalt/`:
 
 ```
 topic-2024-01-15-01.png   # cover
@@ -274,6 +276,10 @@ topic-2024-01-15-04.png   # third content slide, heading layout
 topic-2024-01-15-05.png   # fourth content slide, continuation layout
 caption-topic-haushalt.txt
 ```
+
+Summary files stay flat in the protocol folder. The per-topic subfolder keeps
+the exact topic basenames collision-free when a Sitzung has several
+Themenbeiträge, and stale-frame cleanup is limited to that topic's subfolder.
 
 A topic carousel has five to eight images (cover plus four to seven content
 slides). Content slides alternate text-left/image-right and
@@ -355,7 +361,7 @@ ordered `slides` and `assets`:
       "id": 20,
       "role": "cover",
       "prompt": "...",
-      "path": "output/topic-2024-01-15-01.png",
+      "path": "output/240115_gemeinderat/topic-haushalt/topic-2024-01-15-01.png",
       "status": "ready",
       "error": null,
       "model": "google/gemini-3.1-flash-image"

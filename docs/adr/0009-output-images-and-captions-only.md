@@ -5,3 +5,5 @@ Nach einem Pipeline-Lauf schreibt die Pipeline ausschließlich die gerenderten B
 Pro Beitrag entsteht genau eine Caption-Datei `caption-<post-type>-<slug>.txt`; die Bilddateien heißen `summary-<date>-story-<frame>.png` bzw. `topic-<date>-<slide>.png`. Alt-Texte werden nicht als Datei geschrieben, sondern bleiben in der Datenbank und sind über die API abrufbar.
 
 Der Grund: Der Ordner ist das Veröffentlichungsartefakt, die Datenbank ist die Wahrheit für alles Strukturierte. Doppelte Dateiformate würden auseinanderlaufen und die manuelle Weiterverarbeitung erschweren.
+
+Themenbeiträge liegen je Beitrag in einem stabilen Unterordner `topic-<slug>/` innerhalb des Protokollordners. Die Dateinamen bleiben exakt `topic-<date>-<slide>.png` und `caption-topic-<slug>.txt`; der Unterordner ist die kollisionsfreie Anwendung dieses Vertrags, wenn mehrere Themenbeiträge dieselbe Sitzung teilen. Der Summary-Output bleibt flach im Protokollordner, und die Aufräumlogik eines Themenbeitrags bleibt auf dessen Unterordner beschränkt.

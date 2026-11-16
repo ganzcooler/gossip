@@ -285,7 +285,7 @@ def test_write_topic_output_creates_exact_filenames_and_one_caption(tmp_path):
         frames, post=post, protocol=protocol, output_dir=tmp_path
     )
 
-    folder = tmp_path / "240312_gemeinderat"
+    folder = tmp_path / "240312_gemeinderat" / "topic-haushalt"
     assert output.folder == folder
     assert sorted(path.name for path in folder.iterdir()) == [
         "caption-topic-haushalt.txt",
@@ -331,15 +331,19 @@ def test_write_topic_output_removes_stale_topic_frames_and_rejects_missing_capti
     protocol = SimpleNamespace(
         session_date=date(2024, 3, 12), title="Gemeinderat"
     )
-    folder = tmp_path / "240312_gemeinderat"
-    folder.mkdir()
+    folder = tmp_path / "240312_gemeinderat" / "topic-haushalt"
+    folder.mkdir(parents=True)
     (folder / "topic-2024-03-12-09.png").write_bytes(b"stale")
+    other = tmp_path / "240312_gemeinderat" / "topic-other"
+    other.mkdir()
+    (other / "topic-2024-03-12-01.png").write_bytes(b"other topic")
 
     output = write_topic_output(
         frames, post=post, protocol=protocol, output_dir=tmp_path
     )
 
     assert not (folder / "topic-2024-03-12-09.png").exists()
+    assert (other / "topic-2024-03-12-01.png").read_bytes() == b"other topic"
     assert len(output.image_paths) == 5
 
     with pytest.raises(RenderError, match="caption"):

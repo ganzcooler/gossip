@@ -909,7 +909,12 @@ def write_topic_output(
     protocol: Any,
     output_dir: Path | str,
 ) -> TopicOutput:
-    """Write the rendered images and the one topic caption file, without extras."""
+    """Write one topic's images and caption into its own protocol subfolder.
+
+    The spec's image and caption basenames stay exact. Each Themenbeitrag gets
+    the stable ``<protocol_folder>/topic-<slug>/`` subfolder so two topics in
+    one protocol never overwrite each other's frames.
+    """
     _require(5 <= len(frames) <= 8, "A Themenbeitrag needs 5 to 8 images")
     for frame in frames:
         _require(
@@ -934,7 +939,9 @@ def write_topic_output(
     )
     slug = _safe_slug(getattr(post, "slug", None))
 
-    folder = protocol_output_folder(output_dir, session_date, title)
+    protocol_folder = protocol_output_folder(output_dir, session_date, title)
+    folder = protocol_folder / f"topic-{slug}"
+    folder.mkdir(parents=True, exist_ok=True)
     image_paths: list[Path] = []
     written: list[Path] = []
     try:

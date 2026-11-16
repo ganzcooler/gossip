@@ -20,7 +20,7 @@ from app.core.post_models import (
 )
 from app.database import get_db
 from app.main import app
-from app.models import Post, PostAsset, Protocol
+from app.models import Post, PostAsset, PostSlide, Protocol
 from app.services import post_pipeline as pipeline_module
 from app.services.image_generation import topic_pair_fallback_art
 from app.services.llm_client import (
@@ -189,12 +189,19 @@ def _script_success(
             ]
         ),
     )
-    for _ in plan.topic_briefs:
-        fake.script_image(
-            "topic_cover",
-            _png_bytes() if topic_image is None else topic_image,
+    for index, _ in enumerate(plan.topic_briefs):
+        cover_image = (
+            _png_bytes(color=(70 + index * 40, 110, 90))
+            if topic_image is None
+            else topic_image
         )
-        fake.script_image("topic_pair_art", _png_bytes(), _png_bytes())
+        fake.script_image("topic_cover", cover_image)
+        pair_color = (60, 100 + index * 40, 140)
+        fake.script_image(
+            "topic_pair_art",
+            _png_bytes(color=pair_color),
+            _png_bytes(color=pair_color),
+        )
 
 
 async def _protocol(session) -> Protocol:
@@ -214,6 +221,15 @@ async def _posts(session, protocol: Protocol) -> list[Post]:
         select(Post)
         .where(Post.protocol_id == protocol.id)
         .order_by(Post.post_index)
+    )
+    return list(result.scalars().all())
+
+
+async def _slides(session, post: Post) -> list[PostSlide]:
+    result = await session.execute(
+        select(PostSlide)
+        .where(PostSlide.post_id == post.id)
+        .order_by(PostSlide.slide_index)
     )
     return list(result.scalars().all())
 
@@ -277,32 +293,42 @@ async def test_full_protocol_renders_summary_and_topics_with_assets_and_api_path
         assert asset.prompt
         assert asset.error is None
         assert asset.path
-    assert haushalt_assets[0].path.endswith("topic-2024-01-15-01.png")
-    assert haushalt_assets[1].path.endswith("topic-2024-01-15-02.png")
-    assert haushalt_assets[2].path.endswith("topic-2024-01-15-04.png")
+    assert haushalt_assets[0].path.endswith(
+        "topic-haushalt/topic-2024-01-15-01.png"
+    )
+    assert haushalt_assets[1].path.endswith(
+        "topic-haushalt/topic-2024-01-15-02.png"
+    )
+    assert haushalt_assets[2].path.endswith(
+        "topic-haushalt/topic-2024-01-15-04.png"
+    )
 
     folder = tmp_path / "240115_gemeinderat"
-    names = sorted(path.name for path in folder.iterdir())
-    # Topic image names are shared by the protocol-wide carousel naming
-    # contract; the last rendered topic defines the visible frame set.
-    assert names == [
+    assert sorted(path.name for path in folder.iterdir()) == [
         "caption-summary-summary.txt",
-        "caption-topic-haushalt.txt",
-        "caption-topic-radweg.txt",
         "summary-2024-01-15-story-01.png",
         "summary-2024-01-15-story-02.png",
         "summary-2024-01-15-story-03.png",
-        "topic-2024-01-15-01.png",
-        "topic-2024-01-15-02.png",
-        "topic-2024-01-15-03.png",
-        "topic-2024-01-15-04.png",
-        "topic-2024-01-15-05.png",
+        "topic-haushalt",
+        "topic-radweg",
     ]
-    for index in range(1, 6):
-        with Image.open(folder / f"topic-2024-01-15-{index:02d}.png") as image:
-            assert image.size == (1080, 1350)
-            assert image.mode == "RGB"
-    assert (folder / "caption-topic-haushalt.txt").read_text(
+    for slug in ("haushalt", "radweg"):
+        topic_folder = folder / f"topic-{slug}"
+        assert sorted(path.name for path in topic_folder.iterdir()) == [
+            f"caption-topic-{slug}.txt",
+            "topic-2024-01-15-01.png",
+            "topic-2024-01-15-02.png",
+            "topic-2024-01-15-03.png",
+            "topic-2024-01-15-04.png",
+            "topic-2024-01-15-05.png",
+        ]
+        for index in range(1, 6):
+            with Image.open(
+                topic_folder / f"topic-2024-01-15-{index:02d}.png"
+            ) as image:
+                assert image.size == (1080, 1350)
+                assert image.mode == "RGB"
+    assert (folder / "topic-haushalt" / "caption-topic-haushalt.txt").read_text(
         encoding="utf-8"
     ) == haushalt.caption
 
@@ -410,8 +436,10 @@ async def test_one_topic_visual_failure_leaves_summary_and_other_topic_ready(
 
     folder = tmp_path / "240115_gemeinderat"
     assert (folder / "caption-summary-summary.txt").exists()
-    assert (folder / "caption-topic-radweg.txt").exists()
-    assert not (folder / "caption-topic-haushalt.txt").exists()
+    assert (
+        folder / "topic-radweg" / "caption-topic-radweg.txt"
+    ).exists()
+    assert not (folder / "topic-haushalt").exists()
 
 
 async def test_rerun_after_all_posts_ready_makes_no_extra_llm_calls(
@@ -440,6 +468,90 @@ async def test_rerun_after_all_posts_ready_makes_no_extra_llm_calls(
     assert len(fake.calls) == call_count
     assert len(fake.image_calls) == image_count
     assert folder.stat().st_mtime_ns == first_mtime
+
+
+async def test_two_topics_keep_distinct_files_and_rerender_is_scoped(
+    postgres_session, tmp_path
+):
+    plan = _plan()
+    fake = FakeLLMClient()
+    _script_success(fake, plan)
+    protocol = await _protocol(postgres_session)
+    pipeline = PostPipeline(fake, output_dir=tmp_path)
+
+    await pipeline.run(protocol, postgres_session)
+    summary, haushalt, radweg = await _posts(postgres_session, protocol)
+    assert [post.status for post in (summary, haushalt, radweg)] == [
+        "ready",
+        "ready",
+        "ready",
+    ]
+
+    protocol_folder = tmp_path / "240115_gemeinderat"
+    haushalt_folder = protocol_folder / "topic-haushalt"
+    radweg_folder = protocol_folder / "topic-radweg"
+    haushalt_cover = (haushalt_folder / "topic-2024-01-15-01.png").read_bytes()
+    radweg_cover = (radweg_folder / "topic-2024-01-15-01.png").read_bytes()
+    assert haushalt_cover != radweg_cover
+    haushalt_files = sorted(path.name for path in haushalt_folder.iterdir())
+    radweg_files = sorted(path.name for path in radweg_folder.iterdir())
+    assert haushalt_files == [
+        "caption-topic-haushalt.txt",
+        "topic-2024-01-15-01.png",
+        "topic-2024-01-15-02.png",
+        "topic-2024-01-15-03.png",
+        "topic-2024-01-15-04.png",
+        "topic-2024-01-15-05.png",
+    ]
+    assert radweg_files == [
+        "caption-topic-radweg.txt",
+        "topic-2024-01-15-01.png",
+        "topic-2024-01-15-02.png",
+        "topic-2024-01-15-03.png",
+        "topic-2024-01-15-04.png",
+        "topic-2024-01-15-05.png",
+    ]
+    radweg_snapshot = {
+        path.name: path.read_bytes() for path in radweg_folder.iterdir()
+    }
+
+    # Rerender only the haushalt topic from its cached content. The radweg
+    # topic stays ready and its files must not be touched.
+    haushalt.status = "draft"
+    haushalt.failed_step = None
+    haushalt.error = None
+    await postgres_session.commit()
+    fake.script_json(
+        "topic_visual_prompts",
+        VisualPrompts(
+            cover_prompt="Neues Cover haushalt",
+            artwork_prompts=["Neu 1", "Neu 2"],
+        ),
+    )
+    fake.script_image("topic_cover", _png_bytes(color=(10, 20, 30)))
+    fake.script_image(
+        "topic_pair_art",
+        _png_bytes(color=(40, 50, 60)),
+        _png_bytes(color=(70, 80, 90)),
+    )
+
+    await pipeline.run(protocol, postgres_session)
+
+    summary, haushalt, radweg = await _posts(postgres_session, protocol)
+    assert [post.status for post in (summary, haushalt, radweg)] == [
+        "ready",
+        "ready",
+        "ready",
+    ], (haushalt.failed_step, haushalt.error)
+    assert (haushalt_folder / "topic-2024-01-15-01.png").read_bytes() != (
+        haushalt_cover
+    )
+    assert {
+        path.name: path.read_bytes() for path in radweg_folder.iterdir()
+    } == radweg_snapshot
+    assert sorted(path.name for path in haushalt_folder.iterdir()) == (
+        haushalt_files
+    )
 
 
 async def test_topic_render_failure_marks_only_that_topic_and_writes_no_topic_files(
@@ -562,7 +674,7 @@ async def test_topic_image_failures_produce_orange_fallbacks_and_stay_ready(
     assert "pair down" in assets[1].error
     assert all(asset.path for asset in assets)
 
-    folder = tmp_path / "240115_gemeinderat"
+    folder = tmp_path / "240115_gemeinderat" / "topic-haushalt"
     for index in range(1, 6):
         assert (folder / f"topic-2024-01-15-{index:02d}.png").exists()
     with Image.open(folder / "topic-2024-01-15-02.png") as first:
@@ -636,11 +748,13 @@ async def test_odd_content_count_records_a_single_last_asset_and_strip(
         "ready",
         "ready",
     ]
-    assert assets[-1].path.endswith("topic-2024-01-15-06.png")
+    assert assets[-1].path.endswith(
+        "topic-haushalt/topic-2024-01-15-06.png"
+    )
 
     visual_call = fake.calls_for("topic_visual_prompts")[0]
     assert "genau 3 Prompts" in visual_call.prompt
-    folder = tmp_path / "240115_gemeinderat"
+    folder = tmp_path / "240115_gemeinderat" / "topic-haushalt"
     with Image.open(folder / "topic-2024-01-15-06.png") as last:
         assert last.getpixel((800, 675)) == (10, 200, 30)
         assert last.getpixel((400, 675)) == (30, 30, 33)

@@ -295,7 +295,11 @@ class PostPipeline:
         }
         for brief in plan.topic_briefs:
             post = topic_by_slug.get(brief.slug)
-            if post is None or self._is_terminal(post):
+            if (
+                post is None
+                or self._is_terminal(post)
+                or self._topic_excerpts_cached(post)
+            ):
                 continue
             self._retrieve_topic_excerpts(protocol, brief, post)
 
@@ -374,6 +378,12 @@ class PostPipeline:
 
     @staticmethod
     def _summary_excerpts_cached(post: Post) -> bool:
+        content = post.content_json or {}
+        excerpts = content.get("excerpts") if isinstance(content, dict) else None
+        return isinstance(excerpts, list) and bool(excerpts)
+
+    @staticmethod
+    def _topic_excerpts_cached(post: Post) -> bool:
         content = post.content_json or {}
         excerpts = content.get("excerpts") if isinstance(content, dict) else None
         return isinstance(excerpts, list) and bool(excerpts)

@@ -385,20 +385,25 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     output_folder = tmp_path / "240115_gemeinderat"
     assert sorted(path.name for path in output_folder.iterdir()) == [
         "caption-summary-summary.txt",
-        "caption-topic-haushalt.txt",
-        "caption-topic-radweg.txt",
         "summary-2024-01-15-story-01.png",
         "summary-2024-01-15-story-02.png",
         "summary-2024-01-15-story-03.png",
-        "topic-2024-01-15-01.png",
-        "topic-2024-01-15-02.png",
-        "topic-2024-01-15-03.png",
-        "topic-2024-01-15-04.png",
-        "topic-2024-01-15-05.png",
+        "topic-haushalt",
+        "topic-radweg",
     ]
     assert (
         output_folder / "caption-summary-summary.txt"
     ).read_text(encoding="utf-8") == summary.caption
+    for slug in ("haushalt", "radweg"):
+        topic_folder = output_folder / f"topic-{slug}"
+        assert sorted(path.name for path in topic_folder.iterdir()) == [
+            f"caption-topic-{slug}.txt",
+            "topic-2024-01-15-01.png",
+            "topic-2024-01-15-02.png",
+            "topic-2024-01-15-03.png",
+            "topic-2024-01-15-04.png",
+            "topic-2024-01-15-05.png",
+        ]
 
     haushalt = posts[1]
     assert haushalt.content_json["draft"]["title"]
@@ -415,6 +420,16 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     assert haushalt_slides[1].pair_index == 1
     assert [slide.slide_index for slide in haushalt_slides] == list(
         range(1, len(haushalt_slides) + 1)
+    )
+    haushalt_assets = await _assets(postgres_session, haushalt)
+    assert [asset.role for asset in haushalt_assets] == [
+        "cover",
+        "pair_1",
+        "pair_2",
+    ]
+    assert all(asset.path for asset in haushalt_assets)
+    assert haushalt_assets[0].path.endswith(
+        "topic-haushalt/topic-2024-01-15-01.png"
     )
 
     assert result.plan_status == "ready"
