@@ -5,10 +5,12 @@ Gossip is a Python service that fetches municipal council protocols from
 in PostgreSQL. It runs as a containerized FastAPI application with an
 in-process APScheduler.
 
-The stateless post pipeline that will turn protocols into Summary and topic
-posts is under construction. The legacy one-call article, caption, image, and
-Instagram pipeline has been removed; legacy articles remain readable through
-the API.
+The stateless post pipeline is being built in stages. The editorial planning
+stage is implemented: a protocol becomes a persisted Redaktionsplan plus draft
+Summary and topic posts with deterministic source excerpts. The Summary and
+topic writers, fact-check, captions, visuals, renderer, and scheduler wiring
+are still to come. The legacy one-call article, caption, image, and Instagram
+pipeline has been removed; legacy articles remain readable through the API.
 
 ## What it does
 
@@ -19,10 +21,16 @@ the API.
 3. **Persist and serve** — stores protocols in PostgreSQL, keeps legacy
    articles readable, and exposes protocols, stats, and pipeline status through
    a REST API.
+4. **Plan** — the stateless Redaktionsplaner turns a protocol into a plan with
+   two to six Summary briefs and zero to five topic briefs, including exact
+   source anchors. Deterministic steps resolve the official Organ and retrieve
+   only the referenced protocol excerpts. The result is persisted as an
+   `editorial_plans` row and draft posts.
 
 The fetch workflow is triggered by APScheduler and can also be started manually
-through the API. The processing schedule slot is reserved but currently a no-op
-until the stateless post pipeline is wired in.
+through the API. The planning stage is callable through `PostPipeline.run`;
+scheduler wiring arrives with the later pipeline tickets. The processing
+schedule slot is reserved but currently a no-op.
 
 ## Architecture
 
@@ -39,8 +47,11 @@ currently no separate worker process, so run a single application replica.
 
 ```
 app/
-├── api/routes.py              REST endpoints (fetch, stats, status, legacy articles)
-├── core/config.py             Environment-backed settings
+├── api/routes.py              REST endpoints (fetch, stats, status, posts)
+├── core/
+│   ├── config.py              Environment-backed settings
+│   ├── post_models.py         Strict Pydantic models for pipeline I/O
+│   └── post_prompts.py        Pure prompt builders per LLM role
 ├── database.py                Async SQLAlchemy engine/session
 ├── main.py                    FastAPI entry point and lifespan
 ├── models.py                  SQLAlchemy models (protocols, articles, posts, slides, assets, plans)
@@ -48,13 +59,19 @@ app/
 ├── services/
 │   ├── protocol_fetcher.py    SessionNet scraping and PDF ingestion
 │   ├── duplicate_detector.py  Protocol similarity check
-│   └── openrouter_client.py   OpenRouter text/image client base
+│   ├── openrouter_client.py   Synchronous OpenRouter transport
+│   ├── llm_client.py          Stateless LLM port and OpenRouter adapter
+│   ├── editorial_planner.py   Redaktionsplaner role
+│   ├── organs.py              Finite Organ seed and deterministic resolver
+│   ├── protocol_excerpts.py   Deterministic source-anchor retrieval
+│   └── post_pipeline.py       Planning-stage orchestrator
 ├── utils/                     Folder and SessionNet helpers
 └── res/                       Logo and fonts for the future renderer
 
 tests/
-├── unit/                      Fast unit tests
-├── integration/               Integration test package
+├── unit/                      Fast tests with a fake LLM client
+├── integration/               Real-PostgreSQL tests for schema, API and pipeline
+├── support/                   Reusable FakeLLMClient test seam
 └── manual/                    Real-API tests (not run by default)
 
 docs/agents/                   Agent workflow configuration (Pocock skills)
@@ -147,6 +164,15 @@ Configuration is read from `.env` (see `.env.example`):
 The fetch endpoint calls the same job as the scheduler. Post generation
 endpoints will return with the stateless post pipeline; the old process, run,
 and generate-insta triggers are gone.
+
+Planned Beiträge are already persisted and readable. The planning stage stores
+the Redaktionsplan and creates the summary post (`slug="summary"`,
+`post_index=0`) and zero to five topic posts as `status="draft"`. Their
+`content_json` holds the planner briefs or brief plus the deterministic source
+excerpts; the writer/fact-check stages replace it with the validated draft.
+An unknown protocol title marks all planned posts `failed` at `organ`, and a
+missing source anchor marks only the affected Beitrag `failed` at
+`source_retrieval`.
 
 ### Post read API
 
@@ -273,6 +299,11 @@ drops that schema afterwards. Concurrent test sessions do not share tables, and
 the `public` schema is never dropped. The database user therefore needs
 `CREATE SCHEMA` and `DROP SCHEMA` privileges.
 
+Pipeline tests use `tests/support/fake_llm.py` at the injected LLM port. The
+fake scripts responses per role, records every role/prompt/schema/aspect-ratio
+call, and can raise transport, schema, or authentication errors. Default tests
+never call OpenRouter or any other network service.
+
 Local `pre-commit` hooks run `ruff check` on commit and
 `pytest -m "not manual"` before push. There is no remote CI: GitHub Actions has
 been removed. Manual tests are excluded from the default run and from hooks.
@@ -293,8 +324,8 @@ been removed. Manual tests are excluded from the default run and from hooks.
 
 ## Known limitations / next steps
 
-- Implement the stateless post pipeline (Summary and topic posts) and its API
-  endpoints; the scheduler seam is already reserved.
+- The planning stage is implemented; Summary/topic writers, fact-check,
+  repair, captions, visual prompts, rendering, and scheduler wiring remain.
 - Add Alembic migrations instead of `create_all()`.
 - Move the scheduler and long-running pipeline jobs into a dedicated worker.
 - Add authentication and rate limiting for the API and pipeline triggers.
