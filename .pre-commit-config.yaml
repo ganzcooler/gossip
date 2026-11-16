@@ -1,0 +1,24 @@
+# Local quality gates for commits and pushes.
+#
+# Install once per clone:
+#   pre-commit install --hook-type pre-commit --hook-type pre-push
+#
+# No remote hook repositories are used: ruff and pytest come from the active
+# development environment (see requirements-dev.txt).
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff check
+        entry: ruff check .
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: pytest
+        name: pytest -m "not manual"
+        entry: pytest -m "not manual"
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

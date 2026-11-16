@@ -4,7 +4,6 @@ import logging
 
 from app.database import AsyncSessionLocal
 from app.services.protocol_fetcher import fetch_protocols_job
-from app.services.protocol_processor import process_protocols_job
 
 logger = logging.getLogger(__name__)
 
@@ -25,15 +24,13 @@ async def fetch_protocols_wrapper():
 
 
 async def process_protocols_wrapper():
-    """Wrapper to provide database session for process job."""
-    async with AsyncSessionLocal() as session:
-        try:
-            await process_protocols_job(session)
-            await session.commit()
-        except Exception as e:
-            await session.rollback()
-            logger.error(f"Process protocols job failed: {e}")
-            raise
+    """Scheduled seam for the stateless post pipeline (tickets 02+).
+
+    The legacy one-call processor has been removed. Until the new
+    ``PostPipeline.run(protocol, db)`` is wired in, this job intentionally does
+    nothing but keep the processing schedule slot and its stable job id.
+    """
+    logger.info("Post pipeline is not implemented yet; skipping scheduled processing")
 
 
 def setup_scheduler():
@@ -48,6 +45,8 @@ def setup_scheduler():
     )
 
     # Job 2: Process protocols (10:30 & 17:30)
+    # SEAM: ticket 02+ replaces the no-op wrapper with the stateless post
+    # pipeline. Do not reintroduce the removed one-call processor.
     scheduler.add_job(
         process_protocols_wrapper,
         trigger=CronTrigger(hour="10,17", minute="30", timezone="Europe/Berlin"),

@@ -53,41 +53,24 @@ class TestFetchProtocolsWrapper:
 
 
 class TestProcessProtocolsWrapper:
-    """Tests for process_protocols_wrapper function."""
+    """Tests for the stateless pipeline seam in process_protocols_wrapper."""
 
     @pytest.mark.asyncio
-    async def test_process_protocols_wrapper_success(self):
-        """Test successful execution of process_protocols_wrapper."""
-        mock_session = AsyncMock()
-        mock_session.commit = AsyncMock()
-
+    async def test_process_protocols_wrapper_is_a_noop_until_pipeline_lands(self, caplog):
+        """The removed one-call processor must not be called from the scheduler."""
         with patch('app.scheduler.AsyncSessionLocal') as mock_session_local:
-            mock_session_local.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session_local.return_value.__aexit__ = AsyncMock(return_value=False)
-
-            with patch('app.scheduler.process_protocols_job', new_callable=AsyncMock) as mock_job:
+            with caplog.at_level("INFO", logger="app.scheduler"):
                 await process_protocols_wrapper()
 
-                mock_job.assert_called_once_with(mock_session)
-                mock_session.commit.assert_called_once()
+        mock_session_local.assert_not_called()
+        assert "not implemented yet" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_process_protocols_wrapper_rollback_on_error(self):
-        """Test that process_protocols_wrapper rolls back on error."""
-        mock_session = AsyncMock()
-        mock_session.rollback = AsyncMock()
+    async def test_process_protocols_wrapper_no_longer_references_old_processor(self):
+        """The old processor job must be gone from the scheduler module."""
+        import app.scheduler as scheduler_module
 
-        with patch('app.scheduler.AsyncSessionLocal') as mock_session_local:
-            mock_session_local.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session_local.return_value.__aexit__ = AsyncMock(return_value=False)
-
-            with patch('app.scheduler.process_protocols_job', new_callable=AsyncMock) as mock_job:
-                mock_job.side_effect = Exception("Test error")
-
-                with pytest.raises(Exception, match="Test error"):
-                    await process_protocols_wrapper()
-
-                mock_session.rollback.assert_called_once()
+        assert not hasattr(scheduler_module, "process_protocols_job")
 
 
 class TestSetupScheduler:

@@ -1,9 +1,14 @@
 # Gossip
 
-Gossip is a Python pipeline that turns municipal council protocols from
-[SessionNet](https://sessionnet.owl-it.de/) into local-news articles, images,
-and Instagram assets. It runs as a containerized FastAPI application with
-PostgreSQL and an in-process APScheduler.
+Gossip is a Python service that fetches municipal council protocols from
+[SessionNet](https://sessionnet.owl-it.de/), deduplicates them, and stores them
+in PostgreSQL. It runs as a containerized FastAPI application with an
+in-process APScheduler.
+
+The stateless post pipeline that will turn protocols into Summary and topic
+posts is under construction. The legacy one-call article, caption, image, and
+Instagram pipeline has been removed; legacy articles remain readable through
+the API.
 
 ## What it does
 
@@ -11,36 +16,20 @@ PostgreSQL and an in-process APScheduler.
    extracts their text with PyMuPDF.
 2. **Deduplicate** — compares new protocols against the previous 90 days using
    a 95% text-similarity threshold.
-3. **Generate articles** — sends protocol text to DeepSeek V4.1 Flash via
-   OpenRouter and validates the response against a structured article schema.
-4. **Generate images** — creates an image prompt, verifies/rewrites it for a
-   realistic style, and generates the image with Gemini 3.1 Flash Image
-   (Nano Banana 2) via OpenRouter.
-5. **Render Instagram assets** — generates captions and 4:5 images with the
-   headline, logo, and protocol tag overlaid.
-6. **Persist and serve** — stores protocols/articles in PostgreSQL, writes
-   images and HTML to the articles directory, and exposes the results through
+3. **Persist and serve** — stores protocols in PostgreSQL, keeps legacy
+   articles readable, and exposes protocols, stats, and pipeline status through
    a REST API.
 
-The workflow is triggered by APScheduler and can also be started manually
-through the API.
+The fetch workflow is triggered by APScheduler and can also be started manually
+through the API. The processing schedule slot is reserved but currently a no-op
+until the stateless post pipeline is wired in.
 
 ## Architecture
 
 ```
-SessionNet ──▶ Protocol fetcher ──▶ PostgreSQL
-                                      │
-                                      ▼
-                              Article generator ──▶ OpenRouter
-                                      │
-                                      ▼
-                              Image generator ─────▶ OpenRouter
-                                      │
-                                      ▼
-                              Instagram renderer ──▶ articles/ + DB
-                                      │
-                                      ▼
-                                   FastAPI
+SessionNet ──▶ Protocol fetcher ──▶ PostgreSQL ──▶ FastAPI
+                     │
+                     └──────────▶ Duplicate detector
 ```
 
 The FastAPI process starts the scheduler during application startup. There is
@@ -50,27 +39,18 @@ currently no separate worker process, so run a single application replica.
 
 ```
 app/
-├── api/routes.py              REST endpoints and manual pipeline triggers
-├── core/
-│   ├── config.py              Environment-backed settings
-│   ├── models.py              Pydantic response models
-│   ├── prompts.py             LLM prompts
-│   └── tags.py                Protocol-to-tag mapping
+├── api/routes.py              REST endpoints (fetch, stats, status, legacy articles)
+├── core/config.py             Environment-backed settings
 ├── database.py                Async SQLAlchemy engine/session
 ├── main.py                    FastAPI entry point and lifespan
 ├── models.py                  SQLAlchemy models (Protocol, Article)
-├── scheduler.py               APScheduler cron jobs
+├── scheduler.py               APScheduler cron jobs and post-pipeline seam
 ├── services/
 │   ├── protocol_fetcher.py    SessionNet scraping and PDF ingestion
-│   ├── protocol_processor.py  Orchestrates article/image/Instagram creation
-│   ├── article_generator.py   OpenRouter article generation
-│   ├── image_generator.py     OpenRouter image generation
-│   ├── caption_generator.py   Instagram captions
-│   ├── insta_generator.py     Instagram image rendering
-│   ├── insta_job.py           Batch Instagram generation
-│   └── duplicate_detector.py  Protocol similarity check
+│   ├── duplicate_detector.py  Protocol similarity check
+│   └── openrouter_client.py   OpenRouter text/image client base
 ├── utils/                     Folder and SessionNet helpers
-└── res/                       Logo and fonts used by the renderer
+└── res/                       Logo and fonts for the future renderer
 
 tests/
 ├── unit/                      Fast unit tests
@@ -100,8 +80,8 @@ docker compose up -d --build
 ```
 
 The application listens on port 8000 inside the Compose network and is routed
-by Traefik at the configured host. The host directory for article and log
-output is set with `GOSSIP_DATA_DIR` in `.env`; the default is `./data`.
+by Traefik at the configured host. The host directory for generated images and
+log output is set with `GOSSIP_DATA_DIR` in `.env`; the default is `./data`.
 For the existing deployment, set it to `/home/openclaw/data/gossip`.
 
 ## Local development
@@ -143,8 +123,8 @@ Configuration is read from `.env` (see `.env.example`):
 | `SESSIONNET_BASE_URL` | SessionNet base URL |
 | `TRAEFIK_HOST` | Public hostname used by the deployment |
 | `LOG_LEVEL` | Python log level (`INFO` by default) |
-| `GOSSIP_DATA_DIR` | Host directory for article and log output (Compose only; default `./data`) |
-| `ARTICLES_DIR` | Output directory for articles and generated images (container path) |
+| `GOSSIP_DATA_DIR` | Host directory for generated images and logs (Compose only; default `./data`) |
+| `ARTICLES_DIR` | Output directory for generated images (container path) |
 | `LOGS_DIR` | Log output directory (container path) |
 
 ## API
@@ -155,26 +135,25 @@ Configuration is read from `.env` (see `.env.example`):
 | `GET` | `/api/health` | Health check |
 | `GET` | `/api/protocols` | List protocols (`skip`, `limit`, `processed`) |
 | `GET` | `/api/protocols/{id}` | Protocol detail, including extracted PDF text |
-| `GET` | `/api/protocols/{id}/articles` | Articles for a protocol |
+| `GET` | `/api/protocols/{id}/articles` | Legacy articles for a protocol |
 | `GET` | `/api/stats` | Protocol/article counts |
 | `POST` | `/api/pipeline/fetch` | Fetch new protocols now |
-| `POST` | `/api/pipeline/process` | Process unprocessed protocols now |
-| `POST` | `/api/pipeline/run` | Fetch and process in one call |
-| `POST` | `/api/pipeline/generate-insta` | Generate Instagram assets (optional `protocol_id`) |
 | `GET` | `/api/pipeline/status` | Pipeline backlog and counts |
 | `GET` | `/docs` | Swagger UI |
 
-The pipeline endpoints call the same jobs as the scheduler and can take a long
-time when OpenRouter is involved. They are currently unauthenticated; restrict
-access at the reverse proxy or add authentication before exposing the service
-publicly.
+The fetch endpoint calls the same job as the scheduler. Post generation
+endpoints will return with the stateless post pipeline; the old process, run,
+and generate-insta triggers are gone.
+
+The fetch endpoint is currently unauthenticated; restrict access at the
+reverse proxy or add authentication before exposing the service publicly.
 
 ## Scheduled jobs
 
 | Job | Schedule (Europe/Berlin) | Description |
 | --- | --- | --- |
 | `fetch_protocols` | 10:00 and 17:00 | Fetch new protocols from SessionNet |
-| `process_protocols` | 10:30 and 17:30 | Process unprocessed protocols |
+| `process_protocols` | 10:30 and 17:30 | Reserved post-pipeline slot; currently a no-op |
 
 Because the scheduler runs inside the web process, do not scale the `app`
 service to multiple replicas without moving the scheduler to a dedicated
@@ -183,17 +162,22 @@ worker first.
 ## Tests and linting
 
 ```bash
+pip install -r requirements-dev.txt
+pre-commit install --hook-type pre-commit --hook-type pre-push
+
 pytest -m "not manual"   # standard test suite
-pytest -m manual         # real OpenRouter calls; requires OPENROUTER_API_KEY
+pytest -m manual         # opt-in real-API tests (none yet)
 ruff check .
+pre-commit run --all-files
 ```
 
-`pytest` runs the unit suite by default. Manual tests are marked and should
-only be run when you intend to spend API credits.
+Local `pre-commit` hooks run `ruff check` on commit and
+`pytest -m "not manual"` before push. There is no remote CI: GitHub Actions has
+been removed. Manual tests are excluded from the default run and from hooks.
 
 ## Operational notes
 
-- The application writes generated articles and images to `ARTICLES_DIR` and
+- The application prepares `ARTICLES_DIR` for generated images and writes
   monthly logs to `LOGS_DIR`. Both live under `GOSSIP_DATA_DIR` and are
   bind-mounted in `docker-compose.yaml`.
 - Docker JSON logs are capped at 10 MB across 3 files; the monthly file logs
@@ -207,9 +191,10 @@ only be run when you intend to spend API credits.
 
 ## Known limitations / next steps
 
+- Implement the stateless post pipeline (Summary and topic posts) and its API
+  endpoints; the scheduler seam is already reserved.
 - Add Alembic migrations instead of `create_all()`.
 - Move the scheduler and long-running pipeline jobs into a dedicated worker.
 - Add authentication and rate limiting for the API and pipeline triggers.
-- Store article content as structured blocks instead of an HTML string.
 - Replace the O(n²) full-text duplicate check with a hash or MinHash index.
 - Add structured logging and job-level locking to prevent overlapping runs.
