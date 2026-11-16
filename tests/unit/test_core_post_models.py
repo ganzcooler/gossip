@@ -3,7 +3,35 @@
 import pytest
 from pydantic import ValidationError
 
-from app.core.post_models import EditorialPlan, SourceExcerpt, SummaryBrief, TopicBrief
+from app.core.post_models import (
+    CaptionDraft,
+    EditorialPlan,
+    FactCheckResult,
+    SourceExcerpt,
+    SummaryBrief,
+    SummaryDraft,
+    SummaryPoint,
+    TopicBrief,
+)
+
+
+def _summary_point(**overrides):
+    values = {
+        "kicker": "Haushalt",
+        "heading": "Der Rat hat den Haushalt beschlossen",
+        "body": "x" * 120,
+    }
+    values.update(overrides)
+    return SummaryPoint(**values)
+
+
+def _summary_draft(**overrides):
+    values = {
+        "cover_title": "Was der Rat in Rosdorf entschieden hat",
+        "points": [_summary_point(), _summary_point(kicker="Radweg")],
+    }
+    values.update(overrides)
+    return SummaryDraft(**values)
 
 
 def _summary_brief(**overrides):
@@ -106,3 +134,89 @@ def test_source_excerpt_requires_anchor_and_excerpt():
         SourceExcerpt(anchor="", excerpt="Text")
     with pytest.raises(ValidationError):
         SourceExcerpt(anchor="TOP 5", excerpt="   ")
+
+
+@pytest.mark.parametrize("length", [120, 320])
+def test_summary_point_body_accepts_the_inclusive_bounds(length):
+    point = _summary_point(body="x" * length)
+
+    assert len(point.body) == length
+
+
+@pytest.mark.parametrize("length", [119, 321])
+def test_summary_point_body_rejects_out_of_bounds_lengths(length):
+    with pytest.raises(ValidationError, match="120"):
+        _summary_point(body="x" * length)
+
+
+def test_summary_point_strips_body_and_rejects_a_multi_word_kicker():
+    point = _summary_point(body="  " + "x" * 120 + "  ")
+
+    assert point.body == "x" * 120
+    with pytest.raises(ValidationError, match="one word"):
+        _summary_point(kicker="Haus halt")
+    with pytest.raises(ValidationError, match="one word"):
+        _summary_point(kicker="   ")
+    with pytest.raises(ValidationError):
+        _summary_point(heading="   ")
+
+
+@pytest.mark.parametrize("length", [20, 100])
+def test_summary_cover_title_accepts_the_inclusive_bounds(length):
+    draft = _summary_draft(cover_title="T" * length)
+
+    assert len(draft.cover_title) == length
+
+
+@pytest.mark.parametrize("length", [19, 101])
+def test_summary_cover_title_rejects_out_of_bounds_lengths(length):
+    with pytest.raises(ValidationError, match="20"):
+        _summary_draft(cover_title="T" * length)
+
+
+@pytest.mark.parametrize("count", [2, 6])
+def test_summary_draft_accepts_two_to_six_points(count):
+    draft = _summary_draft(points=[_summary_point() for _ in range(count)])
+
+    assert len(draft.points) == count
+
+
+@pytest.mark.parametrize("count", [1, 7])
+def test_summary_draft_rejects_out_of_bounds_point_counts(count):
+    with pytest.raises(ValidationError, match="points"):
+        _summary_draft(points=[_summary_point() for _ in range(count)])
+
+
+def test_summary_models_forbid_unknown_fields():
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        _summary_point(unexpected="value")
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        _summary_draft(extra_field=True)
+
+
+def test_empty_fact_check_result_means_pass():
+    result = FactCheckResult(issues=[])
+
+    assert result.issues == []
+    assert result.passed is True
+    assert FactCheckResult(issues=["Zahl 12 ist nicht belegt."]).passed is False
+
+
+def test_fact_check_issues_must_be_non_empty_and_actionable_strings():
+    assert FactCheckResult(issues=["  Die Zahl 12 fehlt in den Quellen.  "]).issues == [
+        "Die Zahl 12 fehlt in den Quellen."
+    ]
+    with pytest.raises(ValidationError, match="actionable"):
+        FactCheckResult(issues=["   "])
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        FactCheckResult(issues=[], ok=True)
+
+
+def test_caption_draft_strips_and_requires_body_text():
+    draft = CaptionDraft(body="  Der Rat hat entschieden.  ")
+
+    assert draft.body == "Der Rat hat entschieden."
+    with pytest.raises(ValidationError):
+        CaptionDraft(body="   ")
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        CaptionDraft(body="Text", prefix="Illustration")

@@ -6,11 +6,14 @@ in PostgreSQL. It runs as a containerized FastAPI application with an
 in-process APScheduler.
 
 The stateless post pipeline is being built in stages. The editorial planning
-stage is implemented: a protocol becomes a persisted Redaktionsplan plus draft
-Summary and topic posts with deterministic source excerpts. The Summary and
-topic writers, fact-check, captions, visuals, renderer, and scheduler wiring
-are still to come. The legacy one-call article, caption, image, and Instagram
-pipeline has been removed; legacy articles remain readable through the API.
+stage and the Summary content path are implemented: a protocol becomes a
+persisted Redaktionsplan plus draft Summary and topic posts with deterministic
+source excerpts, and the Summary post gets a validated writer draft, a hard
+fact-check gate with one repair, deterministic Summary cards, a composed
+caption and Alt-Texte. Topic writers, visual prompts, rendering, and scheduler
+wiring are still to come. The legacy one-call article, caption, image, and
+Instagram pipeline has been removed; legacy articles remain readable through
+the API.
 
 ## What it does
 
@@ -26,11 +29,17 @@ pipeline has been removed; legacy articles remain readable through the API.
    source anchors. Deterministic steps resolve the official Organ and retrieve
    only the referenced protocol excerpts. The result is persisted as an
    `editorial_plans` row and draft posts.
+5. **Summarise** — the Summary-Writer turns the Summary briefs and excerpts
+   into a cover title and two to six Summary-Punkte. The Faktenprüfung is a
+   hard gate with one repair attempt, and the 9:16 Summary cards are composed
+   deterministically at one post-wide body size. The Summary post also gets a
+   composed caption and deterministic Alt-Texte; it stays `draft` until the
+   Visual-Prompts and renderer tickets run.
 
 The fetch workflow is triggered by APScheduler and can also be started manually
-through the API. The planning stage is callable through `PostPipeline.run`;
-scheduler wiring arrives with the later pipeline tickets. The processing
-schedule slot is reserved but currently a no-op.
+through the API. The planning and Summary content stages are callable through
+`PostPipeline.run`; scheduler wiring arrives with the later pipeline tickets.
+The processing schedule slot is reserved but currently a no-op.
 
 ## Architecture
 
@@ -62,11 +71,16 @@ app/
 │   ├── openrouter_client.py   Synchronous OpenRouter transport
 │   ├── llm_client.py          Stateless LLM port and OpenRouter adapter
 │   ├── editorial_planner.py   Redaktionsplaner role
+│   ├── summary_writer.py      Summary-Writer role with one validation retry
+│   ├── fact_checker.py        Shared fact-check + one-repair hard gate
+│   ├── slide_composer.py      Deterministic Summary cover/card composition
+│   ├── caption_writer.py      Caption body role and deterministic composition
+│   ├── text_layout.py         Shared font loading, wrapping and fit primitives
 │   ├── organs.py              Finite Organ seed and deterministic resolver
 │   ├── protocol_excerpts.py   Deterministic source-anchor retrieval
-│   └── post_pipeline.py       Planning-stage orchestrator
+│   └── post_pipeline.py       Planning and Summary-content orchestrator
 ├── utils/                     Folder and SessionNet helpers
-└── res/                       Logo and fonts for the future renderer
+└── res/                       Logo and runtime fonts for the renderer
 
 tests/
 ├── unit/                      Fast tests with a fake LLM client
@@ -167,12 +181,17 @@ and generate-insta triggers are gone.
 
 Planned Beiträge are already persisted and readable. The planning stage stores
 the Redaktionsplan and creates the summary post (`slug="summary"`,
-`post_index=0`) and zero to five topic posts as `status="draft"`. Their
-`content_json` holds the planner briefs or brief plus the deterministic source
-excerpts; the writer/fact-check stages replace it with the validated draft.
+`post_index=0`) and zero to five topic posts as `status="draft"`. The Summary
+content path then replaces the summary's `content_json` with the validated
+draft plus source excerpts and fills `content_markdown`, `slide_plan_json`,
+`caption`, `alt_text_json`, `fact_check_json` and the one-based cover/card
+`post_slides`. The Summary stays `draft` until the visual pipeline can render
+it; topic posts remain planned drafts until the topic writer ticket.
 An unknown protocol title marks all planned posts `failed` at `organ`, and a
 missing source anchor marks only the affected Beitrag `failed` at
-`source_retrieval`.
+`source_retrieval`. A Summary failure at `writer`, `fact_check`, `repair`,
+`caption` or `slide_composer` does not touch the topic drafts, and a failed
+Summary is not retried automatically on the next run.
 
 ### Post read API
 
@@ -215,7 +234,7 @@ ordered `slides` and `assets`:
   "slide_plan_json": {"slides": []},
   "caption": "Illustration: KI-generiert. ...",
   "alt_text_json": ["..."],
-  "fact_check_json": {"passed": true, "issues": []},
+  "fact_check_json": {"passed": true, "issues": [], "repaired": false},
   "status": "ready",
   "failed_step": null,
   "error": null,
@@ -324,8 +343,11 @@ been removed. Manual tests are excluded from the default run and from hooks.
 
 ## Known limitations / next steps
 
-- The planning stage is implemented; Summary/topic writers, fact-check,
-  repair, captions, visual prompts, rendering, and scheduler wiring remain.
+- The planning stage and the Summary content path are implemented; the topic
+  writer, visual prompts, rendering, caption files, and scheduler wiring
+  remain.
+- Summary posts intentionally stay `draft` until visuals can be rendered; the
+  caption is stored on the post but no caption file is written yet.
 - Add Alembic migrations instead of `create_all()`.
 - Move the scheduler and long-running pipeline jobs into a dedicated worker.
 - Add authentication and rate limiting for the API and pipeline triggers.

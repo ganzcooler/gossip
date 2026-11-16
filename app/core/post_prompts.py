@@ -2,15 +2,48 @@
 
 No I/O happens here; each builder returns one deterministic string. The
 provider-facing JSON schema is supplied separately through the LLM port.
+Every builder receives only its own step inputs: the planner gets the full
+protocol, writers and fact-check get excerpts, and the caption gets metadata.
 """
 
+from collections.abc import Sequence
 from datetime import date, datetime
+
+from pydantic import BaseModel
+
+from app.core.post_models import SourceExcerpt, SummaryBrief
 
 
 def _format_date(value: date | datetime | str) -> str:
     if isinstance(value, (date, datetime)):
         return value.isoformat()[:10]
     return str(value)
+
+
+def _format_german_date(value: date | datetime | str) -> str:
+    if isinstance(value, (date, datetime)):
+        return value.strftime("%d.%m.%Y")
+    return str(value)
+
+
+def _json(value: BaseModel) -> str:
+    return value.model_dump_json(indent=2)
+
+
+def _excerpt_block(excerpts: Sequence[SourceExcerpt]) -> str:
+    return "\n\n".join(
+        f"[{index}] Anker: {excerpt.anchor}\nAuszug: {excerpt.excerpt}"
+        for index, excerpt in enumerate(excerpts, start=1)
+    )
+
+
+def _brief_block(briefs: Sequence[SummaryBrief]) -> str:
+    return "\n\n".join(
+        f"[{index}] Punkt: {brief.point}\n"
+        f"Relevanz: {brief.relevance}\n"
+        f"Quellenanker: {' | '.join(brief.source_anchors)}"
+        for index, brief in enumerate(briefs, start=1)
+    )
 
 
 def build_planner_prompt(
@@ -70,4 +103,192 @@ Themenbeiträge gehen nur bei ausreichend Substanz in die Tiefe.
 Antworte ausschließlich mit einem einzigen JSON-Objekt, das dem vorgegebenen \
 Schema entspricht. Kein Markdown, keine Erklärungen und kein Text außerhalb \
 des JSON.
+"""
+
+
+def build_summary_writer_prompt(
+    *,
+    briefs: Sequence[SummaryBrief],
+    excerpts: Sequence[SourceExcerpt],
+    feedback: str | None = None,
+) -> str:
+    """Build the Summary-Writer prompt from Summary-Briefs and excerpts only."""
+    feedback_block = ""
+    if feedback:
+        feedback_block = f"""
+## Korrekturhinweis
+
+Dein vorheriger Entwurf wurde abgelehnt:
+{feedback}
+
+Liefere einen vollständig neuen, gültigen Entwurf. Behalte nur die Fakten aus \
+den Briefs und Quellenauszügen bei.
+"""
+
+    return f"""Du bist der Summary-Writer von Gossip Rosdorf. Du schreibst den \
+Summary-Beitrag für eine Sitzung: einen Cover-Titel und zwei bis sechs \
+Summary-Punkte.
+
+## Summary-Briefs
+
+{_brief_block(briefs)}
+
+## Quellenauszüge
+
+{_excerpt_block(excerpts)}
+
+## Aufgabe
+
+- cover_title: ein konkreter, lokaler Titel mit 20 bis 100 Zeichen inklusive \
+Leerzeichen. Er ist die Überschrift des Covers.
+- points: 2 bis 6 Summary-Punkte in der Reihenfolge der Briefs. Der wichtigste \
+Punkt kommt zuerst.
+- Jeder Punkt hat:
+  - kicker: ein Ein-Wort-Kicker, zum Beispiel Haushalt oder Radweg.
+  - heading: eine kurze, konkrete Überschrift.
+  - body: 120 bis 320 Zeichen inklusive Leerzeichen, ein zusammenhängender \
+Absatz. Keine Aufzählung, keine Überschrift im Body.
+
+## Redaktionelle Regeln
+
+- Schreibe auf Deutsch, nah an den Menschen in Rosdorf: sachlich, lokal, \
+informativ und leicht trocken.
+- Keine Personennamen. Rollen, Orte, Zahlen und Daten sind erlaubt und \
+erwünscht.
+- Kein Parteiframing, keine politische Wertung, keine Ironie, keine \
+Übertreibung, kein Clickbait und keine Emojis.
+- Erfinde keine Fakten, Zahlen oder Beschlüsse. Stütze dich ausschließlich auf \
+die Briefs und die Quellenauszüge.
+- Formuliere in vollständigen Sätzen. Keine Abkürzungen erfinden und keine \
+wörtlichen Zitate aus den Auszügen kopieren.
+- Der Body wird nie gekürzt oder umgeschrieben; halte deshalb die 120 bis 320 \
+Zeichen sicher ein.
+{feedback_block}
+## Ausgabeformat
+
+Antworte ausschließlich mit einem einzigen JSON-Objekt, das dem vorgegebenen \
+Schema entspricht. Kein Markdown, keine Erklärungen und kein Text außerhalb \
+des JSON.
+"""
+
+
+def build_fact_check_prompt(
+    *, draft: BaseModel, excerpts: Sequence[SourceExcerpt]
+) -> str:
+    """Build the Faktenprüfung prompt from a draft and its excerpts only."""
+    return f"""Du bist die Faktenprüfung von Gossip Rosdorf. Du prüfst einen \
+Entwurf ausschließlich gegen die mitgelieferten Quellenauszüge.
+
+## Entwurf
+
+```json
+{_json(draft)}
+```
+
+## Quellenauszüge
+
+{_excerpt_block(excerpts)}
+
+## Aufgabe
+
+Prüfe jede Aussage im Entwurf: Namen, Rollen, Orte, Zahlen, Daten, Beschlüsse \
+und Wirkungen. Melde nur konkrete Probleme, die sich aus den Quellenauszügen \
+belegen lassen:
+
+- nicht belegte oder falsche Aussagen,
+- unzulässige Personennamen, Parteiframing, Ironie, Übertreibung, Clickbait \
+oder Emojis,
+- Struktur- oder Budgetverstöße, die im Entwurf sichtbar sind.
+
+Jedes Issue ist ein vollständiger, umsetzbarer Korrekturhinweis. Ist alles \
+belegt und regelkonform, liefere eine leere Liste. Mache keine allgemeinen \
+Anmerkungen und keine Empfehlungen ohne konkreten Fehler.
+
+## Ausgabeformat
+
+Antworte ausschließlich mit einem einzigen JSON-Objekt mit dem Feld issues. \
+Kein Markdown, keine Erklärungen und kein Text außerhalb des JSON.
+"""
+
+
+def build_repair_prompt(
+    *,
+    draft: BaseModel,
+    issues: Sequence[str],
+    excerpts: Sequence[SourceExcerpt],
+) -> str:
+    """Build the one repair prompt from the draft, issues and excerpts only."""
+    issue_block = "\n".join(f"- {issue}" for issue in issues)
+    return f"""Du bist die Reparatur von Gossip Rosdorf. Korrigiere den Entwurf \
+minimal und ausschließlich anhand der gemeldeten Probleme und Quellenauszüge.
+
+## Entwurf
+
+```json
+{_json(draft)}
+```
+
+## Gemeldete Probleme
+
+{issue_block}
+
+## Quellenauszüge
+
+{_excerpt_block(excerpts)}
+
+## Regeln
+
+- Behebe jedes gemeldete Problem. Erfinde keine neuen Fakten, Zahlen oder \
+Beschlüsse.
+- Behalte die Struktur und alle nicht betroffenen Formulierungen bei.
+- Entferne Personennamen, Parteiframing, Ironie, Übertreibung, Clickbait und \
+Emojis.
+- Kürze oder erweitere den Text nur so weit, wie es die Probleme und das \
+Schema verlangen.
+- Gib den vollständigen korrigierten Entwurf zurück, nicht nur die Änderungen.
+
+## Ausgabeformat
+
+Antworte ausschließlich mit einem einzigen JSON-Objekt, das dem vorgegebenen \
+Schema entspricht. Kein Markdown, keine Erklärungen und kein Text außerhalb \
+des JSON.
+"""
+
+
+def build_caption_prompt(
+    *,
+    draft: BaseModel,
+    organ: str,
+    session_date: date | datetime | str,
+) -> str:
+    """Build the caption-body prompt from the draft and metadata only."""
+    return f"""Du bist der Caption-Writer von Gossip Rosdorf. Schreibe den \
+Fließtext der Instagram-Caption für einen bereits fertigen Beitrag.
+
+## Metadaten
+
+- Organ: {organ}
+- Sitzungsdatum: {_format_german_date(session_date)}
+
+## Entwurf
+
+```json
+{_json(draft)}
+```
+
+## Aufgabe
+
+- Schreibe ein bis drei kurze Sätze als Caption-Body: Was ist passiert und \
+warum ist es für Rosdorf wichtig?
+- Greife nur Fakten aus dem Entwurf auf. Erfinde nichts dazu.
+- Keine Personennamen, kein Parteiframing, keine politische Wertung, keine \
+Ironie, keine Übertreibung, kein Clickbait und keine Emojis.
+- Kein Quellenlink, kein Quellenhinweis und kein KI-Hinweis; diese Teile \
+werden deterministisch ergänzt.
+- Keine Hashtags.
+
+## Ausgabeformat
+
+Antworte ausschließlich mit einem einzigen JSON-Objekt mit dem Feld body. Kein \
+Markdown, keine Erklärungen und kein Text außerhalb des JSON.
 """
