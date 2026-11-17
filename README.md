@@ -457,7 +457,7 @@ pip install -r requirements-dev.txt
 pre-commit install --hook-type pre-commit --hook-type pre-push
 
 pytest -m "not manual"   # standard test suite
-pytest -m manual         # opt-in real-API tests (none yet)
+pytest -m manual         # paid real-API end-to-end smoke test
 ruff check .
 pre-commit run --all-files
 ```
@@ -475,6 +475,41 @@ Each test creates its own randomly named schema, runs `create_all()` there, and
 drops that schema afterwards. Concurrent test sessions do not share tables, and
 the `public` schema is never dropped. The database user therefore needs
 `CREATE SCHEMA` and `DROP SCHEMA` privileges.
+
+### Manual end-to-end smoke test
+
+`tests/manual/test_e2e_smoke.py` is the only opt-in real-API test. It is marked
+`manual`, so `pytest -m "not manual"` and the pre-push hook deselect it. The
+test proves the complete pipeline against real systems: a real PostgreSQL
+database through `TEST_DATABASE_URL`, real OpenRouter text and image calls
+through `OpenRouterLLMClient`, the real FastAPI app through `TestClient`, and
+a temporary output directory. It uses no fake LLM and no patched network.
+
+Requirements:
+
+- `TEST_DATABASE_URL`: a disposable PostgreSQL database with a
+  `postgresql+asyncpg://` URL. Never point this at production. The test creates
+  a unique throwaway schema and refuses to start if the URL is the application
+  `DATABASE_URL`.
+- `OPENROUTER_API_KEY`: a funded key. The run makes **paid** text and image
+  requests and therefore needs network access and real API credit.
+- The configured text and image models must be available; see
+  `OPENROUTER_TEXT_MODEL` and `OPENROUTER_IMAGE_MODEL`.
+
+```bash
+TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/gossip_test \
+OPENROUTER_API_KEY=... \
+  pytest -m manual tests/manual/test_e2e_smoke.py
+```
+
+The test inserts a sanitized `Gemeinderat` fixture protocol (fixed date, no
+real personal data), starts the pipeline with
+`POST /api/protocols/{id}/reprocess`, and asserts the Summary and topic posts,
+slides, assets, Alt-Texte, image dimensions and names, captions, and the clean
+output folder. Output is written under pytest's temporary directory. In a
+`finally` block the test deletes the fixture rows, drops the throwaway schema
+and removes the generated files. It skips cleanly when `OPENROUTER_API_KEY` or
+`TEST_DATABASE_URL` is missing, and it is never part of the default suite.
 
 Pipeline tests use `tests/support/fake_llm.py` at the injected LLM port. The
 fake scripts responses per role, records every role/prompt/schema/aspect-ratio
@@ -506,7 +541,8 @@ been removed. Manual tests are excluded from the default run and from hooks.
 
 - The planning stage, both content paths, both visual outputs, per-post retry
   and protocol reprocess are implemented; the scheduled processing job is
-  wired. A manual real-API end-to-end test is not implemented yet.
+  wired. The manual real-API end-to-end smoke test is implemented but only
+  runs when explicitly requested with real credentials.
 - Summary posts are family-pure blue 9:16 story PNGs; topic posts are
   family-pure orange 4:5 carousels. Both write only PNGs plus one caption file
   per Beitrag.
