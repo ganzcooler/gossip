@@ -1,9 +1,10 @@
 """Stateless post-pipeline orchestrator: plan, write and render Beiträge.
 
-The pipeline plans first, persists the Redaktionsplan and one summary plus zero
-to five topic posts, then resolves the finite Organ and retrieves the source
-excerpts. The Summary branch writes its content once, then runs visual prompts,
-cover image generation, the 9:16 renderer and the caption file. Each topic
+The pipeline plans first, persists the Redaktionsplan and one Summary-Beitrag
+plus zero to five Themenbeiträge, then resolves the finite Organ and retrieves
+the source excerpts. The Summary branch writes its content once, then runs
+visual prompts, cover image generation, the 9:16 renderer and the caption
+file. Each topic
 branch writes its own article, then runs topic visual prompts, cover/pair/single
 image generation, the 4:5 renderer and the caption file. Manual retry and
 protocol reprocess reuse cached upstream artifacts and enforce the terminal
@@ -133,7 +134,7 @@ class PostPipeline:
 
         # A ready plan is expensive to rebuild. Reuse it when its posts are
         # present and let _process_posts continue any still-draft branches;
-        # ticket 08 owns the explicit reprocess/replace semantics.
+        # explicit reprocess and replace semantics live in the retry methods.
         if plan_row is not None and plan_row.status == "ready" and plan_row.plan_json:
             plan = self._load_plan(plan_row)
             posts = await self._load_posts(db, protocol.id)
@@ -150,12 +151,14 @@ class PostPipeline:
             await db.commit()
             return self._result(protocol, "failed", [])
 
-        await self._persist_plan(plan_row, protocol, plan, db)
+        # _plan_protocol already added/filled the row; flush plan + posts
+        # together so the API never sees a plan without its planned posts.
+        await db.flush()
         posts = await self._replace_posts(db, protocol, plan)
         return await self._process_posts(protocol, db, plan, posts)
 
     # ------------------------------------------------------------------
-    # Manual retry and reprocess state machine (ticket 08).
+    # Manual retry and reprocess state machine.
     # ------------------------------------------------------------------
 
     async def retry_post(
@@ -304,7 +307,7 @@ class PostPipeline:
         try:
             organ = resolve_organ(protocol.title)
         except UnknownOrganError as exc:
-            await self._fail_post_with_step(db, post, "organ", exc)
+            await self._fail_post(db, post, "organ", exc)
             return None
 
         for _ in range(2):
@@ -334,7 +337,7 @@ class PostPipeline:
         else:
             brief = self._brief_for_post(plan, post)
             if brief is None:
-                await self._fail_post_with_step(
+                await self._fail_post(
                     db,
                     post,
                     "planner",
@@ -352,15 +355,12 @@ class PostPipeline:
     async def _earliest_missing_stage(
         self, db: AsyncSession, post: Post
     ) -> str:
-        content = post.content_json or {}
-        excerpts = content.get("excerpts") if isinstance(content, dict) else None
-        if not isinstance(excerpts, list) or not excerpts:
+        if not self._excerpts_cached(post):
             return "source_retrieval"
 
-        draft = (
-            self._stored_summary_draft(post)
-            if post.post_type == "summary"
-            else self._stored_topic_draft(post)
+        draft = self._stored_draft(
+            post,
+            SummaryDraft if post.post_type == "summary" else TopicDraft,
         )
         if draft is None:
             return "writer"
@@ -399,20 +399,21 @@ class PostPipeline:
             )
             return
 
-        draft = self._stored_summary_draft(post)
+        draft = self._stored_draft(post, SummaryDraft)
         if draft is None:
-            await self._fail_summary_post(
+            await self._fail_post(
                 db,
                 post,
                 "writer",
                 RuntimeError("No cached Summary draft for a visual retry"),
             )
             return
+        self._sync_post_title(post, draft)
         composition = await self._stored_summary_composition(
             db, post, draft
         )
         if composition is None:
-            await self._fail_summary_post(
+            await self._fail_post(
                 db,
                 post,
                 "slide_composer",
@@ -441,7 +442,7 @@ class PostPipeline:
     ) -> None:
         brief = self._brief_for_post(plan, post)
         if brief is None:
-            await self._fail_topic_post(
+            await self._fail_post(
                 db,
                 post,
                 "planner",
@@ -461,20 +462,21 @@ class PostPipeline:
             )
             return
 
-        draft = self._stored_topic_draft(post)
+        draft = self._stored_draft(post, TopicDraft)
         if draft is None:
-            await self._fail_topic_post(
+            await self._fail_post(
                 db,
                 post,
                 "writer",
                 RuntimeError("No cached topic draft for a visual retry"),
             )
             return
+        self._sync_post_title(post, draft)
         composition = await self._stored_topic_composition(
             db, post, draft
         )
         if composition is None:
-            await self._fail_topic_post(
+            await self._fail_post(
                 db,
                 post,
                 "slide_composer",
@@ -491,14 +493,6 @@ class PostPipeline:
             composition,
             reuse_prompts=stage in {"image_generation", "render"},
         )
-
-    async def _fail_post_with_step(
-        self, db: AsyncSession, post: Post, step: str, exc: Exception
-    ) -> None:
-        if post.post_type == "summary":
-            await self._fail_summary_post(db, post, step, exc)
-        else:
-            await self._fail_topic_post(db, post, step, exc)
 
     def _keep_post_inputs(self, post: Post, plan: EditorialPlan) -> None:
         content = post.content_json or {}
@@ -559,7 +553,7 @@ class PostPipeline:
         )
 
     # ------------------------------------------------------------------
-    # Planning and persistence helpers, reused by later tickets.
+    # Planning and persistence helpers.
     # ------------------------------------------------------------------
 
     async def _load_plan_row(
@@ -611,17 +605,6 @@ class PostPipeline:
         plan_row.error = None
         plan_row.plan_json = plan.model_dump(mode="json")
         return plan
-
-    async def _persist_plan(
-        self,
-        plan_row: EditorialPlanRow | None,
-        protocol: Protocol,
-        plan: EditorialPlan,
-        db: AsyncSession,
-    ) -> None:
-        # _plan_protocol already added/filled the row; commit plan + posts
-        # together so the API never sees a plan without its planned posts.
-        await db.flush()
 
     async def _replace_posts(
         self, db: AsyncSession, protocol: Protocol, plan: EditorialPlan
@@ -698,7 +681,7 @@ class PostPipeline:
         if (
             summary_post is not None
             and not self._is_terminal(summary_post)
-            and not self._summary_excerpts_cached(summary_post)
+            and not self._excerpts_cached(summary_post)
         ):
             self._retrieve_summary_excerpts(protocol, plan, summary_post)
 
@@ -710,13 +693,13 @@ class PostPipeline:
             if (
                 post is None
                 or self._is_terminal(post)
-                or self._topic_excerpts_cached(post)
+                or self._excerpts_cached(post)
             ):
                 continue
             self._retrieve_topic_excerpts(protocol, brief, post)
 
         # The summary branch is independent: a failure there must not touch
-        # topic drafts, and the topics remain planned for a later ticket.
+        # topic drafts, and the topics remain planned for their own branch.
         if (
             summary_post is not None
             and summary_post.status == "draft"
@@ -756,12 +739,13 @@ class PostPipeline:
         post: Post,
     ) -> None:
         """Write content once, then always run visuals on top of the cached draft."""
-        draft = self._stored_summary_draft(post)
+        draft = self._stored_draft(post, SummaryDraft)
         composition: SummaryComposition | None = None
 
         if draft is not None:
+            self._sync_post_title(post, draft)
             if not post.caption:
-                await self._fail_summary_post(
+                await self._fail_post(
                     db,
                     post,
                     "caption",
@@ -775,7 +759,7 @@ class PostPipeline:
                         draft, post.slide_plan_json, slides
                     )
                 except Exception as exc:
-                    await self._fail_summary_post(db, post, "render", exc)
+                    await self._fail_post(db, post, "render", exc)
                     return
 
         if draft is None or composition is None:
@@ -789,25 +773,22 @@ class PostPipeline:
         await self._render_summary_visuals(protocol, db, organ, post, draft, composition)
 
     @staticmethod
-    def _summary_excerpts_cached(post: Post) -> bool:
+    def _excerpts_cached(post: Post) -> bool:
         content = post.content_json or {}
         excerpts = content.get("excerpts") if isinstance(content, dict) else None
         return isinstance(excerpts, list) and bool(excerpts)
 
     @staticmethod
-    def _topic_excerpts_cached(post: Post) -> bool:
-        content = post.content_json or {}
-        excerpts = content.get("excerpts") if isinstance(content, dict) else None
-        return isinstance(excerpts, list) and bool(excerpts)
-
-    @staticmethod
-    def _stored_summary_draft(post: Post) -> SummaryDraft | None:
+    def _stored_draft(
+        post: Post,
+        model: type[SummaryDraft] | type[TopicDraft],
+    ) -> SummaryDraft | TopicDraft | None:
         content = post.content_json or {}
         raw_draft = content.get("draft") if isinstance(content, dict) else None
         if not isinstance(raw_draft, dict):
             return None
         try:
-            return SummaryDraft.model_validate(raw_draft)
+            return model.model_validate(raw_draft)
         except (ValidationError, TypeError, ValueError):
             return None
 
@@ -849,6 +830,13 @@ class PostPipeline:
         data = post.fact_check_json or {}
         return isinstance(data, dict) and bool(data.get("passed"))
 
+    @staticmethod
+    def _sync_post_title(post: Post, draft: SummaryDraft | TopicDraft) -> None:
+        if post.post_type == "summary":
+            post.title = draft.cover_title
+        else:
+            post.title = draft.title
+
     async def _summary_briefs_and_excerpts(
         self,
         protocol: Protocol,
@@ -869,7 +857,7 @@ class PostPipeline:
                 for excerpt in content.get("excerpts", [])
             ]
         except (TypeError, ValueError) as exc:
-            await self._fail_summary_post(db, post, "source_retrieval", exc)
+            await self._fail_post(db, post, "source_retrieval", exc)
             return None
 
         if not excerpts:
@@ -889,29 +877,21 @@ class PostPipeline:
             ]
 
         if not excerpts:
-            await self._fail_summary_post(
+            await self._fail_post(
                 db,
                 post,
                 "source_retrieval",
-                RuntimeError("No cached source excerpts for the Summary post"),
+                RuntimeError("No cached source excerpts for the Summary-Beitrag"),
             )
             return None
         return briefs, excerpts
 
-    async def _persist_summary_state(
+    async def _replace_slides(
         self,
         db: AsyncSession,
         post: Post,
-        draft: SummaryDraft,
-        composition: SummaryComposition,
+        slides: Sequence[Any],
     ) -> None:
-        post.content_json = {
-            "draft": draft.model_dump(mode="json"),
-            "excerpts": list(post.content_json.get("excerpts", [])),
-        }
-        post.content_markdown = render_summary_markdown(draft)
-        post.slide_plan_json = composition.slide_plan
-        post.alt_text_json = list(composition.alt_texts)
         await db.execute(
             delete(PostSlide)
             .where(PostSlide.post_id == post.id)
@@ -929,10 +909,29 @@ class PostPipeline:
                     body=slide.body,
                     alt_text=slide.alt_text,
                 )
-                for slide in composition.slides
+                for slide in slides
             ]
         )
         await db.flush()
+
+    async def _persist_post_content_state(
+        self,
+        db: AsyncSession,
+        post: Post,
+        *,
+        draft: SummaryDraft | TopicDraft,
+        composition: SummaryComposition | TopicComposition,
+        markdown: str,
+    ) -> None:
+        content = post.content_json or {}
+        post.content_json = {
+            "draft": draft.model_dump(mode="json"),
+            "excerpts": list(content.get("excerpts", [])),
+        }
+        post.content_markdown = markdown
+        post.slide_plan_json = composition.slide_plan
+        post.alt_text_json = list(composition.alt_texts)
+        await self._replace_slides(db, post, composition.slides)
 
     async def _stored_summary_composition(
         self, db: AsyncSession, post: Post, draft: SummaryDraft
@@ -970,9 +969,13 @@ class PostPipeline:
             return None
         briefs, excerpts = inputs
 
-        draft = None if start == "writer" else self._stored_summary_draft(post)
+        draft = None if start == "writer" else self._stored_draft(
+            post, SummaryDraft
+        )
         if draft is None:
             start = "writer"
+        else:
+            self._sync_post_title(post, draft)
 
         composition: SummaryComposition | None = None
         if start in {"fact_check", "caption"}:
@@ -988,9 +991,10 @@ class PostPipeline:
             except LLMAuthenticationError:
                 raise
             except Exception as exc:
-                await self._fail_summary_post(db, post, "writer", exc)
+                await self._fail_post(db, post, "writer", exc)
                 return None
 
+            self._sync_post_title(post, draft)
             post.content_json = {
                 "draft": draft.model_dump(mode="json"),
                 "excerpts": [
@@ -1005,11 +1009,15 @@ class PostPipeline:
             try:
                 composition = compose_summary_slides(draft)
             except Exception as exc:
-                await self._fail_summary_post(
-                    db, post, "slide_composer", exc
-                )
+                await self._fail_post(db, post, "slide_composer", exc)
                 return None
-            await self._persist_summary_state(db, post, draft, composition)
+            await self._persist_post_content_state(
+                db,
+                post,
+                draft=draft,
+                composition=composition,
+                markdown=render_summary_markdown(draft),
+            )
 
         skip_gate = start == "caption" and self._fact_check_passed(post)
         if not skip_gate:
@@ -1029,29 +1037,34 @@ class PostPipeline:
                     repaired=isinstance(exc, FactCheckFailedError)
                     or exc.step == "repair",
                 )
-                await self._fail_summary_post(db, post, exc.step, exc)
+                await self._fail_post(db, post, exc.step, exc)
                 return None
             except LLMAuthenticationError:
                 raise
             except Exception as exc:
-                await self._fail_summary_post(db, post, "fact_check", exc)
+                await self._fail_post(db, post, "fact_check", exc)
                 return None
 
             draft = outcome.draft
+            self._sync_post_title(post, draft)
             if outcome.repaired:
                 try:
                     composition = compose_summary_slides(draft)
                 except Exception as exc:
-                    await self._fail_summary_post(
-                        db, post, "slide_composer", exc
-                    )
+                    await self._fail_post(db, post, "slide_composer", exc)
                     return None
             post.fact_check_json = fact_check_json(
                 passed=True,
                 issues=outcome.issues,
                 repaired=outcome.repaired,
             )
-            await self._persist_summary_state(db, post, draft, composition)
+            await self._persist_post_content_state(
+                db,
+                post,
+                draft=draft,
+                composition=composition,
+                markdown=render_summary_markdown(draft),
+            )
 
         try:
             caption_draft = await write_caption_body(
@@ -1069,7 +1082,7 @@ class PostPipeline:
         except LLMAuthenticationError:
             raise
         except Exception as exc:
-            await self._fail_summary_post(db, post, "caption", exc)
+            await self._fail_post(db, post, "caption", exc)
             return None
 
         post.caption = caption
@@ -1091,10 +1104,11 @@ class PostPipeline:
         reuse_prompts: bool = False,
     ) -> None:
         """Visual prompts → cover image → in-memory frames → caption file → ready."""
+        self._sync_post_title(post, draft)
         if reuse_prompts:
             cached = await self._load_post_asset(db, post.id, "cover")
             if cached is None or not cached.prompt:
-                await self._fail_summary_post(
+                await self._fail_post(
                     db,
                     post,
                     "visual_prompts",
@@ -1112,9 +1126,7 @@ class PostPipeline:
             except LLMAuthenticationError:
                 raise
             except Exception as exc:
-                await self._fail_summary_post(
-                    db, post, "visual_prompts", exc
-                )
+                await self._fail_post(db, post, "visual_prompts", exc)
                 return
             cover_prompt = visual_prompts.cover_prompt
 
@@ -1129,7 +1141,7 @@ class PostPipeline:
         except Exception as exc:
             asset.status = "failed"
             asset.error = str(exc) or exc.__class__.__name__
-            await self._fail_summary_post(db, post, "image_generation", exc)
+            await self._fail_post(db, post, "image_generation", exc)
             return
 
         asset.status = generated.status
@@ -1145,7 +1157,7 @@ class PostPipeline:
                 organ=organ,
             )
         except Exception as exc:
-            await self._fail_summary_post(db, post, "render", exc)
+            await self._fail_post(db, post, "render", exc)
             return
 
         try:
@@ -1156,7 +1168,7 @@ class PostPipeline:
                 output_dir=self.output_dir,
             )
         except Exception as exc:
-            await self._fail_summary_post(db, post, "render", exc)
+            await self._fail_post(db, post, "render", exc)
             return
 
         asset.path = str(output.image_paths[0])
@@ -1188,11 +1200,18 @@ class PostPipeline:
         asset.status = "pending"
         asset.error = None
         asset.path = None
-        asset.model = config.OPENROUTER_IMAGE_MODEL
+        asset.model = self._asset_image_model()
         await db.flush()
         return asset
 
-    async def _fail_summary_post(
+    def _asset_image_model(self) -> str:
+        """Use the injected client's image model when it exposes one."""
+        return (
+            getattr(self.llm_client, "image_model", None)
+            or config.OPENROUTER_IMAGE_MODEL
+        )
+
+    async def _fail_post(
         self,
         db: AsyncSession,
         post: Post,
@@ -1202,6 +1221,11 @@ class PostPipeline:
         post.status = "failed"
         post.failed_step = step
         post.error = str(exc) or exc.__class__.__name__
+        if step == "render":
+            for asset in await self._load_assets(db, post.id):
+                asset.status = "failed"
+                asset.error = post.error
+                asset.path = None
         await self._commit_post_outcome(db, post)
 
     async def _commit_post_outcome(self, db: AsyncSession, post: Post) -> None:
@@ -1220,11 +1244,12 @@ class PostPipeline:
         brief: TopicBrief,
         post: Post,
     ) -> None:
-        """Resume at visuals when content is cached, else run ticket-06 first."""
-        draft = self._stored_topic_draft(post)
+        """Resume at visuals when content is cached, else run the content stages first."""
+        draft = self._stored_draft(post, TopicDraft)
         composition: TopicComposition | None = None
 
         if draft is not None and post.caption:
+            self._sync_post_title(post, draft)
             slides = await self._load_slides(db, post.id)
             if slides and post.slide_plan_json:
                 try:
@@ -1232,7 +1257,7 @@ class PostPipeline:
                         draft, post.slide_plan_json, slides
                     )
                 except Exception as exc:
-                    await self._fail_topic_post(db, post, "render", exc)
+                    await self._fail_post(db, post, "render", exc)
                     return
 
         if draft is None or composition is None:
@@ -1246,17 +1271,6 @@ class PostPipeline:
         await self._render_topic_visuals(
             protocol, db, organ, post, draft, composition
         )
-
-    @staticmethod
-    def _stored_topic_draft(post: Post) -> TopicDraft | None:
-        content = post.content_json or {}
-        raw_draft = content.get("draft") if isinstance(content, dict) else None
-        if not isinstance(raw_draft, dict):
-            return None
-        try:
-            return TopicDraft.model_validate(raw_draft)
-        except (ValidationError, TypeError, ValueError):
-            return None
 
     async def _write_topic_content(
         self,
@@ -1285,7 +1299,7 @@ class PostPipeline:
                 for excerpt in content.get("excerpts", [])
             ]
         except (TypeError, ValueError) as exc:
-            await self._fail_topic_post(db, post, "source_retrieval", exc)
+            await self._fail_post(db, post, "source_retrieval", exc)
             return None
 
         if not excerpts:
@@ -1299,50 +1313,14 @@ class PostPipeline:
             ]
 
         if not excerpts:
-            await self._fail_topic_post(
+            await self._fail_post(
                 db,
                 post,
                 "source_retrieval",
-                RuntimeError("No cached source excerpts for the topic post"),
+                RuntimeError("No cached source excerpts for the Themenbeitrag"),
             )
             return None
         return excerpts
-
-    async def _persist_topic_state(
-        self,
-        db: AsyncSession,
-        post: Post,
-        draft: TopicDraft,
-        composition: TopicComposition,
-    ) -> None:
-        post.content_json = {
-            "draft": draft.model_dump(mode="json"),
-            "excerpts": list(post.content_json.get("excerpts", [])),
-        }
-        post.content_markdown = composition.markdown
-        post.slide_plan_json = composition.slide_plan
-        post.alt_text_json = list(composition.alt_texts)
-        await db.execute(
-            delete(PostSlide)
-            .where(PostSlide.post_id == post.id)
-            .execution_options(synchronize_session=False)
-        )
-        db.add_all(
-            [
-                PostSlide(
-                    post_id=post.id,
-                    slide_index=slide.slide_index,
-                    slide_type=slide.slide_type,
-                    pair_index=slide.pair_index,
-                    label=slide.label,
-                    headline=slide.headline,
-                    body=slide.body,
-                    alt_text=slide.alt_text,
-                )
-                for slide in composition.slides
-            ]
-        )
-        await db.flush()
 
     async def _stored_topic_composition(
         self, db: AsyncSession, post: Post, draft: TopicDraft
@@ -1372,9 +1350,13 @@ class PostPipeline:
         if excerpts is None:
             return None
 
-        draft = None if start == "writer" else self._stored_topic_draft(post)
+        draft = None if start == "writer" else self._stored_draft(
+            post, TopicDraft
+        )
         if draft is None:
             start = "writer"
+        else:
+            self._sync_post_title(post, draft)
 
         composition: TopicComposition | None = None
         if start in {"fact_check", "caption"}:
@@ -1393,12 +1375,13 @@ class PostPipeline:
             except LLMAuthenticationError:
                 raise
             except TopicWriterError as exc:
-                await self._fail_topic_post(db, post, exc.step, exc)
+                await self._fail_post(db, post, exc.step, exc)
                 return None
             except Exception as exc:
-                await self._fail_topic_post(db, post, "writer", exc)
+                await self._fail_post(db, post, "writer", exc)
                 return None
 
+            self._sync_post_title(post, draft)
             post.content_json = {
                 "draft": draft.model_dump(mode="json"),
                 "excerpts": [
@@ -1413,9 +1396,15 @@ class PostPipeline:
             try:
                 composition = compose_topic_slides(draft)
             except Exception as exc:
-                await self._fail_topic_post(db, post, "slide_composer", exc)
+                await self._fail_post(db, post, "slide_composer", exc)
                 return None
-            await self._persist_topic_state(db, post, draft, composition)
+            await self._persist_post_content_state(
+                db,
+                post,
+                draft=draft,
+                composition=composition,
+                markdown=composition.markdown,
+            )
 
         skip_gate = start == "caption" and self._fact_check_passed(post)
         if not skip_gate:
@@ -1435,29 +1424,34 @@ class PostPipeline:
                     repaired=isinstance(exc, FactCheckFailedError)
                     or exc.step == "repair",
                 )
-                await self._fail_topic_post(db, post, exc.step, exc)
+                await self._fail_post(db, post, exc.step, exc)
                 return None
             except LLMAuthenticationError:
                 raise
             except Exception as exc:
-                await self._fail_topic_post(db, post, "fact_check", exc)
+                await self._fail_post(db, post, "fact_check", exc)
                 return None
 
             draft = outcome.draft
+            self._sync_post_title(post, draft)
             if outcome.repaired:
                 try:
                     composition = compose_topic_slides(draft)
                 except Exception as exc:
-                    await self._fail_topic_post(
-                        db, post, "slide_composer", exc
-                    )
+                    await self._fail_post(db, post, "slide_composer", exc)
                     return None
             post.fact_check_json = fact_check_json(
                 passed=True,
                 issues=outcome.issues,
                 repaired=outcome.repaired,
             )
-            await self._persist_topic_state(db, post, draft, composition)
+            await self._persist_post_content_state(
+                db,
+                post,
+                draft=draft,
+                composition=composition,
+                markdown=composition.markdown,
+            )
 
         try:
             caption_draft = await write_caption_body(
@@ -1475,7 +1469,7 @@ class PostPipeline:
         except LLMAuthenticationError:
             raise
         except Exception as exc:
-            await self._fail_topic_post(db, post, "caption", exc)
+            await self._fail_post(db, post, "caption", exc)
             return None
 
         post.caption = caption
@@ -1498,6 +1492,7 @@ class PostPipeline:
         reuse_prompts: bool = False,
     ) -> None:
         """Visual prompts → assets → in-memory frames → caption file → ready."""
+        self._sync_post_title(post, draft)
         content_slides = len(composition.slides) - 1
         pair_count = content_slides // 2
         has_single = content_slides % 2 == 1
@@ -1517,7 +1512,7 @@ class PostPipeline:
             for role in role_names:
                 asset = existing.get(role)
                 if asset is None or not asset.prompt:
-                    await self._fail_topic_post(
+                    await self._fail_post(
                         db,
                         post,
                         "visual_prompts",
@@ -1535,9 +1530,7 @@ class PostPipeline:
             except LLMAuthenticationError:
                 raise
             except Exception as exc:
-                await self._fail_topic_post(
-                    db, post, "visual_prompts", exc
-                )
+                await self._fail_post(db, post, "visual_prompts", exc)
                 return
 
             prompts = {"cover": visual_prompts.cover_prompt}
@@ -1624,7 +1617,7 @@ class PostPipeline:
                 organ=organ,
             )
         except Exception as exc:
-            await self._fail_topic_post(db, post, "render", exc)
+            await self._fail_post(db, post, "render", exc)
             return
 
         try:
@@ -1635,7 +1628,7 @@ class PostPipeline:
                 output_dir=self.output_dir,
             )
         except Exception as exc:
-            await self._fail_topic_post(db, post, "render", exc)
+            await self._fail_post(db, post, "render", exc)
             return
 
         assets["cover"].path = str(output.image_paths[0])
@@ -1680,7 +1673,7 @@ class PostPipeline:
             asset.status = "pending"
             asset.error = None
             asset.path = None
-            asset.model = config.OPENROUTER_IMAGE_MODEL
+            asset.model = self._asset_image_model()
             assets[role] = asset
         await db.flush()
         return assets
@@ -1694,19 +1687,7 @@ class PostPipeline:
     ) -> None:
         asset.status = "failed"
         asset.error = str(exc) or exc.__class__.__name__
-        await self._fail_topic_post(db, post, "image_generation", exc)
-
-    async def _fail_topic_post(
-        self,
-        db: AsyncSession,
-        post: Post,
-        step: str,
-        exc: Exception,
-    ) -> None:
-        post.status = "failed"
-        post.failed_step = step
-        post.error = str(exc) or exc.__class__.__name__
-        await self._commit_post_outcome(db, post)
+        await self._fail_post(db, post, "image_generation", exc)
 
     @staticmethod
     def _retrieve_summary_excerpts(
@@ -1771,9 +1752,9 @@ class PostPipeline:
         """Set ``Protocol.processed`` from the persisted plan and posts.
 
         True only when a valid ready plan exists, the Summary and every
-        planned topic post exist, and all of them are terminal
-        (``ready`` or ``failed``). A failed Summary or topic therefore does
-        not block the protocol forever.
+        planned Themenbeitrag exist, and all of them are terminal
+        (``ready`` or ``failed``). A failed Summary or Themenbeitrag therefore
+        does not block the protocol forever.
         """
         await db.flush()
         plan_row = await self._load_plan_row(db, protocol.id)

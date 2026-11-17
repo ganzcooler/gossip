@@ -164,17 +164,16 @@ def test_summary_point_strips_body_and_rejects_a_multi_word_kicker():
         _summary_point(heading="   ")
 
 
-@pytest.mark.parametrize("length", [20, 100])
-def test_summary_cover_title_accepts_the_inclusive_bounds(length):
-    draft = _summary_draft(cover_title="T" * length)
+@pytest.mark.parametrize("cover_title", ["Haushalt", "T" * 101])
+def test_summary_cover_title_accepts_short_and_long_non_empty_text(cover_title):
+    draft = _summary_draft(cover_title=f"  {cover_title}  ")
 
-    assert len(draft.cover_title) == length
+    assert draft.cover_title == cover_title
 
 
-@pytest.mark.parametrize("length", [19, 101])
-def test_summary_cover_title_rejects_out_of_bounds_lengths(length):
-    with pytest.raises(ValidationError, match="20"):
-        _summary_draft(cover_title="T" * length)
+def test_summary_cover_title_rejects_empty_text():
+    with pytest.raises(ValidationError, match="must not be empty"):
+        _summary_draft(cover_title="   ")
 
 
 @pytest.mark.parametrize("count", [2, 6])

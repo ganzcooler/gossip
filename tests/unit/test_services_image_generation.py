@@ -127,6 +127,24 @@ def test_summary_fallback_can_be_built_twice_without_side_effects():
     assert first.tobytes() == second.tobytes()
 
 
+def test_fallbacks_use_the_shared_render_common_palette():
+    from app.services.render_common import (
+        BRAND_ORANGE,
+        BRAND_ORANGE_DEEP,
+        SURFACE_BASE,
+        SURFACE_SUNKEN,
+    )
+
+    summary = summary_fallback_art()
+    topic = topic_cover_fallback_art()
+
+    assert summary.getpixel((0, 0)) == SURFACE_SUNKEN
+    assert summary.getpixel((900, 100)) == (21, 90, 133)
+    assert topic.getpixel((0, 0)) == SURFACE_BASE
+    assert topic.getpixel((900, 100)) == BRAND_ORANGE_DEEP
+    assert topic.getpixel((715, 500)) == BRAND_ORANGE
+
+
 def _striped_png_bytes(size=(1080, 1350)) -> bytes:
     image = Image.new("RGB", size, (40, 60, 80))
     image.paste((200, 100, 50), (180, 0, 900, 1350))

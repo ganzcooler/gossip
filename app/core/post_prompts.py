@@ -145,8 +145,8 @@ Summary-Punkte.
 
 ## Aufgabe
 
-- cover_title: ein konkreter, lokaler Titel mit 20 bis 100 Zeichen inklusive \
-Leerzeichen. Er ist die Überschrift des Covers.
+- cover_title: ein konkreter, lokaler Titel. Er ist die Überschrift des \
+Covers und muss auf das Cover passen (maximal 3 Zeilen).
 - points: 2 bis 6 Summary-Punkte in der Reihenfolge der Briefs. Der wichtigste \
 Punkt kommt zuerst.
 - Jeder Punkt hat:

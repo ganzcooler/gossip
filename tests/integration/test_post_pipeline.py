@@ -322,9 +322,9 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
         ("topic", "radweg", 2),
     ]
     assert [post.title for post in posts] == [
-        "Was der Rat in Rosdorf entschieden hat",
-        "Haushalt beschlossen",
-        "Radweg kommt im Sommer",
+        _summary_draft(plan).cover_title,
+        _topic_draft(plan.topic_briefs[0]).title,
+        _topic_draft(plan.topic_briefs[1]).title,
     ]
     assert [post.status for post in posts] == ["ready", "ready", "ready"]
     assert [post.failed_step for post in posts] == [None, None, None]
@@ -513,13 +513,70 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
 
     assert detail_response.status_code == 200
     detail = detail_response.json()
-    assert detail["title"] == "Haushalt beschlossen"
+    assert detail["title"] == _topic_draft(plan.topic_briefs[0]).title
     assert detail["content_json"]["draft"]["sections"]
     assert detail["content_json"]["excerpts"][0]["anchor"] == SUMMARY_ANCHOR_1
     assert detail["content_markdown"].startswith("# ")
     assert detail["slide_plan_json"]["family"] == "topic"
     assert detail["caption"].startswith("Illustration: KI-generiert.")
     assert len(detail["slides"]) == len(detail["alt_text_json"])
+
+
+class _CustomImageModelFake(FakeLLMClient):
+    """Fake client that exposes the image model the real adapter reports."""
+
+    image_model = "custom/image-model-v1"
+
+
+async def test_post_title_follows_the_written_draft_not_the_planner_title(
+    postgres_session, tmp_path
+):
+    plan = _plan()
+    summary_draft = _summary_draft(plan)
+    summary_draft.cover_title = "Haushalt"
+    topic_drafts = [_topic_draft(brief) for brief in plan.topic_briefs]
+
+    fake = FakeLLMClient()
+    fake.script_json("planner", plan)
+    fake.script_json("summary_writer", summary_draft)
+    fake.script_json("summary_fact_check", FactCheckResult(issues=[]))
+    fake.script_json("caption_writer", CaptionDraft(body="Summary caption"))
+    fake.script_json(
+        "summary_visual_prompts",
+        VisualPrompts(cover_prompt="Weite, ruhige Szene am Ortsrand."),
+    )
+    fake.script_image("summary_cover", _cover_png_bytes())
+    _script_topics_success(fake, plan=plan, drafts=topic_drafts)
+
+    protocol = await _add_protocol(postgres_session)
+    await PostPipeline(fake, output_dir=tmp_path).run(
+        protocol, postgres_session
+    )
+
+    posts = await _posts(postgres_session, protocol)
+    assert [post.title for post in posts] == [
+        summary_draft.cover_title,
+        topic_drafts[0].title,
+        topic_drafts[1].title,
+    ]
+
+
+async def test_assets_record_the_injected_clients_image_model(
+    postgres_session, tmp_path
+):
+    plan = _plan()
+    fake = _CustomImageModelFake()
+    protocol, _, _ = await _run(
+        postgres_session, tmp_path, plan=plan, fake=fake
+    )
+
+    posts = await _posts(postgres_session, protocol)
+    asset_models = {
+        asset.model
+        for post in posts
+        for asset in await _assets(postgres_session, post)
+    }
+    assert asset_models == {"custom/image-model-v1"}
 
 
 async def test_unknown_organ_fails_every_planned_post_but_keeps_the_plan(
@@ -794,6 +851,7 @@ async def test_unfittable_summary_layout_records_the_slide_composer_step(
 ):
     plan = _plan()
     draft = _summary_draft(plan)
+    draft.cover_title = "Haushalt"
     draft.points[0].heading = (
         "Donaudampfschifffahrtsgesellschaft "
         "Donaudampfschifffahrtsgesellschaft "
@@ -817,6 +875,7 @@ async def test_unfittable_summary_layout_records_the_slide_composer_step(
 
     assert summary.status == "failed"
     assert summary.failed_step == "slide_composer"
+    assert summary.title == "Haushalt"
     assert "heading" in summary.error
     assert [call.role for call in fake.calls[:2]] == [
         "planner",

@@ -542,6 +542,7 @@ async def test_summary_retry_resumes_from_failed_step(
     assert result.status == "ready"
     assert summary.status == "ready"
     assert summary.failed_step is None
+    assert summary.title == _summary_draft(plan).cover_title
     assert summary.caption.startswith("Illustration: KI-generiert.")
     assert summary.fact_check_json["passed"] is True
     assert await _slides(postgres_session, summary)
@@ -583,6 +584,7 @@ async def test_topic_retry_resumes_from_failed_step(
     assert result.status == "ready"
     assert topic.status == "ready"
     assert topic.failed_step is None
+    assert topic.title == _topic_draft(plan.topic_briefs[0]).title
     assert topic.caption.startswith("Illustration: KI-generiert.")
     assert topic.fact_check_json["passed"] is True
     assert await _slides(postgres_session, topic)
@@ -702,6 +704,37 @@ async def test_retry_after_writer_failure_reaches_ready(postgres_session, tmp_pa
     assert summary.status == "ready"
     assert summary.failed_step is None
     assert protocol.processed is True
+
+
+async def test_force_retry_updates_the_title_from_the_new_draft(
+    postgres_session, tmp_path
+):
+    plan = _plan()
+    protocol, pipeline, posts = await _run_success(
+        postgres_session, tmp_path, FakeLLMClient(), plan
+    )
+    summary, _ = posts
+
+    new_draft = _summary_draft(plan)
+    new_draft.cover_title = "Haushalt"
+    fake = pipeline.llm_client
+    fake.script_json("summary_writer", new_draft)
+    fake.script_json("summary_fact_check", FactCheckResult(issues=[]))
+    fake.script_json("caption_writer", CaptionDraft(body="Neue Caption"))
+    fake.script_json(
+        "summary_visual_prompts",
+        VisualPrompts(cover_prompt="Neue ruhige Szene."),
+    )
+    fake.script_image("summary_cover", _cover_png_bytes())
+
+    result = await pipeline.retry_post(
+        summary, postgres_session, force=True
+    )
+
+    summary = await _reload_post(postgres_session, summary.id)
+    assert result.status == "ready"
+    assert summary.title == "Haushalt"
+    assert summary.content_json["draft"]["cover_title"] == "Haushalt"
 
 
 async def test_second_failure_keeps_failed_with_the_new_step(

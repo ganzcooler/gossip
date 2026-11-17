@@ -48,12 +48,7 @@ def create_protocol_folder(base_dir: Path, session_date: date, title: str) -> Pa
     Create a normalized folder name for a protocol.
     Format: YYMMDD_normalized_title
     """
-    normalized = normalize_for_folder_name(title)
-    
-    # Date prefix
-    folder_name = f"{session_date.strftime('%y%m%d')}_{normalized}"
-
-    folder_path = base_dir / folder_name
+    folder_path = protocol_folder_path(base_dir, session_date, title)
 
     if folder_path.exists():
         logger.error(f"Folder already exists: {folder_path}")

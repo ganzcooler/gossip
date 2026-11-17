@@ -6,17 +6,17 @@ in PostgreSQL. It runs as a containerized FastAPI application with an
 in-process APScheduler.
 
 The stateless post pipeline is feature-complete for generation, retry and
-reprocess. A protocol becomes a persisted Redaktionsplan plus one Summary post
-and zero to five topic posts with deterministic source excerpts. Every post gets
-a validated writer draft, the hard fact-check gate with one repair,
-deterministic slides, a composed caption, Alt-Texte and rendered images with
-brand fallbacks. The Summary is a blue 9:16 story; each topic is an orange 4:5
-feed carousel with pair-sliced artwork. Failed posts can be retried individually
-from their failed step, and a protocol can be reprocessed from a fresh plan.
-`Protocol.processed` becomes true once the Summary and every planned topic post
-are terminal (`ready` or `failed`). The legacy one-call article, caption, image,
-and Instagram pipeline has been removed; legacy articles remain readable through
-the API.
+reprocess. A protocol becomes a persisted Redaktionsplan plus one
+Summary-Beitrag and zero to five Themenbeiträge with deterministic source
+excerpts. Every Beitrag gets a validated writer draft, the hard fact-check gate
+with one repair, deterministic slides, a composed caption, Alt-Texte and
+rendered images with brand fallbacks. The Summary-Beitrag is a blue 9:16 story;
+each Themenbeitrag is an orange 4:5 feed carousel with pair-sliced artwork.
+Failed Beiträge can be retried individually from their failed step, and a
+protocol can be reprocessed from a fresh plan. `Protocol.processed` becomes true
+once the Summary-Beitrag and every planned Themenbeitrag are terminal (`ready` or
+`failed`). The legacy one-call article, caption, image, and Instagram pipeline
+has been removed; legacy articles remain readable through the API.
 
 ## What it does
 
@@ -28,15 +28,15 @@ the API.
    articles readable, and exposes protocols, stats, and pipeline status through
    a REST API.
 4. **Plan** — the stateless Redaktionsplaner turns a protocol into a plan with
-   two to six Summary briefs and zero to five topic briefs, including exact
+   two to six Summary briefs and zero to five Themenbriefe, including exact
    source anchors. Deterministic steps resolve the official Organ and retrieve
    only the referenced protocol excerpts. The result is persisted as an
    `editorial_plans` row and draft posts.
 5. **Summarise** — the Summary-Writer turns the Summary briefs and excerpts
    into a cover title and two to six Summary-Punkte. The Faktenprüfung is a
    hard gate with one repair attempt, and the 9:16 Summary cards are composed
-   deterministically at one post-wide body size. The Summary post also gets a
-   composed caption and deterministic Alt-Texte.
+   deterministically at one post-wide body size. The Summary-Beitrag also gets
+   a composed caption and deterministic Alt-Texte.
 6. **Visualise the Summary** — a stateless visual-prompt call writes the cover
    prompt from the Summary draft only. Image generation requests a 9:16 image
    through the LLM port, center-fits it to exactly 1080×1920, and substitutes
@@ -44,31 +44,32 @@ the API.
    renderer writes the cover and two to six cards as
    `summary-<date>-story-<frame>.png` plus exactly one
    `caption-summary-summary.txt` into the protocol folder. Only after the whole
-   story and caption are written does the Summary post become `ready`.
+   story and caption are written does the Summary-Beitrag become `ready`.
 7. **Write and visualise topics** — for each planned Themenbrief, the
    Themen-Writer sees only that brief and its excerpts and writes an H1 plus
    two to six H2 sections with paragraphs under a hard 3,000-character budget.
    The same Fact-Check gate applies, and the 4:5 content slides are composed
    deterministically: every H2 starts a new slide, overflow continues with the
    short chapter label at one post-wide body size, and the article text is
-   never reworded or truncated. A stateless topic visual-prompt call writes a
-   cover and `ceil(content_slides / 2)` pair prompts from the topic draft only.
+   never reworded or truncated. A stateless Themen visual-prompt call writes a
+   cover and `ceil(content_slides / 2)` pair prompts from the Themenentwurf only.
    Image generation requests 4:5 artwork, normalizes the cover to 1080×1350,
    and center-crops each pair to 720×1350 or a final unpaired strip to
    360×1350. The renderer slices pairs into the zigzag layout and writes
    `topic-<date>-<slide>.png` plus exactly one `caption-topic-<slug>.txt`
-   inside the topic's own `topic-<slug>/` subfolder. Topic image failures
-   produce orange brand fallbacks and the post still
+   inside the topic's own `topic-<slug>/` subfolder. Themenbeitrag image
+   failures produce orange brand fallbacks and the Beitrag still
    becomes `ready`; authentication errors stop the job. Alt-Texte stay in
    PostgreSQL and the API; no JSON, Markdown, prompt, or manifest files are
    written.
 8. **Retry and reprocess** — `POST /api/posts/{id}/retry` resets one Beitrag and
    resumes at its `failed_step` with cached drafts, compositions, fact-check
-   results, captions and visual prompts. `force=true` clears only that post's
-   article, slides, assets, caption and output files and restarts at the writer.
+   results, captions and visual prompts. `force=true` clears only that
+   Beitrag's content, slides, assets, caption and output files and restarts at
+   the writer.
    `POST /api/protocols/{id}/reprocess` deletes the plan, posts and generated
    output and rebuilds the whole protocol. `Protocol.processed` is terminal
-   (`ready` or `failed` posts) and a failed post is never retried
+   (`ready` or `failed` Beiträge) and a failed Beitrag is never retried
    automatically.
 
 The fetch workflow is triggered by APScheduler and can also be started manually
@@ -115,7 +116,7 @@ app/
 │   ├── image_generation.py    Image decode, deterministic fit, brand fallbacks
 │   ├── post_renderer.py       Deterministic Summary story renderer
 │   ├── topic_renderer.py      Deterministic topic carousel renderer
-│   ├── render_common.py       Shared colors, logo plate, scrim, badge, folders
+│   ├── render_common.py       Single brand palette/token source, logo plate, scrim, badge, folders
 │   ├── output_cleanup.py      Scoped force-retry/reprocess file cleanup
 │   ├── text_layout.py         Shared font loading, wrapping and fit primitives
 │   ├── organs.py              Finite Organ seed and deterministic resolver
@@ -139,6 +140,11 @@ The renderer requires three committed runtime assets in `app/res/`:
 `Oswald-var.ttf` (titles, headings, numbers, kickers) and `Inter-var.ttf`
 (body copy, badges, page labels). A missing asset is a hard render failure; it
 never falls back to another font or logo.
+
+`app/services/render_common.py` is the single source of the brand palette and
+render tokens. Both renderers and the deterministic image fallbacks import the
+same `SURFACE_*` and `BRAND_*` constants from it; `image_generation.py` owns no
+palette of its own.
 
 `src/`, `alembic/`, and a root `main.py` no longer exist. Database tables are
 created with SQLAlchemy `create_all()` on startup; migrations have not been
@@ -216,7 +222,7 @@ Configuration is read from `.env` (see `.env.example`):
 | `GET` | `/api/protocols` | List protocols (`skip`, `limit`, `processed`) |
 | `GET` | `/api/protocols/{id}` | Protocol detail, including extracted PDF text |
 | `GET` | `/api/protocols/{id}/articles` | Legacy articles for a protocol |
-| `GET` | `/api/protocols/{id}/posts` | Summary and topic posts for a protocol, ordered by `post_index` |
+| `GET` | `/api/protocols/{id}/posts` | Summary-Beitrag and Themenbeiträge for a protocol, ordered by `post_index` |
 | `GET` | `/api/posts/{id}` | One post with ordered slides and assets |
 | `POST` | `/api/posts/{id}/retry?force=false` | Retry one post from `failed_step`, or from the writer with `force=true` |
 | `POST` | `/api/protocols/{id}/reprocess` | Rebuild the Redaktionsplan and all posts for a protocol |
@@ -230,30 +236,32 @@ returns the same full post shape as `GET /api/posts/{id}`. The old process, run,
 and generate-insta triggers are gone.
 
 Planned Beiträge are already persisted and readable. The planning stage stores
-the Redaktionsplan and creates the summary post (`slug="summary"`,
-`post_index=0`) and zero to five topic posts as `status="draft"`. The Summary
-content path then replaces the summary's `content_json` with the validated
-draft plus source excerpts and fills `content_markdown`, `slide_plan_json`,
-`caption`, `alt_text_json`, `fact_check_json` and the one-based cover/card
-`post_slides`. Each topic post gets the same persisted fields from its own
-writer, fact-check, composition and caption calls, with one-based
+the Redaktionsplan and creates the Summary-Beitrag (`slug="summary"`,
+`post_index=0`) and zero to five Themenbeiträge as `status="draft"`. The Summary
+content path then replaces the Summary-Beitrag's `content_json` with the
+validated draft plus source excerpts and fills `content_markdown`,
+`slide_plan_json`, `caption`, `alt_text_json`, `fact_check_json` and the
+one-based cover/card `post_slides`.
+Each Themenbeitrag gets the same persisted fields from its own writer,
+fact-check, composition and caption calls, with one-based
 cover/heading/continuation `post_slides`. The Summary visual stage writes the
 cover prompt and asset row, generates or falls back for the cover art, renders
 all 1080×1920 frames in memory, and writes the PNGs plus the caption file
-before flipping the Summary to `ready`. Each topic post then runs its own
-visual-prompt call, generates or falls back for the cover and each pair / final
-strip, renders all 1080×1350 frames in memory, writes the carousel images plus
-its caption file, and only then flips to `ready`. Rerunning a protocol reuses a
-cached Summary or topic draft, composed slides and caption and resumes at
-visuals instead of calling the writer again; a `ready` post is skipped
+before flipping the Summary-Beitrag to `ready`. Each Themenbeitrag then runs its
+own visual-prompt call, generates or falls back for the cover and each pair /
+final strip, renders all 1080×1350 frames in memory, writes the carousel images
+plus its caption file, and only then flips to `ready`. Rerunning a protocol
+reuses a cached Summary or Themenentwurf, composed slides and caption and resumes
+at visuals instead of calling the writer again; a `ready` Beitrag is skipped
 entirely.
 An unknown protocol title marks all planned posts `failed` at `organ`, and a
 missing source anchor marks only the affected Beitrag `failed` at
-`source_retrieval`. Summary and topic branches are independent: a Summary
+`source_retrieval`. Summary and Themen branches are independent: a Summary
 failure at `writer`, `fact_check`, `repair`, `caption`, `slide_composer`,
-`visual_prompts`, `image_generation` or `render` does not touch the topic
-drafts, and a failed topic does not block the Summary or the other topics.
-Failed posts are not retried automatically on the next run.
+`visual_prompts`, `image_generation` or `render` does not touch the
+Themenentwürfe, and a failed Themenbeitrag does not block the Summary-Beitrag
+or the other Themenbeiträge.
+Failed Beiträge are not retried automatically on the next run.
 
 ### Summary output files
 
@@ -267,19 +275,22 @@ summary-2024-01-15-story-03.png   # second card
 caption-summary-summary.txt
 ```
 
-The folder is reused idempotently. A Summary story has three to seven frames
-(cover plus two to six cards) and exactly one caption file whose content is the
-stored `post.caption`, starting with `Illustration: KI-generiert.` and carrying
-the source/date plus the SessionNet link or the manual-link hint. Image
-failures produce the blue brand fallback and the post still becomes `ready`;
-authentication errors stop the job immediately. Text overflow, a missing
-font/logo, or a caption/render write failure marks the Summary `failed` at
-`render` and writes no partial story.
+The folder is reused idempotently. A Summary-Beitrag story has three to seven
+frames (cover plus two to six cards) and exactly one caption file whose content
+is the stored `post.caption`, starting with `Illustration: KI-generiert.` and
+carrying the source/date plus the SessionNet link or the manual-link hint. Image
+failures produce the blue brand fallback and the Beitrag still becomes `ready`;
+authentication errors stop the job immediately. A composition or fit failure
+(for example a cover title or card text that cannot be laid out without changing
+it) marks the Beitrag `failed` at `slide_composer`. A missing font/logo, a
+contrast failure, or an image/caption write failure marks it `failed` at
+`render` and writes no partial story; any assets that were already generated are
+marked `failed` with the render error.
 
-### Topic output files
+### Themenbeitrag output files
 
-Each topic writes into its own stable subfolder inside the protocol folder,
-for example `<ARTICLES_DIR>/240115_gemeinderat/topic-haushalt/`:
+Each Themenbeitrag writes into its own stable subfolder inside the protocol
+folder, for example `<ARTICLES_DIR>/240115_gemeinderat/topic-haushalt/`:
 
 ```
 topic-2024-01-15-01.png   # cover
@@ -290,12 +301,13 @@ topic-2024-01-15-05.png   # fourth content slide, continuation layout
 caption-topic-haushalt.txt
 ```
 
-Summary files stay flat in the protocol folder. The per-topic subfolder keeps
-the exact topic basenames collision-free when a Sitzung has several
-Themenbeiträge, and stale-frame cleanup is limited to that topic's subfolder.
+Summary files stay flat in the protocol folder. The per-Beitrag subfolder keeps
+the exact Themenbeitrag basenames collision-free when a Sitzung has several
+Themenbeiträge, and stale-frame cleanup is limited to that Themenbeitrag's
+subfolder.
 
-A topic carousel has five to eight images (cover plus four to seven content
-slides). Content slides alternate text-left/image-right and
+A Themenbeitrag carousel has five to eight images (cover plus four to seven
+content slides). Content slides alternate text-left/image-right and
 image-left/text-right; each 720×1350 pair artwork is split into the left and
 right 360×1350 strips, and an unpaired final slide uses a standalone strip. The
 first slide gets the large orange number, one-word kicker, 3 px rule and fitted
@@ -304,9 +316,13 @@ H2; continuation slides show the short chapter label, the `n/N` counter and a
 at the bottom-right of the text block. The caption file is UTF-8, starts with
 `Illustration: KI-generiert.` and carries source/date plus the SessionNet link
 or the manual-link hint. Image failures produce the orange brand fallback and
-the post still becomes `ready`; authentication errors stop the job. Text
-overflow, a missing font/logo, or a render/write failure marks only that topic
-`failed` at `render` and writes no partial carousel.
+the Beitrag still becomes `ready`; authentication errors stop the job. A
+composition or fit failure (for example an H1 or H2 that cannot be laid out
+without changing it) marks only that Themenbeitrag `failed` at
+`slide_composer`. A missing font/logo, a contrast failure, or a PNG/caption
+write failure marks only that Themenbeitrag `failed` at `render` and writes no
+partial carousel; any generated assets are marked `failed` with the render
+error.
 
 ### Post read API
 
@@ -393,8 +409,11 @@ always include all three post statuses:
 "post_counts": {"draft": 2, "ready": 3, "failed": 1}
 ```
 
-The fetch endpoint is currently unauthenticated; restrict access at the
-reverse proxy or add authentication before exposing the service publicly.
+The API is currently unauthenticated. That includes `POST
+/api/posts/{id}/retry`, which spends paid LLM and image budget, and `POST
+/api/protocols/{id}/reprocess`, which destructively rebuilds the plan and posts
+with paid work. Restrict access at the reverse proxy or add authentication
+before exposing the service publicly.
 
 ### Retry and reprocess
 
@@ -413,10 +432,15 @@ from its stored `failed_step`. Upstream artifacts are reused:
 | `source_retrieval` | Retrieve the cached brief's anchors again, then continue at the earliest missing cached artifact |
 | unknown / none | Earliest missing cached artifact; the fact-check gate is never bypassed |
 
-`force=true` clears that post's article, fact-check result, caption, slides,
+`slide_composer` means the draft cannot be composed into Folien, while `render`
+means a composed Beitrag cannot be turned into files (missing font/logo,
+contrast, or write failure). A render failure marks that Beitrag's generated
+assets `failed`; the retry regenerates them from the cached prompts.
+
+`force=true` clears that Beitrag's content, fact-check result, caption, slides,
 assets and Alt-Texte, deletes only its generated output, and restarts at the
-writer. The Redaktionsplan, briefs and source excerpts stay cached. Other posts
-and their files are never touched.
+writer. The Redaktionsplan, briefs and source excerpts stay cached. Other
+Beiträge and their files are never touched.
 
 `POST /api/protocols/{id}/reprocess` deletes the existing plan, all posts,
 slides and assets, removes only the protocol's generated Summary files and
@@ -426,13 +450,14 @@ already `processed`. A planner failure leaves `processed=false`.
 ### `Protocol.processed`
 
 `processed` is terminal, not "everything succeeded". It becomes true when a
-valid `ready` Redaktionsplan exists, the Summary post and every planned topic
-post exist, and all of them are `ready` or `failed`. A failed Summary does not
-block terminal topics, and a failed topic does not block the Summary. A missing
-or `draft` post, or a failed/missing plan, keeps the protocol unprocessed.
-Failed posts remain visible and are only rerun through the manual retry
-endpoint; the scheduler never retries them automatically, and it skips
-protocols with a failed plan so there is no automatic replan loop.
+valid `ready` Redaktionsplan exists, the Summary-Beitrag and every planned
+Themenbeitrag exist, and all of them are `ready` or `failed`. A failed
+Summary-Beitrag does not block terminal Themenbeiträge, and a failed
+Themenbeitrag does not block the Summary-Beitrag. A missing or `draft` Beitrag,
+or a failed/missing plan, keeps the protocol unprocessed. Failed Beiträge remain
+visible and are only rerun through the manual retry endpoint; the scheduler
+never retries them automatically, and it skips protocols with a failed plan so
+there is no automatic replan loop.
 
 ## Scheduled jobs
 
@@ -504,9 +529,9 @@ OPENROUTER_API_KEY=... \
 
 The test inserts a sanitized `Gemeinderat` fixture protocol (fixed date, no
 real personal data), starts the pipeline with
-`POST /api/protocols/{id}/reprocess`, and asserts the Summary and topic posts,
-slides, assets, Alt-Texte, image dimensions and names, captions, and the clean
-output folder. Output is written under pytest's temporary directory. In a
+`POST /api/protocols/{id}/reprocess`, and asserts the Summary-Beitrag and
+Themenbeiträge, slides, assets, Alt-Texte, image dimensions and names, captions,
+and the clean output folder. Output is written under pytest's temporary directory. In a
 `finally` block the test deletes the fixture rows, drops the throwaway schema
 and removes the generated files. It skips cleanly when `OPENROUTER_API_KEY` or
 `TEST_DATABASE_URL` is missing, and it is never part of the default suite.
@@ -527,7 +552,8 @@ been removed. Manual tests are excluded from the default run and from hooks.
   bind-mounted in `docker-compose.yaml`.
 - Force retry and reprocess remove only generated output: Summary
   `summary-*` images plus `caption-summary-*` files, and the affected
-  `topic-<slug>/` subfolders. Unrelated files and other topics are left alone.
+  `topic-<slug>/` subfolders. Unrelated files and other Themenbeiträge are left
+  alone.
 - Docker JSON logs are capped at 10 MB across 3 files; the monthly file logs
   are kept separately so they survive container rebuilds.
 - PostgreSQL is only reachable on the internal Compose network.
@@ -535,7 +561,8 @@ been removed. Manual tests are excluded from the default run and from hooks.
   at the Cloudflare/Traefik edge. Verify the entrypoint against your actual
   Traefik configuration before changing it.
 - The API currently has no built-in authentication, rate limiting, or request
-  size limits.
+  size limits. In particular, retry spends paid LLM/image budget and reprocess
+  destructively rebuilds a protocol with paid work.
 
 ## Known limitations / next steps
 
@@ -543,7 +570,7 @@ been removed. Manual tests are excluded from the default run and from hooks.
   and protocol reprocess are implemented; the scheduled processing job is
   wired. The manual real-API end-to-end smoke test is implemented but only
   runs when explicitly requested with real credentials.
-- Summary posts are family-pure blue 9:16 story PNGs; topic posts are
+- Summary-Beiträge are family-pure blue 9:16 story PNGs; Themenbeiträge are
   family-pure orange 4:5 carousels. Both write only PNGs plus one caption file
   per Beitrag.
 - Add Alembic migrations instead of `create_all()`.

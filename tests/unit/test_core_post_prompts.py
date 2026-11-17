@@ -116,8 +116,9 @@ def test_summary_writer_prompt_contains_only_briefs_excerpts_and_rules():
     assert "120" in prompt
     assert "320" in prompt
     assert "Ein-Wort-Kicker" in prompt
-    assert "20" in prompt
-    assert "100" in prompt
+    assert "muss auf das Cover passen" in prompt
+    assert "maximal 3 Zeilen" in prompt
+    assert "20 bis 100" not in prompt
     assert "2 bis 6" in prompt
     assert "Personennamen" in prompt
     assert "Clickbait" in prompt

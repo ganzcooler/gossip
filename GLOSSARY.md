@@ -61,7 +61,7 @@ A short exact quote or precise section label from the Protokoll used to retrieve
 _Avoid_: Anker, Zitat, Referenz
 
 **Faktenprüfung**:
-The gate that compares a draft against the Protokoll and reports unsupported, wrong, or inadmissible claims.
+The gate that compares a draft against the retrieved source excerpts from the Protokoll and reports unsupported, wrong, or inadmissible claims.
 _Avoid_: Fact Check, QA
 
 **Caption**:
@@ -71,10 +71,6 @@ _Avoid_: Beschreibung, Text
 **Alt-Text**:
 The per-slide accessibility text derived from the slide content.
 _Avoid_: Bildbeschreibung
-
-**Warnung**:
-A non-blocking issue on a Beitrag that needs manual review before publishing, such as a missing source link.
-_Avoid_: Fehler, Error
 
 **Legacy-Artikel**:
 An `articles` row from the pre-post pipeline. It stays readable but is not written by the new pipeline.

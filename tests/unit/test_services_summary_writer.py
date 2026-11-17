@@ -99,9 +99,19 @@ async def test_writer_retries_once_with_validation_feedback_then_succeeds():
     assert PROTOCOL_TEXT not in retry_prompt
 
 
+async def test_writer_accepts_a_short_summary_cover_title():
+    expected = _draft()
+    expected.cover_title = "Haushalt"
+    fake = FakeLLMClient(json_responses={"summary_writer": [expected]})
+
+    result = await write_summary(BRIEFS, EXCERPTS, fake)
+
+    assert result.cover_title == "Haushalt"
+
+
 async def test_writer_retries_invalid_structure_once_and_then_fails():
     invalid = {
-        "cover_title": "Zu kurz",
+        "cover_title": "   ",
         "points": [],
     }
     fake = FakeLLMClient(json_responses={"summary_writer": [invalid, invalid]})

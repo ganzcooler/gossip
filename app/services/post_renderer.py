@@ -1,6 +1,6 @@
 """Deterministic Pillow renderer for the blue 9:16 Summary-Beitrag.
 
-The renderer consumes the ticket-04 composition (or its persisted equivalent)
+The renderer consumes the Summary composition (or its persisted equivalent)
 and renders every frame in memory first. Files are written only after the whole
 post rendered successfully, so a text-overflow or asset failure never leaves a
 partial story in the output folder.
@@ -37,7 +37,20 @@ from app.services.render_common import (
     write_caption_file,
 )
 from app.services.slide_composer import (
+    CARD_BODY_BOTTOM,
+    CARD_BODY_LINE_HEIGHT,
+    CARD_HEADING_BODY_GAP,
+    CARD_HEADING_LINE_HEIGHT,
+    CARD_HEADING_MAX_HEIGHT,
+    CARD_HEADING_MAX_LINES,
+    CARD_HEADING_SIZES,
+    CARD_TEXT_WIDTH,
     COVER_LABEL,
+    COVER_TITLE_LINE_HEIGHT,
+    COVER_TITLE_MAX_LINES,
+    COVER_TITLE_SIZES,
+    COVER_TITLE_WIDTH,
+    SUMMARY_BODY_SIZES,
     ComposedSummarySlide,
     SummaryComposition,
 )
@@ -48,16 +61,11 @@ SUMMARY_SIZE = (1080, 1920)
 CARD_BOX = (64, 460, 1016, 1680)
 CARD_EDGE_WIDTH = 10
 CARD_TEXT_X = 118
-CARD_TEXT_WIDTH = 800
-CARD_BODY_BOTTOM = 1600
 
 COVER_LOGO_WIDTH = 300
 CARD_LOGO_WIDTH = 140
 COVER_TITLE_X = 64
 COVER_TITLE_Y = 800
-COVER_TITLE_WIDTH = 950
-COVER_TITLE_MAX_LINES = 3
-COVER_TITLE_LINE_HEIGHT = 1.04
 KICKER_X = 64
 KICKER_Y = 720
 
@@ -66,13 +74,6 @@ CARD_KICKER_POSITION = (118, 646)
 CARD_RULE_BOX = (118, 691, 918, 694)
 CARD_HEADING_POSITION = (118, 718)
 CARD_PAGE_POSITION = (118, 1630)
-
-HEADING_SIZES = (76, 72, 68)
-HEADING_MAX_LINES = 4
-HEADING_LINE_HEIGHT = 1.08
-BODY_SIZES = (42, 39, 36)
-BODY_LINE_HEIGHT = 1.4
-COVER_TITLE_SIZES = (76, 72, 68, 64)
 
 _ORGAN_BADGE_LEFT = 1016
 _ORGAN_BADGE_TOP = 300
@@ -93,8 +94,8 @@ def summary_body_top(heading_size: int, heading_lines: int) -> float:
     """Return the body line-box top for the approved Summary card geometry."""
     return (
         CARD_HEADING_POSITION[1]
-        + heading_lines * heading_size * HEADING_LINE_HEIGHT
-        + 38
+        + heading_lines * heading_size * CARD_HEADING_LINE_HEIGHT
+        + CARD_HEADING_BODY_GAP
     )
 
 
@@ -159,16 +160,16 @@ def _verify_card(slide: ComposedSummarySlide, body_size: int) -> None:
         "Summary cards must use the heading slide type",
     )
     _require(
-        slide.heading_size in HEADING_SIZES,
+        slide.heading_size in CARD_HEADING_SIZES,
         f"Unsupported Summary heading size: {slide.heading_size}",
     )
     _require(
-        len(slide.heading_lines) <= HEADING_MAX_LINES,
+        len(slide.heading_lines) <= CARD_HEADING_MAX_LINES,
         "Summary heading exceeds four lines",
     )
     _require(
-        len(slide.heading_lines) * slide.heading_size * HEADING_LINE_HEIGHT
-        <= 360,
+        len(slide.heading_lines) * slide.heading_size * CARD_HEADING_LINE_HEIGHT
+        <= CARD_HEADING_MAX_HEIGHT,
         "Summary heading exceeds the fitted 360px block",
     )
     _verify_lines(
@@ -183,7 +184,7 @@ def _verify_card(slide: ComposedSummarySlide, body_size: int) -> None:
     _require(slide.card_number is not None, "Summary card number is missing")
     _require(bool(slide.page_label), "Summary page label is missing")
     _require(
-        body_size in BODY_SIZES,
+        body_size in SUMMARY_BODY_SIZES,
         f"Unsupported Summary body size: {body_size}",
     )
     _verify_lines(
@@ -197,7 +198,7 @@ def _verify_card(slide: ComposedSummarySlide, body_size: int) -> None:
     )
     body_bottom = summary_body_top(
         slide.heading_size, len(slide.heading_lines)
-    ) + len(slide.body_lines) * body_size * BODY_LINE_HEIGHT
+    ) + len(slide.body_lines) * body_size * CARD_BODY_LINE_HEIGHT
     _require(
         body_bottom <= CARD_BODY_BOTTOM + 0.5,
         f"Summary body overflows the card at {body_bottom:.1f}px",
@@ -371,7 +372,7 @@ def _render_card(
     )
 
     heading_font = font("oswald", slide.heading_size, 700)
-    heading_line_height = slide.heading_size * HEADING_LINE_HEIGHT
+    heading_line_height = slide.heading_size * CARD_HEADING_LINE_HEIGHT
     heading_tracking = -0.005 * slide.heading_size
     for index, line in enumerate(slide.heading_lines):
         draw_tracked_text(
@@ -388,7 +389,7 @@ def _render_card(
         )
 
     body_font = font("inter", body_size, 400)
-    body_line_height = body_size * BODY_LINE_HEIGHT
+    body_line_height = body_size * CARD_BODY_LINE_HEIGHT
     body_top = summary_body_top(
         slide.heading_size, len(slide.heading_lines)
     )
