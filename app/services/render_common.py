@@ -1,5 +1,6 @@
 """Shared brand and Pillow primitives for the Summary and topic renderers.
 
+This module is the single source of the brand palette and render tokens.
 Everything here is deterministic and side-effect free until a caller writes a
 file. The logo plate follows ADR 0007 exactly: the colored repository logo is
 flattened onto white, resized, and placed on a white rounded rectangle with a

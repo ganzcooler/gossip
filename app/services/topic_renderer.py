@@ -1,7 +1,6 @@
 """Deterministic Pillow renderer for the orange 4:5 Themenbeitrag.
 
-The renderer consumes the ticket-06 topic composition (or its persisted
-equivalent), slices one 720×1350 artwork per pair into the two 360×1350 image
+The renderer consumes the topic composition (or its persisted equivalent), slices one 720×1350 artwork per pair into the two 360×1350 image
 strips, and renders every frame in memory first. Files are written only after
 the whole carousel rendered successfully, so text overflow or a missing asset
 never leaves a partial set in the output folder.

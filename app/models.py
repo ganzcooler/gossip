@@ -109,7 +109,7 @@ class EditorialPlan(Base):
 
 
 class Post(Base):
-    """One reader-facing Beitrag: a Summary or a topic post."""
+    """One reader-facing Beitrag: a Summary-Beitrag or a Themenbeitrag."""
 
     __tablename__ = "posts"
 

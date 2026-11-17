@@ -1,7 +1,7 @@
 """Shared Pillow text-layout primitives for the post renderers.
 
 The module owns the runtime fonts and the deterministic fitting rules used by
-the Summary composer (ticket 04) and the later topic/visual tickets. Text is
+the Summary composer and the topic/visual stages. Text is
 never reworded, truncated, or hyphenated: a heading either fits or the caller
 gets a :class:`TextOverflowError`, and body text is only split at line or word
 boundaries while preserving every character.
@@ -444,7 +444,7 @@ def body_size_that_fits(
 ):
     """Return the first size whose ``fits_at_size(size)`` returns a truthy value.
 
-    Ticket-specific capacity calculations stay in their composers; this helper
+    Family-specific capacity calculations stay in their composers; this helper
     only keeps the post-wide "largest size wins" rule in one place.
     """
     for size in sizes:

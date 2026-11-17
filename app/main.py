@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI application
 app = FastAPI(
     title="Gossip",
-    description="Automated protocol processing and article generation",
+    description="Automated protocol processing into Summary-Beiträge and Themenbeiträge",
     version="1.0.0",
     lifespan=lifespan
 )

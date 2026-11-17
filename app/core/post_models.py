@@ -150,12 +150,10 @@ class SummaryDraft(PipelineModel):
 
     @field_validator("cover_title")
     @classmethod
-    def _cover_title_length(cls, value: str) -> str:
+    def _cover_title_text(cls, value: str) -> str:
         value = value.strip()
-        if not 20 <= len(value) <= 100:
-            raise ValueError(
-                "cover_title must contain 20 to 100 characters including spaces"
-            )
+        if not value:
+            raise ValueError("cover_title must not be empty")
         return value
 
 
@@ -251,7 +249,7 @@ class VisualPrompts(PipelineModel):
     """The Visual-Prompt-Writer's cover plus optional artwork prompts.
 
     The Summary-Beitrag uses only the cover prompt; its cards reuse the cover
-    art. Topic posts use one artwork prompt per pair.
+    art. Themenbeiträge use one artwork prompt per pair.
     """
 
     cover_prompt: str

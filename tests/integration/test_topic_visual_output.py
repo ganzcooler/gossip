@@ -593,8 +593,16 @@ async def test_topic_render_failure_marks_only_that_topic_and_writes_no_topic_fi
     assert (folder / "caption-summary-summary.txt").exists()
 
     haushalt_assets = await _assets(postgres_session, haushalt)
-    assert [asset.status for asset in haushalt_assets] == ["ready", "ready", "ready"]
+    assert [asset.status for asset in haushalt_assets] == [
+        "failed",
+        "failed",
+        "failed",
+    ]
     assert all(asset.path is None for asset in haushalt_assets)
+    assert all(
+        "forced topic render failure" in asset.error
+        for asset in haushalt_assets
+    )
 
 
 async def test_topic_image_authentication_error_stops_the_job(

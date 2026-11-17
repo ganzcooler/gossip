@@ -187,6 +187,24 @@ async def test_job_selects_unprocessed_protocols_and_skips_failed_plans(
     assert await _run_job(monkeypatch, postgres_engine, fake) == []
 
 
+async def test_unprocessed_selection_includes_legacy_null_processed_rows(
+    postgres_engine,
+):
+    session_factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    async with session_factory() as session:
+        legacy = await _add_protocol(session, 21, processed=None)
+        processed = await _add_protocol(session, 22, processed=True)
+        await session.commit()
+        legacy_id = legacy.id
+        processed_id = processed.id
+
+    async with session_factory() as session:
+        selected = await scheduler_module._unprocessed_protocol_ids(session)
+
+    assert legacy_id in selected
+    assert processed_id not in selected
+
+
 async def test_job_stops_immediately_on_authentication_error(
     postgres_engine, monkeypatch
 ):

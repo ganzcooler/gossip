@@ -32,7 +32,7 @@ async def fetch_protocols_wrapper():
 async def _unprocessed_protocol_ids(session) -> list[int]:
     result = await session.execute(
         select(Protocol.id)
-        .where(Protocol.processed.is_(False))
+        .where(Protocol.processed.is_not(True))
         .order_by(Protocol.session_date, Protocol.id)
     )
     return list(result.scalars().all())

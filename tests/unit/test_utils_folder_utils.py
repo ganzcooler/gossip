@@ -5,7 +5,12 @@ import pytest
 from datetime import date
 import re
 
-from app.utils.folder_utils import create_protocol_folder, ensure_directories
+from app.utils.folder_utils import (
+    create_protocol_folder,
+    ensure_directories,
+    ensure_protocol_folder,
+    protocol_folder_path,
+)
 
 
 class TestCreateProtocolFolder:
@@ -112,6 +117,33 @@ class TestCreateProtocolFolder:
 
         assert "ß" not in result.name
         assert "ss" in result.name.lower()
+
+
+class TestProtocolFolderHelpers:
+    """The create/ensure helpers share the deterministic path formula."""
+
+    def test_create_and_ensure_use_protocol_folder_path(self, temp_directory):
+        base_dir = temp_directory / "articles"
+        session_date = date(2024, 1, 15)
+        title = "Gemeinderat Rosdorf"
+
+        expected = protocol_folder_path(base_dir, session_date, title)
+        created = create_protocol_folder(base_dir, session_date, title)
+        ensured = ensure_protocol_folder(base_dir, session_date, title)
+
+        assert created == ensured == expected
+        assert expected.is_dir()
+
+    def test_ensure_protocol_folder_is_idempotent(self, temp_directory):
+        base_dir = temp_directory / "articles"
+        session_date = date(2024, 1, 15)
+        title = "Gemeinderat Rosdorf"
+
+        first = ensure_protocol_folder(base_dir, session_date, title)
+        second = ensure_protocol_folder(base_dir, session_date, title)
+
+        assert first == second
+        assert first.is_dir()
 
 
 class TestEnsureDirectories:

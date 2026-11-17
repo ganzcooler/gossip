@@ -16,6 +16,14 @@ from dataclasses import dataclass
 from PIL import Image, ImageDraw, ImageOps
 
 from app.services.llm_client import LLMAuthenticationError, LLMClient
+from app.services.render_common import (
+    BRAND_BLUE,
+    BRAND_BLUE_DEEP,
+    BRAND_ORANGE,
+    BRAND_ORANGE_DEEP,
+    SURFACE_BASE,
+    SURFACE_SUNKEN,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,14 +43,6 @@ TOPIC_SINGLE_CROP = (360, 0, 720, 1350)
 
 ASSET_STATUS_READY = "ready"
 ASSET_STATUS_FALLBACK = "fallback"
-
-SURFACE_BASE = (23, 23, 26)
-BRAND_BLUE = (30, 123, 181)
-BRAND_BLUE_DEEP = (21, 90, 133)
-
-TOPIC_SURFACE_BASE = (30, 30, 33)
-BRAND_ORANGE = (233, 79, 35)
-BRAND_ORANGE_DEEP = (201, 62, 24)
 
 
 class ImageGenerationError(Exception):
@@ -80,7 +80,7 @@ def normalize_image(image: Image.Image, size: tuple[int, int]) -> Image.Image:
 
 def summary_fallback_art() -> Image.Image:
     """Return the flat, family-pure Summary fallback from the design contract."""
-    image = Image.new("RGB", SUMMARY_IMAGE_SIZE, SURFACE_BASE)
+    image = Image.new("RGB", SUMMARY_IMAGE_SIZE, SURFACE_SUNKEN)
     draw = ImageDraw.Draw(image)
     draw.rectangle((720, 0, 1079, 1919), fill=BRAND_BLUE_DEEP)
     draw.rectangle((710, 0, 719, 1919), fill=BRAND_BLUE)
@@ -91,7 +91,7 @@ def summary_fallback_art() -> Image.Image:
 
 def topic_cover_fallback_art() -> Image.Image:
     """Return the flat, family-pure topic cover fallback from the design."""
-    image = Image.new("RGB", TOPIC_IMAGE_SIZE, TOPIC_SURFACE_BASE)
+    image = Image.new("RGB", TOPIC_IMAGE_SIZE, SURFACE_BASE)
     draw = ImageDraw.Draw(image)
     draw.rectangle((720, 0, 1079, 1349), fill=BRAND_ORANGE_DEEP)
     draw.rectangle((710, 0, 719, 1349), fill=BRAND_ORANGE)
@@ -102,7 +102,7 @@ def topic_cover_fallback_art() -> Image.Image:
 
 def topic_pair_fallback_art() -> Image.Image:
     """Return the flat 720x1350 topic pair fallback from the design."""
-    image = Image.new("RGB", TOPIC_PAIR_SIZE, TOPIC_SURFACE_BASE)
+    image = Image.new("RGB", TOPIC_PAIR_SIZE, SURFACE_BASE)
     draw = ImageDraw.Draw(image)
     draw.rectangle((180, 300, 539, 1049), fill=BRAND_ORANGE_DEEP)
     draw.rectangle((355, 0, 364, 1349), fill=BRAND_ORANGE)

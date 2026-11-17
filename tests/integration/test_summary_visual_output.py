@@ -219,7 +219,8 @@ async def test_missing_logo_fails_the_render_and_writes_no_partial_files(
     assert "logo" in summary.error
     assert [post.status for post in result.posts] == ["failed"]
     assert len(assets) == 1
-    assert assets[0].status == "ready"
+    assert assets[0].status == "failed"
+    assert "logo" in assets[0].error
     assert assets[0].path is None
     assert list(tmp_path.iterdir()) == []
     assert protocol.processed is True
