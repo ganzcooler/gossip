@@ -125,19 +125,68 @@ async def test_topic_visual_prompt_writer_gets_only_its_draft_and_pair_count():
     assert "Themenbrief" not in call.prompt
 
 
-async def test_topic_visual_prompt_writer_rejects_the_wrong_artwork_count():
+async def test_topic_visual_prompt_writer_retries_the_wrong_artwork_count():
+    fake = FakeLLMClient(
+        json_responses={
+            TOPIC_VISUAL_PROMPTS_ROLE: [
+                VisualPrompts(cover_prompt="Cover"),
+                VisualPrompts(
+                    cover_prompt="Neues Cover",
+                    artwork_prompts=["Paar eins", "Paar zwei"],
+                ),
+            ]
+        }
+    )
+
+    result = await write_topic_visual_prompts(_topic_draft(), 2, fake)
+
+    assert result.cover_prompt == "Neues Cover"
+    assert result.artwork_prompts == ["Paar eins", "Paar zwei"]
+    assert len(fake.calls) == 2
+    assert "Korrekturhinweis" not in fake.calls[0].prompt
+    assert "Korrekturhinweis" in fake.calls[1].prompt
+    assert "0 artwork prompts, expected 2" in fake.calls[1].prompt
+    assert "genau 2 Einträge" in fake.calls[1].prompt
+
+
+async def test_topic_visual_prompt_writer_retries_a_schema_failure():
+    fake = FakeLLMClient(
+        json_responses={
+            TOPIC_VISUAL_PROMPTS_ROLE: [
+                LLMSchemaError("bad visual JSON"),
+                VisualPrompts(
+                    cover_prompt="Neues Cover",
+                    artwork_prompts=["Paar eins", "Paar zwei"],
+                ),
+            ]
+        }
+    )
+
+    result = await write_topic_visual_prompts(_topic_draft(), 2, fake)
+
+    assert result.artwork_prompts == ["Paar eins", "Paar zwei"]
+    assert len(fake.calls) == 2
+    assert "bad visual JSON" in fake.calls[1].prompt
+
+
+async def test_topic_visual_prompt_writer_rejects_the_wrong_artwork_count_after_retry():
     fake = FakeLLMClient(
         json_responses={
             TOPIC_VISUAL_PROMPTS_ROLE: [
                 VisualPrompts(
                     cover_prompt="Cover", artwork_prompts=["Nur ein Paar"]
-                )
+                ),
+                VisualPrompts(
+                    cover_prompt="Cover", artwork_prompts=["Nur ein Paar"]
+                ),
             ]
         }
     )
 
     with pytest.raises(VisualPromptError, match="expected 2"):
         await write_topic_visual_prompts(_topic_draft(), 2, fake)
+
+    assert len(fake.calls) == 2
 
 
 async def test_topic_visual_prompt_writer_leaves_authentication_errors_to_the_pipeline():

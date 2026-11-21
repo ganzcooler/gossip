@@ -322,5 +322,15 @@ def test_topic_visual_prompt_is_deterministic_and_requires_pairs():
 
     assert first == second
     assert first.startswith("Du bist")
+    assert "Korrekturhinweis" not in first
     with pytest.raises(ValueError, match="pair_count"):
         build_topic_visual_prompt(TOPIC_DRAFT, 0)
+
+
+def test_topic_visual_prompt_appends_validation_feedback():
+    prompt = build_topic_visual_prompt(TOPIC_DRAFT, 2, feedback="0 statt 2 Prompts")
+
+    assert "## Korrekturhinweis" in prompt
+    assert "0 statt 2 Prompts" in prompt
+    assert "genau 2 Einträge" in prompt
+    assert prompt.index("Korrekturhinweis") < prompt.index("## Ausgabeformat")

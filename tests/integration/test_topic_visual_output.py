@@ -408,6 +408,7 @@ async def test_one_topic_visual_failure_leaves_summary_and_other_topic_ready(
     fake.script_json(
         "topic_visual_prompts",
         LLMSchemaError("topic visual prompts failed"),
+        LLMSchemaError("topic visual prompts failed again"),
         VisualPrompts(
             cover_prompt="Cover radweg",
             artwork_prompts=["Pair 1", "Pair 2"],

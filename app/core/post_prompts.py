@@ -380,7 +380,12 @@ Markdown, keine Erklärungen und kein Text außerhalb des JSON.
 """
 
 
-def build_topic_visual_prompt(draft: TopicDraft, pair_count: int) -> str:
+def build_topic_visual_prompt(
+    draft: TopicDraft,
+    pair_count: int,
+    *,
+    feedback: str | None = None,
+) -> str:
     """Build the Themen visual-prompt prompt from the topic draft only.
 
     The writer gets the immutable article draft and the number of artwork
@@ -389,6 +394,19 @@ def build_topic_visual_prompt(draft: TopicDraft, pair_count: int) -> str:
     """
     if pair_count < 1:
         raise ValueError("pair_count must be at least 1")
+
+    feedback_block = ""
+    if feedback:
+        feedback_block = f"""
+## Korrekturhinweis
+
+Dein vorheriger Versuch wurde abgelehnt:
+{feedback}
+
+Liefere vollständig neue, gültige Bildprompts. artwork_prompts muss genau \
+{pair_count} Einträge enthalten.
+"""
+
     return f"""Du bist der Visual-Prompt-Writer von Gossip Rosdorf. Du schreibst \
 Bildprompts für das Cover und die Bildpaare eines Themenbeitrags.
 
@@ -424,7 +442,7 @@ keine Parteisymbole im Bild.
 - Keine erkennbaren Minderjährigen und keine fotorealistischen, namentlich \
 erkennbaren Politikerinnen oder Politiker.
 - Das Branding kommt ausschließlich aus dem Renderer, nie aus dem Bild.
-
+{feedback_block}
 ## Ausgabeformat
 
 Antworte ausschließlich mit einem einzigen JSON-Objekt, das dem vorgegebenen \

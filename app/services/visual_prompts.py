@@ -61,27 +61,37 @@ async def write_topic_visual_prompts(
     """
     if pair_count < 1:
         raise ValueError("pair_count must be at least 1")
-    prompt = build_topic_visual_prompt(draft, pair_count)
-    try:
-        response = await llm.generate_json(
-            role=role, prompt=prompt, schema=VisualPrompts
-        )
-        if isinstance(response, VisualPrompts):
-            result = response
-        else:
-            result = VisualPrompts.model_validate(response)
-    except LLMAuthenticationError:
-        raise
-    except (LLMError, ValidationError, TypeError, ValueError) as exc:
-        raise VisualPromptError(f"Visual prompt writer failed: {exc}") from exc
 
-    if len(result.artwork_prompts) != pair_count:
-        raise VisualPromptError(
-            "Visual prompt writer returned "
-            f"{len(result.artwork_prompts)} artwork prompts, expected "
-            f"{pair_count}"
-        )
-    return result
+    feedback: str | None = None
+    for attempt in (1, 2):
+        prompt = build_topic_visual_prompt(draft, pair_count, feedback=feedback)
+        try:
+            response = await llm.generate_json(
+                role=role, prompt=prompt, schema=VisualPrompts
+            )
+            if isinstance(response, VisualPrompts):
+                result = response
+            else:
+                result = VisualPrompts.model_validate(response)
+        except LLMAuthenticationError:
+            raise
+        except (LLMError, ValidationError, TypeError, ValueError) as exc:
+            error = VisualPromptError(f"Visual prompt writer failed: {exc}")
+        else:
+            if len(result.artwork_prompts) == pair_count:
+                return result
+            error = VisualPromptError(
+                "Visual prompt writer returned "
+                f"{len(result.artwork_prompts)} artwork prompts, expected "
+                f"{pair_count}"
+            )
+
+        if attempt == 1:
+            feedback = str(error)
+            continue
+        raise error
+
+    raise AssertionError("unreachable")
 
 
 __all__ = [
