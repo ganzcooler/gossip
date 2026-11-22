@@ -275,6 +275,39 @@ def test_split_text_balanced_uses_a_balanced_word_fallback_for_one_sentence():
     assert parts[0].count(" ") != 0
 
 
+def test_split_text_balanced_never_leaves_the_last_sentence_alone():
+    font = inter_font(36, weight=400)
+    sentences = [
+        "Der Rat beschließt den Haushalt einstimmig.",
+        "Die Verwaltung zahlt die Mittel im Frühjahr aus.",
+        "Der Radweg an der Hauptstraße wird im Sommer gebaut.",
+    ]
+    text = normalize_whitespace(" ".join(sentences))
+    line_height = 36 * 1.4
+    capacities = {
+        "width": 300,
+        "first_capacity": 4 * line_height,
+        "continuation_capacity": 4 * line_height,
+        "line_height": line_height,
+    }
+
+    # One continuation per sentence cannot satisfy the two-sentence minimum.
+    with pytest.raises(TextOverflowError):
+        split_text_balanced(
+            text,
+            font,
+            require_sentence_boundaries=True,
+            **capacities,
+        )
+
+    parts = split_text_balanced(text, font, **capacities)
+
+    assert len(parts) >= 3
+    assert " ".join(parts) == text
+    # The fallback cuts inside the last sentence instead of leaving it alone.
+    assert parts[-1] != sentences[-1]
+
+
 def test_split_text_to_fit_returns_none_when_nothing_fits():
     font = inter_font(36, weight=400)
 

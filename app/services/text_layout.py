@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import IntEnum
 from functools import lru_cache
 from pathlib import Path
 
@@ -497,32 +498,105 @@ def split_text_to_fit(
     return None
 
 
+@dataclass(frozen=True)
+class _ParagraphBudget:
+    """Continuation minimums measured once on the whole paragraph.
+
+    Recursive splits must keep judging against the original paragraph rather
+    than the shrinking remainder; otherwise a short first part lowers the bar
+    for every later continuation and a three-sentence paragraph can end in a
+    one-sentence orphan.
+    """
+
+    full_lines: int
+    full_height: float
+    sentence_count: int
+
+    @property
+    def requires_two_sentences(self) -> bool:
+        return self.sentence_count >= 3
+
+    @property
+    def requires_substantial_continuation(self) -> bool:
+        return self.full_lines >= 4
+
+    @property
+    def minimum_continuation_height(self) -> float:
+        return 0.25 * self.full_height
+
+
+@dataclass(frozen=True)
+class _SplitContext:
+    """Font metrics and page budget shared by every split of one paragraph."""
+
+    font: ImageFont.FreeTypeFont
+    width: float
+    line_height: float
+    continuation_capacity: float
+    paragraph: _ParagraphBudget
+
+    def wrap(self, text: str) -> list[TextLine]:
+        return wrap_text(text, self.font, self.width, allow_char_split=False)
+
+    def height(self, text: str) -> float:
+        return len(self.wrap(text)) * self.line_height
+
+
+class _SplitTier(IntEnum):
+    """Preference order for a split boundary; lower tiers win."""
+
+    SENTENCE_WITH_SUBSTANTIAL_CONTINUATION = 0
+    WORD_WITH_SUBSTANTIAL_CONTINUATION = 1
+    SENTENCE_WITH_RELAXED_SENTENCES = 2
+    WORD_WITH_COMPLETE_SENTENCE = 3
+    WORD_WITH_RELAXED_SENTENCES = 4
+    WORD_WITHOUT_SIZE = 5
+    ABBREVIATION_BOUNDARY = 6
+
+
+@dataclass(frozen=True)
+class _SplitCandidate:
+    """One evaluated word boundary and its ranking key."""
+
+    tier: _SplitTier
+    balance: float
+    position: int
+
+    @property
+    def rank(self) -> tuple[int, float, int]:
+        # Lower tier and balance win; a later position breaks exact ties.
+        return (int(self.tier), self.balance, -self.position)
+
+
 def _choose_balanced_split(
     text: str,
-    font: ImageFont.FreeTypeFont,
+    context: _SplitContext,
     *,
-    width: float,
     capacity: float,
-    continuation_capacity: float,
-    line_height: float,
+    first_part: bool,
+    starts_at_sentence: bool,
+    require_sentence_boundaries: bool = False,
 ) -> int | None:
     """Choose the best word boundary for the next balanced part.
 
     Sentence boundaries near the middle are preferred. A word boundary is the
     fallback and never splits inside a known abbreviation while a neutral
-    boundary exists. Tiers rank substantial continuations above relaxed ones.
+    boundary exists. The tiers encode substantial continuations above relaxed
+    ones. A split is rejected when it would leave exactly one complete sentence
+    as a continuation part, whether as the current prefix or as the final
+    suffix of a paragraph that started with at least three sentences.
+
+    With ``require_sentence_boundaries`` every continuation must still meet the
+    two-sentence and size minimums. The composer uses that strict mode to try a
+    smaller body size before it accepts a continuation below those minimums.
     """
-    full_lines = len(wrap_text(text, font, width, allow_char_split=False))
-    full_height = full_lines * line_height
-    sentence_ends = _sentence_end_positions(text)
-    needs_two_sentences = len(sentence_ends) >= 3
-    needs_size = full_lines >= 4
+    budget = context.paragraph
+    full_height = context.height(text)
     can_finish_in_two = (
-        full_height <= capacity + continuation_capacity + 1e-9
+        full_height <= capacity + context.continuation_capacity + 1e-9
     )
     target = min(capacity, full_height / 2) if not can_finish_in_two else 0.0
-
-    candidates: list[tuple[int, float, int, int]] = []
+    sentence_ends = _sentence_end_positions(text)
     boundaries = _word_boundaries(text)
     sentence_positions = [
         position
@@ -530,61 +604,99 @@ def _choose_balanced_split(
         if _is_topic_sentence_boundary(text, position)
     ]
     sentence_position_set = set(sentence_positions)
+    strict = require_sentence_boundaries and budget.requires_two_sentences
 
-    def evaluate(position: int) -> tuple[int, float, int, int] | None:
+    def evaluate(position: int) -> _SplitCandidate | None:
         first = text[:position].strip()
         second = text[position:].strip()
         if not first or not second:
             return None
 
-        first_height = _height_of(first, font, width, line_height)
+        first_height = context.height(first)
         if first_height > capacity + 1e-9:
             return None
-        second_lines = wrap_text(
-            second, font, width, allow_char_split=False
-        )
-        second_height = len(second_lines) * line_height
-        if can_finish_in_two and second_height > continuation_capacity + 1e-9:
+        second_lines = context.wrap(second)
+        second_height = len(second_lines) * context.line_height
+        if can_finish_in_two and second_height > context.continuation_capacity + 1e-9:
             return None
 
         is_sentence = position in sentence_position_set
         is_abbreviation = _is_abbreviation_boundary(text, position)
-        enough_sentences = (
-            not needs_two_sentences
-            or _complete_sentences_after(text, position, sentence_ends) >= 2
+        complete_sentences = _complete_sentences_after(
+            text, position, sentence_ends
         )
-        enough_size = (
-            not needs_size
-            or (
-                len(second_lines) >= 2
-                and second_height >= 0.25 * full_height - 1e-9
-            )
+        enough_sentences = (
+            not budget.requires_two_sentences or complete_sentences >= 2
+        )
+        enough_size = not budget.requires_substantial_continuation or (
+            len(second_lines) >= 2
+            and second_height >= budget.minimum_continuation_height - 1e-9
+        )
+        final_suffix = second_height <= context.continuation_capacity + 1e-9
+        prefix_ends = sum(1 for end in sentence_ends if end <= position)
+        prefix_sentences = (
+            prefix_ends if starts_at_sentence else max(0, prefix_ends - 1)
         )
 
+        # Never leave exactly one complete sentence as a continuation part.
+        lone_suffix = (
+            budget.requires_two_sentences
+            and is_sentence
+            and final_suffix
+            and complete_sentences == 1
+        )
+        lone_prefix = (
+            budget.requires_two_sentences
+            and not first_part
+            and starts_at_sentence
+            and is_sentence
+            and prefix_sentences == 1
+        )
+        if lone_suffix or lone_prefix:
+            return None
+        if strict and not first_part and prefix_sentences < 2:
+            return None
+
         if is_sentence and enough_sentences and enough_size:
-            tier = 0
+            tier = _SplitTier.SENTENCE_WITH_SUBSTANTIAL_CONTINUATION
         elif not is_abbreviation and enough_sentences and enough_size:
-            tier = 1
-        elif is_sentence:
-            tier = 2
+            tier = _SplitTier.WORD_WITH_SUBSTANTIAL_CONTINUATION
+        elif strict:
+            return None
+        elif is_sentence and enough_size:
+            tier = _SplitTier.SENTENCE_WITH_RELAXED_SENTENCES
+        elif (
+            not is_abbreviation
+            and enough_size
+            and (not budget.requires_two_sentences or complete_sentences >= 1)
+        ):
+            tier = _SplitTier.WORD_WITH_COMPLETE_SENTENCE
+        elif not is_abbreviation and enough_size:
+            tier = _SplitTier.WORD_WITH_RELAXED_SENTENCES
         elif not is_abbreviation:
-            tier = 3
+            tier = _SplitTier.WORD_WITHOUT_SIZE
         else:
-            tier = 4
+            tier = _SplitTier.ABBREVIATION_BOUNDARY
 
         balance = (
             abs(first_height - second_height)
             if can_finish_in_two
             else abs(first_height - target)
         )
-        return (tier, balance, -position, position)
+        return _SplitCandidate(tier, balance, position)
 
+    candidates: list[_SplitCandidate] = []
     for position in sentence_positions:
         candidate = evaluate(position)
         if candidate is not None:
             candidates.append(candidate)
-    if any(candidate[0] == 0 for candidate in candidates):
-        return min(candidate for candidate in candidates if candidate[0] == 0)[-1]
+    substantial = [
+        candidate
+        for candidate in candidates
+        if candidate.tier == _SplitTier.SENTENCE_WITH_SUBSTANTIAL_CONTINUATION
+    ]
+    if substantial:
+        return min(substantial, key=lambda candidate: candidate.rank).position
 
     for position in boundaries:
         if position in sentence_position_set:
@@ -592,12 +704,16 @@ def _choose_balanced_split(
         candidate = evaluate(position)
         if candidate is not None:
             candidates.append(candidate)
-    if any(candidate[0] == 1 for candidate in candidates):
-        return min(candidate for candidate in candidates if candidate[0] == 1)[-1]
-
+    word_substantial = [
+        candidate
+        for candidate in candidates
+        if candidate.tier == _SplitTier.WORD_WITH_SUBSTANTIAL_CONTINUATION
+    ]
+    if word_substantial:
+        return min(word_substantial, key=lambda candidate: candidate.rank).position
     if not candidates:
         return None
-    return min(candidates)[-1]
+    return min(candidates, key=lambda candidate: candidate.rank).position
 
 
 def split_text_balanced(
@@ -608,17 +724,21 @@ def split_text_balanced(
     first_capacity: float,
     continuation_capacity: float,
     line_height: float,
+    require_sentence_boundaries: bool = False,
 ) -> list[str]:
     """Split topic copy into substantial parts that each fit a page.
 
     The first part fits ``first_capacity``; every later part fits
-    ``continuation_capacity``. Sentence boundaries near the middle win, with
-    the continuation keeping at least two complete sentences when the text has
-    at least three. A continuation of at least two rendered lines and 25 % of
-    the paragraph height is required for paragraphs of four or more lines.
-    Without a suitable sentence boundary the best balanced word boundary is
-    used. Parts join with single spaces to the normalized input, so no text is
-    reworded, shortened, hyphenated or character-split.
+    ``continuation_capacity``. Sentence boundaries near the middle win. For a
+    paragraph of at least three sentences the continuation keeps at least two
+    complete sentences, and for a paragraph of at least four lines it also
+    keeps two rendered lines and 25 % of the original paragraph height,
+    whenever the page geometry allows it. The splitter never leaves exactly one
+    sentence as a final continuation; it prefers a balanced earlier split or,
+    with ``require_sentence_boundaries``, raises so the caller can try a
+    smaller body size. Without a suitable sentence boundary the best balanced
+    word boundary is used. Parts join with single spaces to the normalized
+    input, so no text is reworded, shortened, hyphenated or character-split.
     """
     normalized = normalize_whitespace(text)
     if not normalized:
@@ -626,26 +746,42 @@ def split_text_balanced(
     if first_capacity <= 0 or continuation_capacity <= 0:
         raise TextOverflowError("split capacities must be positive")
 
-    if _height_of(normalized, font, width, line_height) <= first_capacity + 1e-9:
+    full_lines = len(wrap_text(normalized, font, width, allow_char_split=False))
+    full_height = full_lines * line_height
+    if full_height <= first_capacity + 1e-9:
         return [normalized]
+
+    context = _SplitContext(
+        font=font,
+        width=width,
+        line_height=line_height,
+        continuation_capacity=continuation_capacity,
+        paragraph=_ParagraphBudget(
+            full_lines=full_lines,
+            full_height=full_height,
+            sentence_count=len(_sentence_end_positions(normalized)),
+        ),
+    )
 
     parts: list[str] = []
     remainder = normalized
     capacity = first_capacity
-    while _height_of(remainder, font, width, line_height) > capacity + 1e-9:
+    starts_at_sentence = True
+    while context.height(remainder) > capacity + 1e-9:
         position = _choose_balanced_split(
             remainder,
-            font,
-            width=width,
+            context,
             capacity=capacity,
-            continuation_capacity=continuation_capacity,
-            line_height=line_height,
+            first_part=not parts,
+            starts_at_sentence=starts_at_sentence,
+            require_sentence_boundaries=require_sentence_boundaries,
         )
         if position is None:
             raise TextOverflowError(
                 "text cannot be split into fitting parts without rewriting"
             )
         parts.append(remainder[:position].strip())
+        starts_at_sentence = _is_topic_sentence_boundary(remainder, position)
         remainder = remainder[position:].strip()
         if not remainder:
             raise TextOverflowError(

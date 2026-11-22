@@ -52,6 +52,16 @@ def _brief_block(briefs: Sequence[SummaryBrief]) -> str:
     )
 
 
+# Shared by the Summary and Themen visual-prompt builders so one style change
+# cannot drift between the two families.
+_PHOTOREALISM_GUARDRAILS = """- Fotorealistische Editorial- und Reportagefotografie mit natürlichem Licht, \
+echten Materialien und einer glaubwürdigen Szene.
+- Keine Illustration, kein Comic, keine Zeichnung, kein Aquarell und kein \
+3D-Render. Keine gefälschte Beweisfotografie.
+- Kein Rahmen, keine Umrandung, kein Passepartout, kein Polaroid-Rand, keine \
+Bild-in-Bild-Komposition, keine Collage, kein Split-Screen und keine Vignette."""
+
+
 def build_planner_prompt(
     *,
     protocol_title: str,
@@ -426,16 +436,12 @@ erscheint auf einer Folie, die rechte auf der nächsten.
 
 ## Design-Guardrails
 
-- Fotorealistische Editorial- und Reportagefotografie mit natürlichem Licht, \
-echten Materialien und einer glaubwürdigen Szene.
-- Keine Illustration, kein Comic, keine Zeichnung, kein Aquarell und kein \
-3D-Render. Keine gefälschte Beweisfotografie.
-- Kein Rahmen, keine Umrandung, kein Passepartout, kein Polaroid-Rand, keine \
-Bild-in-Bild-Komposition, keine Collage, kein Split-Screen und keine Vignette.
+{_PHOTOREALISM_GUARDRAILS}
 - Ein weiter, ruhiger, durchgehend fortlaufender Horizont ohne zentrales \
 Motiv; die Szene passt zu einer kommunalpolitischen Sitzung in Rosdorf.
-- Kein zentrales Motiv und keine Personen im Vordergrund; der Platz für \
-Titel, Logo und Badge bleibt ruhig.
+- Kein zentrales Motiv und keine Personen im Vordergrund.
+- Die obere Logo-Zone bleibt ruhig und hell, damit das transparente Logo \
+ohne Platte lesbar bleibt; der Platz für Titel und Badge bleibt ebenfalls ruhig.
 - 4:5-feed-sichere Komposition: wichtige Motive in der oberen und mittleren \
 Bildhälfte, die untere Bildzone bleibt ruhig für den späteren Titel; keine \
 kritischen Inhalte am Rand.
@@ -476,16 +482,12 @@ Summary-Cards nutzen dasselbe Cover-Bild.
 
 ## Design-Guardrails
 
-- Fotorealistische Editorial- und Reportagefotografie mit natürlichem Licht, \
-echten Materialien und einer glaubwürdigen Szene.
-- Keine Illustration, kein Comic, keine Zeichnung, kein Aquarell und kein \
-3D-Render. Keine gefälschte Beweisfotografie.
-- Kein Rahmen, keine Umrandung, kein Passepartout, kein Polaroid-Rand, keine \
-Bild-in-Bild-Komposition, keine Collage, kein Split-Screen und keine Vignette.
+{_PHOTOREALISM_GUARDRAILS}
 - Eine breite, ruhige, zivile Szene mit einem durchgehenden Horizont, passend \
 zu einer kommunalpolitischen Sitzung in Rosdorf.
-- Kein zentrales Motiv und keine Personen im Vordergrund; der Platz für Titel, \
-Logo und Badge bleibt ruhig.
+- Kein zentrales Motiv und keine Personen im Vordergrund.
+- Die obere Logo-Zone bleibt ruhig und hell, damit das transparente Logo \
+ohne Platte lesbar bleibt; der Platz für Titel und Badge bleibt ebenfalls ruhig.
 - 9:16-Story-sichere Komposition: wichtige Motive in der oberen und mittleren \
 Bildhälfte, die untere Bildzone bleibt ruhig für den späteren Titel; keine \
 kritischen Inhalte am Rand.

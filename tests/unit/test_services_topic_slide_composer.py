@@ -390,6 +390,109 @@ def test_three_sentence_paragraph_keeps_two_sentences_on_the_continuation():
     ) == normalize_whitespace(paragraph)
 
 
+def test_955_character_three_sentence_paragraph_never_leaves_one_sentence_alone():
+    # Reviewer reproduction: ~955 characters in three long sentences were
+    # split at 42px into a heading plus two one-sentence continuations.
+    paragraph = _sentences(3, 955)
+    assert len(paragraph) == 956
+    draft = _draft(
+        sections=[
+            {"h2": H2_ONE, "paragraphs": [paragraph]},
+            {
+                "h2": H2_TWO,
+                "paragraphs": [
+                    _paragraph(
+                        "Der Radweg an der Hauptstraße wird im Sommer gebaut "
+                        "und verbindet die Ortsteile besser.",
+                        720,
+                    )
+                ],
+            },
+        ]
+    )
+
+    composition = compose_topic_slides(draft)
+
+    section = _section_slides(composition, 0)
+    # The composer prefers a smaller body size (42/39/36) over a third part
+    # that would leave one sentence alone on a continuation slide.
+    assert len(section) == 2
+    heading, continuation = section
+    assert len(_sentence_units(continuation.body)) >= 2
+    assert normalize_whitespace(
+        heading.body + " " + continuation.body
+    ) == normalize_whitespace(paragraph)
+
+
+def test_four_sentence_paragraph_prefers_two_substantial_slides_over_an_orphan():
+    paragraph = _sentences(4, 1100)
+    draft = _draft(
+        sections=[
+            {"h2": H2_ONE, "paragraphs": [paragraph]},
+            {
+                "h2": H2_TWO,
+                "paragraphs": [
+                    _paragraph(
+                        "Der Radweg an der Hauptstraße wird im Sommer gebaut "
+                        "und verbindet die Ortsteile besser.",
+                        720,
+                    )
+                ],
+            },
+        ]
+    )
+
+    composition = compose_topic_slides(draft)
+
+    section = _section_slides(composition, 0)
+    assert len(section) == 2
+    heading, continuation = section
+    assert len(_sentence_units(continuation.body)) >= 2
+    full_lines = len(
+        wrap_text(
+            paragraph,
+            inter_font(composition.body_size, weight=400),
+            TOPIC_TEXT_WIDTH,
+            allow_char_split=False,
+        )
+    )
+    full_height = full_lines * composition.body_size * TOPIC_BODY_LINE_HEIGHT
+    assert _rendered_body_height(continuation) >= 0.25 * full_height - 1e-9
+    assert normalize_whitespace(
+        heading.body + " " + continuation.body
+    ) == normalize_whitespace(paragraph)
+
+
+def test_five_sentence_paragraph_splits_across_multiple_slides_without_orphans():
+    paragraph = _sentences(5, 1500)
+    draft = _draft(
+        sections=[
+            {"h2": H2_ONE, "paragraphs": [paragraph]},
+            {
+                "h2": H2_TWO,
+                "paragraphs": [
+                    _paragraph(
+                        "Der Radweg an der Hauptstraße wird im Sommer gebaut "
+                        "und verbindet die Ortsteile besser.",
+                        720,
+                    )
+                ],
+            },
+        ]
+    )
+
+    composition = compose_topic_slides(draft)
+
+    section = _section_slides(composition, 0)
+    assert len(section) == 3
+    heading, *continuations = section
+    for continuation in continuations:
+        assert len(_sentence_units(continuation.body)) >= 2
+    assert normalize_whitespace(
+        heading.body + " " + " ".join(slide.body for slide in continuations)
+    ) == normalize_whitespace(paragraph)
+
+
 def test_single_sentence_paragraph_uses_a_balanced_word_fallback():
     paragraph = _sentence(500)
     draft = _draft(

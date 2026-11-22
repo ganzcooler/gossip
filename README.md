@@ -57,14 +57,17 @@ has been removed; legacy articles remain readable through the API.
    deterministically: every H2 starts a new slide, each paragraph is pre-checked
    against its slide capacity so a paragraph that fits a full page moves whole
    to the next slide, and only an overlong paragraph is split. The split prefers
-   a sentence boundary near the middle so the continuation keeps at least two
-   complete sentences and, for paragraphs of four or more lines, at least two
-   lines and 25 % of the paragraph height; without a suitable sentence boundary
-   it falls back to a balanced word boundary. Continuation slides carry the
-   short chapter label at one post-wide body size, and the article text is never
-   reworded, shortened or hyphenated. A stateless Themen visual-prompt call
-   writes a cover and `ceil(content_slides / 2)` pair prompts from the
-   Themenentwurf only.
+   a sentence boundary near the middle. For a paragraph of at least three
+   sentences the continuation keeps at least two complete sentences, and for a
+   paragraph of four or more lines it also keeps at least two lines and 25 % of
+   the paragraph's original height, whenever the page geometry allows it. If no
+   sentence boundary can satisfy that, the composer tries a smaller body size
+   before it falls back to a balanced word boundary; for such a paragraph the
+   last continuation is never a single complete sentence. Continuation slides
+   carry the short chapter label at one post-wide body size, and the article
+   text is never reworded, shortened or hyphenated. A stateless Themen
+   visual-prompt call writes a cover and `ceil(content_slides / 2)` pair prompts
+   from the Themenentwurf only.
    These prompts use the same photorealistic editorial/reportage style and
    deterministic no-frame suffix. Image generation requests 4:5 artwork,
    normalizes the cover to 1080×1350, and center-crops each pair to 720×1350 or

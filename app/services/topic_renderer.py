@@ -92,7 +92,6 @@ FOOTER_LOGO_Y = 1110
 COVER_LOGO_WIDTH = 288
 COVER_LOGO_POSITION = (64, 150)
 COVER_BADGE_TOP = 160
-COVER_KICKER_X = 64
 COVER_TITLE_BOTTOM = 1200
 COVER_ACCENT_X = 44
 COVER_ACCENT_WIDTH = 10
@@ -217,9 +216,15 @@ def _cover_ink_bbox(
     boxes = []
     for index, line in enumerate(lines):
         left, top, right, bottom = display_font.getbbox(line, anchor="la")
+        # Pillow's anchored bbox reports 0 for the left bearing even though the
+        # drawn mask starts a few pixels inside the box. The renderer draws
+        # glyph by glyph with tracking, so the mask's left edge is the visible
+        # left ink edge used to align the kicker.
+        mask_bbox = display_font.getmask(line).getbbox()
+        left_bearing = mask_bbox[0] if mask_bbox is not None else left
         boxes.append(
             (
-                int(x + left),
+                int(x + left_bearing),
                 int(index * size * TOPIC_COVER_TITLE_LINE_HEIGHT + top),
                 int(x + right),
                 int(index * size * TOPIC_COVER_TITLE_LINE_HEIGHT + bottom),
@@ -610,10 +615,16 @@ def _render_cover(
     )
 
     kicker_y = ink_top - 24 - 64
+    # The kicker shares the title's visible left edge. The normal path keeps
+    # its x=64 layout edge; the inset/emergency fallback aligns to the title
+    # ink so a x=48 title and the kicker do not look offset.
+    kicker_x = (
+        ink_bbox[0] if title_x == TOPIC_COVER_INSET_X else title_x
+    )
     kicker_box = draw_kicker_block(
         canvas,
         TOPIC_COVER_LABEL,
-        x=COVER_KICKER_X,
+        x=kicker_x,
         y=kicker_y,
         fill=BRAND_ORANGE_DEEP,
     )
