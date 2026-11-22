@@ -5,7 +5,7 @@ from datetime import date
 from types import SimpleNamespace
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageChops, ImageDraw
 
 from app.core.post_models import SummaryDraft
 from app.services import render_common
@@ -24,7 +24,44 @@ from app.services.slide_composer import compose_summary_slides
 BLUE = (30, 123, 181)
 SURFACE_BASE = (30, 30, 33)
 OUTLINE = (70, 70, 75)
-PLATE_WHITE = (255, 255, 255)
+WHITE = (255, 255, 255)
+LOGO_COLOR = (255, 0, 255)
+
+
+def _use_transparent_logo(monkeypatch, tmp_path) -> None:
+    """Use a synthetic ring logo so the real asset can be replaced later."""
+    logo = Image.new("RGBA", (100, 50), (0, 0, 0, 0))
+    ImageDraw.Draw(logo).rectangle(
+        (0, 0, 99, 49), outline=(*LOGO_COLOR, 255), width=10
+    )
+    path = tmp_path / "synthetic-logo.png"
+    logo.save(path)
+    monkeypatch.setattr(render_common, "LOGO_PATH", path)
+
+
+def _use_empty_logo(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "empty-logo.png"
+    Image.new("RGBA", (100, 50), (0, 0, 0, 0)).save(path)
+    monkeypatch.setattr(render_common, "LOGO_PATH", path)
+
+
+def _color_bbox(image: Image.Image, box, color) -> tuple[int, int, int, int] | None:
+    region = image.crop(box)
+    difference = ImageChops.difference(
+        region, Image.new("RGB", region.size, color)
+    )
+    red, green, blue = difference.split()
+    total = ImageChops.add(ImageChops.add(red, green), blue)
+    mask = total.point(lambda value: 255 if value == 0 else 0)
+    bbox = mask.getbbox()
+    if bbox is None:
+        return None
+    return (
+        box[0] + bbox[0],
+        box[1] + bbox[1],
+        box[0] + bbox[2],
+        box[1] + bbox[3],
+    )
 
 
 def _draft() -> SummaryDraft:
@@ -92,16 +129,33 @@ def test_renderer_produces_cover_and_two_cards_at_1080x1920_rgb():
         assert frame.mode == "RGB"
 
 
-def test_cover_has_the_blue_top_rule_logo_plate_badge_kicker_and_white_title():
+def test_cover_has_the_blue_top_rule_badge_kicker_and_white_title():
     _, _, frames = _render_frames()
     cover = frames[0]
 
     assert cover.getpixel((540, 2)) == BLUE
-    assert cover.getpixel((80, 290)) == PLATE_WHITE
-    assert cover.getpixel((63, 290)) != PLATE_WHITE
     assert cover.getpixel((1000, 320)) == BLUE
     assert cover.getpixel((64, 720)) == BLUE
-    assert _has_color(cover, (64, 800, 1014, 1100), (255, 255, 255))
+    assert _has_color(cover, (64, 800, 1014, 1100), WHITE)
+
+
+def test_cover_composites_a_transparent_240px_logo_at_the_top_left_without_a_plate(
+    tmp_path, monkeypatch
+):
+    _use_transparent_logo(monkeypatch, tmp_path)
+
+    _, _, frames = _render_frames()
+    cover = frames[0]
+
+    assert _color_bbox(cover, (40, 260, 520, 540), LOGO_COLOR) == (
+        64,
+        280,
+        304,
+        400,
+    )
+    # The transparent center shows the artwork instead of a white plate.
+    assert cover.getpixel((184, 340)) not in (WHITE, LOGO_COLOR)
+    assert not _has_color(cover, (64, 280, 396, 583), WHITE)
 
 
 def test_card_has_the_blue_edge_profile_card_rule_number_and_page_label():
@@ -114,11 +168,27 @@ def test_card_has_the_blue_edge_profile_card_rule_number_and_page_label():
     assert card.getpixel((40, 1000)) != SURFACE_BASE
     assert card.getpixel((118, 691)) == OUTLINE
     assert card.getpixel((540, 692)) == OUTLINE
-    assert card.getpixel((80, 290)) == PLATE_WHITE
-    assert card.getpixel((63, 290)) != PLATE_WHITE
     assert _has_color(card, (118, 500, 320, 630), BLUE)
     assert _has_color(card, (118, 1630, 400, 1660), BLUE)
-    assert _has_color(card, (118, 718, 918, 1000), (255, 255, 255))
+    assert _has_color(card, (118, 718, 918, 1000), WHITE)
+
+
+def test_card_composites_a_transparent_112px_logo_at_the_top_left_without_a_plate(
+    tmp_path, monkeypatch
+):
+    _use_transparent_logo(monkeypatch, tmp_path)
+
+    _, _, frames = _render_frames()
+    card = frames[1]
+
+    assert _color_bbox(card, (40, 260, 520, 540), LOGO_COLOR) == (
+        64,
+        280,
+        176,
+        336,
+    )
+    assert card.getpixel((120, 308)) not in (WHITE, LOGO_COLOR)
+    assert not _has_color(card, (64, 280, 236, 439), WHITE)
 
 
 def test_body_top_follows_the_heading_line_boxes_plus_38px():
@@ -299,6 +369,16 @@ def test_missing_logo_is_a_hard_render_failure(monkeypatch):
     )
 
     with pytest.raises(RenderError, match="logo"):
+        render_summary_frames(
+            draft, composition, cover_art=_cover_art(), organ="Gemeinderat Rosdorf"
+        )
+
+
+def test_empty_logo_is_a_hard_render_failure(monkeypatch, tmp_path):
+    draft, composition, _ = _render_frames()
+    _use_empty_logo(monkeypatch, tmp_path)
+
+    with pytest.raises(RenderError, match="no visible pixels"):
         render_summary_frames(
             draft, composition, cover_art=_cover_art(), organ="Gemeinderat Rosdorf"
         )

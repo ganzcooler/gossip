@@ -28,12 +28,12 @@ from app.services.render_common import (
     SURFACE_BASE,
     apply_cover_scrim,
     draw_kicker_block,
-    draw_logo_plate,
+    draw_logo,
     draw_organ_badge,
     draw_tracked_text,
     ensure_title_contrast,
     font,
-    logo_plate_size,
+    logo_size,
     protocol_output_folder,
     text_advance,
     write_caption_file,
@@ -85,11 +85,10 @@ HEADING_RULE_Y = 236
 HEADING_RULE_HEIGHT = 3
 H2_BODY_GAP = 24
 BODY_LINE_HEIGHT = 1.4
-FOOTER_LOGO_WIDTH = 130
-FOOTER_PLATE_X_OFFSET = 438
-FOOTER_PLATE_Y = 1110
+FOOTER_LOGO_WIDTH = 104
+FOOTER_LOGO_Y = 1110
 
-COVER_LOGO_WIDTH = 360
+COVER_LOGO_WIDTH = 288
 COVER_LOGO_POSITION = (64, 150)
 COVER_BADGE_TOP = 160
 COVER_KICKER_X = 64
@@ -351,18 +350,14 @@ def _draw_body(
             cursor += line_height
 
 
-def _draw_footer(draw: ImageDraw.ImageDraw, canvas: Image.Image, text_x: int) -> None:
-    plate_x = text_x + FOOTER_PLATE_X_OFFSET
-    plate_width, plate_height = logo_plate_size(FOOTER_LOGO_WIDTH)
+def _draw_footer(canvas: Image.Image, text_x: int) -> None:
+    logo_width, logo_height = logo_size(FOOTER_LOGO_WIDTH)
+    logo_x = text_x + CONTENT_TEXT_WIDTH - logo_width
     _require(
-        plate_x + plate_width == text_x + CONTENT_TEXT_WIDTH,
-        "Topic footer plate is not right-aligned to the text column",
+        FOOTER_LOGO_Y + logo_height <= TOPIC_SIZE[1],
+        "Topic footer logo leaves the canvas",
     )
-    _require(
-        FOOTER_PLATE_Y + plate_height <= TOPIC_SIZE[1],
-        "Topic footer plate leaves the canvas",
-    )
-    draw_logo_plate(canvas, plate_x, FOOTER_PLATE_Y, FOOTER_LOGO_WIDTH)
+    draw_logo(canvas, logo_x, FOOTER_LOGO_Y, FOOTER_LOGO_WIDTH)
 
 
 def _side(content_position: int) -> tuple[int, int, tuple[int, int, int, int]]:
@@ -485,7 +480,7 @@ def _render_heading_slide(
     _draw_body(
         draw, paragraphs, x=text_x, top=body_top, body_size=body_size
     )
-    _draw_footer(draw, canvas, text_x)
+    _draw_footer(canvas, text_x)
     return canvas
 
 
@@ -568,7 +563,7 @@ def _render_continuation_slide(
     _draw_body(
         draw, paragraphs, x=text_x, top=body_top, body_size=body_size
     )
-    _draw_footer(draw, canvas, text_x)
+    _draw_footer(canvas, text_x)
     return canvas
 
 
@@ -588,7 +583,7 @@ def _render_cover(
     draw = ImageDraw.Draw(canvas)
     draw.rectangle((0, 0, TOPIC_SIZE[0] - 1, 5), fill=BRAND_ORANGE)
 
-    logo_box = draw_logo_plate(
+    logo_box = draw_logo(
         canvas,
         COVER_LOGO_POSITION[0],
         COVER_LOGO_POSITION[1],
@@ -599,7 +594,7 @@ def _render_cover(
     )
     _require(
         badge_box[0] >= logo_box[2] + 24,
-        "Organ badge collides with the topic cover logo plate",
+        "Organ badge collides with the topic cover logo",
     )
 
     ink_bbox = _cover_ink_bbox(lines, x=title_x, size=size)
