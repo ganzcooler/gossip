@@ -38,7 +38,12 @@ has been removed; legacy articles remain readable through the API.
    deterministically at one post-wide body size. The Summary-Beitrag also gets
    a composed caption and deterministic Alt-Texte.
 6. **Visualise the Summary** — a stateless visual-prompt call writes the cover
-   prompt from the Summary draft only. Image generation requests a 9:16 image
+   prompt from the Summary draft only. Prompts request photorealistic editorial
+   and reportage photography with natural light, real materials and a believable
+   scene. A fixed deterministic suffix is appended before every image-provider
+   call and forbids illustration, comic, drawing, watercolour, 3D render,
+   frames, borders, passepartouts, polaroid edges, picture-in-picture, collages,
+   split-screens and vignettes. Image generation requests a 9:16 image
    through the LLM port, center-fits it to exactly 1080×1920, and substitutes
    the deterministic blue brand fallback if the provider or payload fails. The
    renderer writes the cover and two to six cards as
@@ -53,15 +58,17 @@ has been removed; legacy articles remain readable through the API.
    short chapter label at one post-wide body size, and the article text is
    never reworded or truncated. A stateless Themen visual-prompt call writes a
    cover and `ceil(content_slides / 2)` pair prompts from the Themenentwurf only.
-   Image generation requests 4:5 artwork, normalizes the cover to 1080×1350,
-   and center-crops each pair to 720×1350 or a final unpaired strip to
-   360×1350. The renderer slices pairs into the zigzag layout and writes
-   `topic-<date>-<slide>.png` plus exactly one `caption-topic-<slug>.txt`
-   inside the topic's own `topic-<slug>/` subfolder. Themenbeitrag image
-   failures produce orange brand fallbacks and the Beitrag still
-   becomes `ready`; authentication errors stop the job. Alt-Texte stay in
-   PostgreSQL and the API; no JSON, Markdown, prompt, or manifest files are
-   written.
+   These prompts use the same photorealistic editorial/reportage style and
+   deterministic no-frame suffix. Image generation requests 4:5 artwork,
+   normalizes the cover to 1080×1350, and center-crops each pair to 720×1350 or
+   a final unpaired strip to 360×1350. The renderer slices pairs into the
+   zigzag layout and writes `topic-<date>-<slide>.png` plus exactly one
+   `caption-topic-<slug>.txt` inside the topic's own `topic-<slug>/` subfolder.
+   Themenbeitrag image failures produce orange brand fallbacks and the Beitrag
+   still becomes `ready`; authentication errors stop the job. Alt-Texte stay in
+   PostgreSQL and the API. The final visual prompt including the suffix is
+   stored in `post_assets.prompt` and exposed by `GET /api/posts/{id}`; no JSON,
+   Markdown, prompt, or manifest files are written.
 8. **Retry and reprocess** — `POST /api/posts/{id}/retry` resets one Beitrag and
    resumes at its `failed_step` with cached drafts, compositions, fact-check
    results, captions and visual prompts. `force=true` clears only that
@@ -113,7 +120,7 @@ app/
 │   ├── slide_composer.py      Deterministic Summary cards and topic slides
 │   ├── caption_writer.py      Caption body role and deterministic composition
 │   ├── visual_prompts.py      Stateless visual-prompt role for covers/artwork
-│   ├── image_generation.py    Image decode, deterministic fit, brand fallbacks
+│   ├── image_generation.py    Image decode, realism suffix, fit, brand fallbacks
 │   ├── post_renderer.py       Deterministic Summary story renderer
 │   ├── topic_renderer.py      Deterministic topic carousel renderer
 │   ├── render_common.py       Single brand palette/token source, logo, scrim, badge, folders

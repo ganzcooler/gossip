@@ -53,6 +53,9 @@ async def test_visual_prompt_writer_gets_only_the_summary_draft():
     assert call.schema is VisualPrompts
     assert _draft().cover_title in call.prompt
     assert _draft().points[0].heading in call.prompt
+    assert "Fotorealistische Editorial- und Reportagefotografie" in call.prompt
+    assert "Kein Rahmen" in call.prompt
+    assert "atmosphärische Illustration" not in call.prompt
     assert PROTOCOL_TEXT not in call.prompt
     assert "Themenbrief" not in call.prompt
 
@@ -120,6 +123,9 @@ async def test_topic_visual_prompt_writer_gets_only_its_draft_and_pair_count():
     assert _topic_draft().title in call.prompt
     assert _topic_draft().sections[0].h2 in call.prompt
     assert "genau 2 Prompts" in call.prompt
+    assert "Fotorealistische Editorial- und Reportagefotografie" in call.prompt
+    assert "Kein Rahmen" in call.prompt
+    assert "atmosphärische Illustration" not in call.prompt
     assert PROTOCOL_TEXT not in call.prompt
     assert "Summary" not in call.prompt
     assert "Themenbrief" not in call.prompt

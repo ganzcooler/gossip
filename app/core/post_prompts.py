@@ -426,14 +426,19 @@ erscheint auf einer Folie, die rechte auf der nächsten.
 
 ## Design-Guardrails
 
-- Eine atmosphärische Illustration, keine Dokumentarfotografie und keine \
-gefälschte Beweisfotografie.
+- Fotorealistische Editorial- und Reportagefotografie mit natürlichem Licht, \
+echten Materialien und einer glaubwürdigen Szene.
+- Keine Illustration, kein Comic, keine Zeichnung, kein Aquarell und kein \
+3D-Render. Keine gefälschte Beweisfotografie.
+- Kein Rahmen, keine Umrandung, kein Passepartout, kein Polaroid-Rand, keine \
+Bild-in-Bild-Komposition, keine Collage, kein Split-Screen und keine Vignette.
 - Ein weiter, ruhiger, durchgehend fortlaufender Horizont ohne zentrales \
 Motiv; die Szene passt zu einer kommunalpolitischen Sitzung in Rosdorf.
 - Kein zentrales Motiv und keine Personen im Vordergrund; der Platz für \
 Titel, Logo und Badge bleibt ruhig.
-- 4:5-feed-sichere Komposition: wichtige Motive im zentralen Bereich, keine \
-kritischen Inhalte am oberen oder unteren Rand.
+- 4:5-feed-sichere Komposition: wichtige Motive in der oberen und mittleren \
+Bildhälfte, die untere Bildzone bleibt ruhig für den späteren Titel; keine \
+kritischen Inhalte am Rand.
 - Die Bildpaare werden in der Mitte geteilt. Wichtige Inhalte liegen \
 mindestens 40 px vom Paar-Seam entfernt; keine harte Kante und kein Motiv, \
 das über die Naht hinweg zerschnitten wirkt.
@@ -464,21 +469,26 @@ genau einen Bildprompt für das Cover des Summary-Beitrags.
 
 ## Aufgabe
 
-- cover_prompt: ein englischer oder deutscher Prompt für eine atmosphärische \
-Illustration im 9:16-Story-Format.
+- cover_prompt: ein englischer oder deutscher Prompt für eine fotorealistische \
+Editorial- und Reportagefotografie im 9:16-Story-Format.
 - artwork_prompts: für den Summary-Beitrag immer eine leere Liste. Die \
 Summary-Cards nutzen dasselbe Cover-Bild.
 
 ## Design-Guardrails
 
-- Eine atmosphärische Illustration, keine Dokumentarfotografie und keine gefälschte \
-Beweisfotografie.
-- Eine breite, ruhige, zivile Szene mit einem durchgehenden Horizont, passend zu \
-einer kommunalpolitischen Sitzung in Rosdorf.
+- Fotorealistische Editorial- und Reportagefotografie mit natürlichem Licht, \
+echten Materialien und einer glaubwürdigen Szene.
+- Keine Illustration, kein Comic, keine Zeichnung, kein Aquarell und kein \
+3D-Render. Keine gefälschte Beweisfotografie.
+- Kein Rahmen, keine Umrandung, kein Passepartout, kein Polaroid-Rand, keine \
+Bild-in-Bild-Komposition, keine Collage, kein Split-Screen und keine Vignette.
+- Eine breite, ruhige, zivile Szene mit einem durchgehenden Horizont, passend \
+zu einer kommunalpolitischen Sitzung in Rosdorf.
 - Kein zentrales Motiv und keine Personen im Vordergrund; der Platz für Titel, \
 Logo und Badge bleibt ruhig.
 - 9:16-Story-sichere Komposition: wichtige Motive in der oberen und mittleren \
-Bildhälfte, keine kritischen Inhalte am oberen oder unteren Rand.
+Bildhälfte, die untere Bildzone bleibt ruhig für den späteren Titel; keine \
+kritischen Inhalte am Rand.
 - Kein Text, keine Buchstaben, keine Zahlen, keine Logos und keine Parteisymbole \
 im Bild.
 - Keine erkennbaren Minderjährigen und keine fotorealistischen, namentlich \

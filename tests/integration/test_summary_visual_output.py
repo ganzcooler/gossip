@@ -17,6 +17,7 @@ from app.core.post_models import (
 )
 from app.models import Post, PostAsset, Protocol
 from app.services import render_common
+from app.services.image_generation import IMAGE_STYLE_SUFFIX
 from app.services.llm_client import LLMTransportError
 from app.services.post_pipeline import PostPipeline
 from tests.support.fake_llm import FakeLLMClient
@@ -150,6 +151,7 @@ async def test_image_failure_produces_the_brand_fallback_and_still_renders_ready
     assert assets[0].role == "cover"
     assert assets[0].status == "fallback"
     assert "provider unavailable" in assets[0].error
+    assert assets[0].prompt.endswith(IMAGE_STYLE_SUFFIX)
     assert assets[0].path is not None
 
     folder = tmp_path / "240115_gemeinderat"
@@ -221,6 +223,7 @@ async def test_missing_logo_fails_the_render_and_writes_no_partial_files(
     assert len(assets) == 1
     assert assets[0].status == "failed"
     assert "logo" in assets[0].error
+    assert assets[0].prompt.endswith(IMAGE_STYLE_SUFFIX)
     assert assets[0].path is None
     assert list(tmp_path.iterdir()) == []
     assert protocol.processed is True
