@@ -41,6 +41,9 @@ PLATE_RADIUS = 16
 PLATE_PADDING = 16
 PLATE_SUPERSAMPLE = 4
 
+UI_RADIUS = 10
+UI_SUPERSAMPLE = 4
+
 COVER_SCRIM_STOPS = ((0.0, 0.72), (0.30, 0.18), (0.58, 0.26), (1.0, 0.94))
 MIN_TITLE_CONTRAST = 4.5
 
@@ -99,6 +102,47 @@ def draw_tracked_text(
         draw.text((cursor, y), character, font=font, fill=fill, anchor=anchor)
         cursor += font.getlength(character) + tracking
     return text_advance(font, text, tracking)
+
+
+def ui_radius(width: int, height: int, maximum: int = UI_RADIUS) -> int:
+    """Clamp the UI radius so narrow shapes never become pills."""
+    return max(0, min(maximum, width // 2, height // 2))
+
+
+@lru_cache(maxsize=None)
+def _ui_mask(width: int, height: int, radius: int) -> Image.Image:
+    scale = UI_SUPERSAMPLE
+    mask = Image.new("L", (width * scale, height * scale), 0)
+    draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle(
+        (0, 0, width * scale - 1, height * scale - 1),
+        radius=radius * scale,
+        fill=255,
+    )
+    return mask.resize((width, height), Image.Resampling.LANCZOS)
+
+
+def rounded_ui_mask(
+    width: int, height: int, maximum: int = UI_RADIUS
+) -> Image.Image:
+    """Return the anti-aliased mask of one clamped rounded UI rectangle."""
+    return _ui_mask(width, height, ui_radius(width, height, maximum))
+
+
+def draw_ui_rect(
+    canvas: Image.Image,
+    box: tuple[int, int, int, int],
+    *,
+    fill,
+    maximum: int = UI_RADIUS,
+) -> tuple[int, int, int, int]:
+    """Fill a rounded UI rectangle whose radius is clamped per shape."""
+    x0, y0, x1, y1 = box
+    width, height = x1 - x0, y1 - y0
+    if width <= 0 or height <= 0:
+        raise RenderError(f"UI rectangle has an empty box: {box!r}")
+    canvas.paste(fill, (x0, y0), rounded_ui_mask(width, height, maximum))
+    return (x0, y0, x1, y1)
 
 
 def _load_logo(path: str) -> Image.Image:
@@ -280,7 +324,7 @@ def draw_organ_badge(
     right = 1016
     left = right - width
     draw = ImageDraw.Draw(canvas)
-    draw.rectangle((left, top, right - 1, top + height - 1), fill=fill)
+    draw_ui_rect(canvas, (left, top, right, top + height), fill=fill)
     draw_tracked_text(
         draw,
         (left + 18, top + height / 2),
@@ -310,7 +354,7 @@ def draw_kicker_block(
     width = math.ceil(text_advance(kicker_font, label, tracking)) + 36
     height = 64
     draw = ImageDraw.Draw(canvas)
-    draw.rectangle((x, y, x + width - 1, y + height - 1), fill=fill)
+    draw_ui_rect(canvas, (x, y, x + width, y + height), fill=fill)
     draw_tracked_text(
         draw,
         (x + 18, y + height / 2),
@@ -360,15 +404,19 @@ __all__ = [
     "RenderError",
     "SURFACE_BASE",
     "SURFACE_SUNKEN",
+    "UI_RADIUS",
     "apply_cover_scrim",
     "draw_kicker_block",
     "draw_logo_plate",
     "draw_organ_badge",
     "draw_tracked_text",
+    "draw_ui_rect",
     "ensure_title_contrast",
     "font",
     "logo_plate_size",
     "protocol_output_folder",
+    "rounded_ui_mask",
     "text_advance",
+    "ui_radius",
     "write_caption_file",
 ]

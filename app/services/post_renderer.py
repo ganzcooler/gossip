@@ -33,6 +33,7 @@ from app.services.render_common import (
     ensure_title_contrast,
     font,
     protocol_output_folder,
+    rounded_ui_mask,
     text_advance,
     write_caption_file,
 )
@@ -334,9 +335,12 @@ def _render_card(
     )
 
     x0, y0, x1, y1 = CARD_BOX
-    draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill=SURFACE_BASE)
-    draw.rectangle(
-        (x0, y0, x0 + CARD_EDGE_WIDTH - 1, y1 - 1), fill=BRAND_BLUE
+    card_mask = rounded_ui_mask(x1 - x0, y1 - y0)
+    canvas.paste(SURFACE_BASE, (x0, y0), card_mask)
+    canvas.paste(
+        BRAND_BLUE,
+        (x0, y0),
+        card_mask.crop((0, 0, CARD_EDGE_WIDTH, y1 - y0)),
     )
 
     number_font = font("oswald", 118, 700)
