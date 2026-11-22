@@ -561,6 +561,7 @@ def _pack_topic_section(
     font,
     body_size: int,
     first_capacity: float,
+    require_sentence_boundaries: bool = False,
 ) -> list[list[_TopicBodyChunk]]:
     """Pack paragraphs into slides after checking each against its page.
 
@@ -572,6 +573,12 @@ def _pack_topic_section(
     the middle or at balanced word boundaries when no sentence qualifies. Each
     split part occupies its own slide as one body block, so a split paragraph
     never produces an internal paragraph gap.
+
+    With ``require_sentence_boundaries`` every continuation of a multi-sentence
+    paragraph must keep two complete sentences and the size minimum, preferring
+    a sentence boundary but accepting a word boundary that still leaves enough
+    substance. The composer uses that mode first and retries with the relaxed
+    word-boundary fallback only when no body size can satisfy it.
     """
     line_height = body_size * TOPIC_BODY_LINE_HEIGHT
     paragraph_gap = round(body_size * TOPIC_PARAGRAPH_GAP_FACTOR)
@@ -611,6 +618,7 @@ def _pack_topic_section(
                     first_capacity=capacity,
                     continuation_capacity=continuation_capacity,
                     line_height=line_height,
+                    require_sentence_boundaries=require_sentence_boundaries,
                 )
             except TextOverflowError as exc:
                 raise TopicCompositionError(
@@ -720,6 +728,8 @@ def compose_topic_slides(draft: TopicDraft) -> TopicComposition:
 
     def try_size(
         size: int,
+        *,
+        require_sentence_boundaries: bool,
     ) -> tuple[list[list[list[_TopicBodyChunk]]], int] | None:
         font = inter_font(size, weight=400)
         section_parts: list[list[list[_TopicBodyChunk]]] = []
@@ -732,10 +742,12 @@ def compose_topic_slides(draft: TopicDraft) -> TopicComposition:
                     font=font,
                     body_size=size,
                     first_capacity=TOPIC_BODY_BOTTOM - body_top,
+                    require_sentence_boundaries=require_sentence_boundaries,
                 )
             except TopicCompositionError:
-                # A word may be too wide at this size; a smaller body size
-                # gets its own chance before the draft is rejected.
+                # A word may be too wide at this size, or a multi-sentence
+                # paragraph cannot keep its continuation rule; a smaller body
+                # size gets its own chance before the draft is rejected.
                 return None
             section_parts.append(parts)
             total += len(parts)
@@ -743,7 +755,18 @@ def compose_topic_slides(draft: TopicDraft) -> TopicComposition:
             return section_parts, total
         return None
 
-    found = body_size_that_fits(try_size, TOPIC_BODY_SIZES)
+    found = body_size_that_fits(
+        lambda size: try_size(size, require_sentence_boundaries=True),
+        TOPIC_BODY_SIZES,
+    )
+    if found is None:
+        # No size can keep every continuation substantial without leaving a
+        # one-sentence orphan. Fall back to balanced word boundaries rather
+        # than rejecting the article.
+        found = body_size_that_fits(
+            lambda size: try_size(size, require_sentence_boundaries=False),
+            TOPIC_BODY_SIZES,
+        )
     if found is None:
         # Report the smallest-size outcome for the writer's retry feedback.
         font = inter_font(TOPIC_BODY_SIZES[-1], weight=400)

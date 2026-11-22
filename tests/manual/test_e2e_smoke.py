@@ -32,6 +32,8 @@ from pathlib import Path
 
 import pytest
 
+from app.services.caption_writer import CAPTION_FIRST_LINE
+
 pytestmark = [
     pytest.mark.manual,
     pytest.mark.skipif(
@@ -47,7 +49,6 @@ FIXTURE_SESSION_DATE = date(2024, 5, 14)
 FIXTURE_DATE_TEXT = "14.05.2024"
 FIXTURE_TITLE = "Gemeinderat"
 FIXTURE_GETFILE_ID = 900_001
-CAPTION_FIRST_LINE = "Bild: KI-generiert."
 MANUAL_LINK_HINT = (
     "Hinweis: Der SessionNet-Link fehlt und muss manuell ergänzt werden."
 )

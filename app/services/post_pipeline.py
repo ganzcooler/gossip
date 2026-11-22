@@ -1131,6 +1131,9 @@ class PostPipeline:
                 return
             cover_prompt = visual_prompts.cover_prompt
 
+        # Persist the exact prompt the provider will see. The generator applies
+        # the same idempotent suffix again as a hard guard, so a direct caller
+        # can never bypass the style rule while the asset keeps its trace.
         cover_prompt = with_image_style_suffix(cover_prompt)
         asset = await self._prepare_cover_asset(db, post, cover_prompt)
 
@@ -1543,6 +1546,8 @@ class PostPipeline:
             if has_single:
                 prompts["single_last"] = visual_prompts.artwork_prompts[-1]
 
+        # Persist the exact prompts the provider will see; the generators
+        # reapply the idempotent suffix as a hard guard for direct callers.
         prompts = {
             role: with_image_style_suffix(prompt)
             for role, prompt in prompts.items()

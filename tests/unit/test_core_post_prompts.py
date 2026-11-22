@@ -271,6 +271,7 @@ def test_summary_visual_prompt_contains_only_the_draft_and_design_guardrails():
     assert "Kein zentrales Motiv" in prompt
     assert "oberen und mittleren Bildhälfte" in prompt
     assert "untere Bildzone bleibt ruhig" in prompt
+    assert "obere Logo-Zone bleibt ruhig und hell" in prompt
     assert "Kein Text" in prompt
     assert "Logos" in prompt
     assert "Parteisymbole" in prompt
@@ -342,6 +343,7 @@ def test_topic_visual_prompt_contains_only_the_draft_and_pair_count():
     assert "Kein zentrales Motiv" in prompt
     assert "oberen und mittleren Bildhälfte" in prompt
     assert "untere Bildzone bleibt ruhig" in prompt
+    assert "obere Logo-Zone bleibt ruhig und hell" in prompt
     assert "40 px vom Paar-Seam" in prompt
     assert "Kein Text" in prompt
     assert "Logos" in prompt

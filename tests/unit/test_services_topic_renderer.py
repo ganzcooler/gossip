@@ -5,13 +5,16 @@ from datetime import date
 from types import SimpleNamespace
 
 import pytest
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image
 
 from app.core.post_models import TopicDraft
 from app.services import render_common
 from app.services.caption_writer import CAPTION_FIRST_LINE, compose_caption
 from app.services.post_renderer import RenderError
-from app.services.slide_composer import compose_topic_slides
+from app.services.slide_composer import (
+    TOPIC_COVER_INSET_X,
+    compose_topic_slides,
+)
 from app.services.topic_renderer import (
     CONTENT_TEXT_X_LEFT,
     CONTENT_TEXT_X_RIGHT,
@@ -20,6 +23,12 @@ from app.services.topic_renderer import (
     topic_composition_from_stored,
     write_topic_output,
 )
+from tests.support.render_helpers import (
+    LOGO_COLOR,
+    color_bbox as _color_bbox,
+    use_empty_logo as _use_empty_logo,
+    use_transparent_logo as _use_transparent_logo,
+)
 
 ORANGE = (233, 79, 35)
 ORANGE_DEEP = (201, 62, 24)
@@ -27,7 +36,6 @@ SURFACE_BASE = (30, 30, 33)
 ON_SURFACE = (255, 255, 255)
 OUTLINE = (70, 70, 75)
 WHITE = (255, 255, 255)
-LOGO_COLOR = (255, 0, 255)
 
 PAIR_LEFT = (190, 70, 40)
 PAIR_RIGHT = (40, 80, 150)
@@ -108,42 +116,6 @@ def _has_color(image: Image.Image, box, color) -> bool:
     return any(pixel == color for _, pixel in colors)
 
 
-def _use_transparent_logo(monkeypatch, tmp_path) -> None:
-    """Use a synthetic ring logo so the real asset can be replaced later."""
-    logo = Image.new("RGBA", (100, 50), (0, 0, 0, 0))
-    ImageDraw.Draw(logo).rectangle(
-        (0, 0, 99, 49), outline=(*LOGO_COLOR, 255), width=10
-    )
-    path = tmp_path / "synthetic-logo.png"
-    logo.save(path)
-    monkeypatch.setattr(render_common, "LOGO_PATH", path)
-
-
-def _use_empty_logo(monkeypatch, tmp_path) -> None:
-    path = tmp_path / "empty-logo.png"
-    Image.new("RGBA", (100, 50), (0, 0, 0, 0)).save(path)
-    monkeypatch.setattr(render_common, "LOGO_PATH", path)
-
-
-def _color_bbox(image: Image.Image, box, color) -> tuple[int, int, int, int] | None:
-    region = image.crop(box)
-    difference = ImageChops.difference(
-        region, Image.new("RGB", region.size, color)
-    )
-    red, green, blue = difference.split()
-    total = ImageChops.add(ImageChops.add(red, green), blue)
-    mask = total.point(lambda value: 255 if value == 0 else 0)
-    bbox = mask.getbbox()
-    if bbox is None:
-        return None
-    return (
-        box[0] + bbox[0],
-        box[1] + bbox[1],
-        box[0] + bbox[2],
-        box[1] + bbox[3],
-    )
-
-
 def _render_cover(*, art: Image.Image | None = None) -> Image.Image:
     draft, composition = _composition()
     content_count = len(composition.slides) - 1
@@ -161,6 +133,24 @@ def _render_cover(*, art: Image.Image | None = None) -> Image.Image:
 
 def _lower_white_bbox(cover: Image.Image, top: int):
     return _color_bbox(cover, (0, top, TOPIC_SIZE[0], TOPIC_SIZE[1]), ON_SURFACE)
+
+
+def _wide_orange_box(cover: Image.Image) -> tuple[int, int, int]:
+    """Locate the kicker block by its wide run of the deep orange fill."""
+    pixels = cover.load()
+    rows = []
+    for y in range(400, cover.height):
+        xs = [
+            x
+            for x in range(cover.width)
+            if pixels[x, y] == ORANGE_DEEP
+        ]
+        if len(xs) > 40:
+            rows.append((y, min(xs)))
+    assert rows
+    return min(x for _, x in rows), min(y for y, _ in rows), max(
+        y for y, _ in rows
+    )
 
 
 def test_renderer_produces_cover_and_four_content_slides_at_1080x1350_rgb():
@@ -255,6 +245,45 @@ def test_top_rule_heading_rule_hairline_and_image_edge_stay_square():
     assert first.getpixel((659, 238)) == ORANGE
     assert second.getpixel((420, 135)) == OUTLINE
     assert second.getpixel((1019, 135)) == OUTLINE
+
+
+def test_inset_cover_title_keeps_the_kicker_on_the_same_left_edge():
+    # The long compound word does not fit the normal 930px column, so the
+    # composer uses the x=48 inset title fallback.
+    title = "Der Rat beschließt die Haushaltskonsolidierungskonzeption"
+    draft = TopicDraft(
+        title=title,
+        sections=[
+            {
+                "h2": "Der Rat hat zu Abschnitt 1 ausführlich entschieden",
+                "paragraphs": [_paragraph(700)],
+            },
+            {
+                "h2": "Der Rat hat zu Abschnitt 2 ausführlich entschieden",
+                "paragraphs": [_paragraph(700)],
+            },
+        ],
+    )
+    composition = compose_topic_slides(draft)
+    cover_plan = composition.slide_plan["cover"]
+    assert cover_plan["title_x"] == TOPIC_COVER_INSET_X
+
+    content_count = len(composition.slides) - 1
+    pair_count = content_count // 2
+    cover = render_topic_frames(
+        draft,
+        composition,
+        cover_art=_cover_art(),
+        pair_art=_pair_art(pair_count),
+        single_art=_single_art() if content_count % 2 else None,
+        organ="Gemeinderat Rosdorf",
+    )[0]
+
+    kicker_left, _, kicker_bottom = _wide_orange_box(cover)
+    title_bbox = _lower_white_bbox(cover, kicker_bottom + 2)
+    assert title_bbox is not None
+    assert TOPIC_COVER_INSET_X <= kicker_left <= TOPIC_COVER_INSET_X + 8
+    assert title_bbox[0] == kicker_left
 
 
 def test_cover_has_no_local_gray_box_and_shows_the_artwork():
