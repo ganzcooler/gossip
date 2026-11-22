@@ -66,9 +66,10 @@ CARD_TEXT_X = 118
 COVER_LOGO_WIDTH = 240
 CARD_LOGO_WIDTH = 112
 COVER_TITLE_X = 64
-COVER_TITLE_Y = 800
+COVER_TITLE_BOTTOM = 1680
 KICKER_X = 64
-KICKER_Y = 720
+COVER_KICKER_GAP = 24
+COVER_KICKER_HEIGHT = 64
 
 CARD_NUMBER_POSITION = (118, 500)
 CARD_KICKER_POSITION = (118, 646)
@@ -259,26 +260,34 @@ def _render_cover(
         "Organ badge collides with the cover logo",
     )
 
-    draw_kicker_block(canvas, COVER_LABEL, x=KICKER_X, y=KICKER_Y)
-
     title_size = cover.heading_size
     title_font = font("oswald", title_size, 700)
     title_line_height = title_size * COVER_TITLE_LINE_HEIGHT
     tracking = -0.005 * title_size
-    ink_bbox = _ink_bbox(
+    relative_bbox = _ink_bbox(
         cover.heading_lines,
         x=COVER_TITLE_X,
-        y=COVER_TITLE_Y,
+        y=0,
         size=title_size,
         line_height=title_line_height,
         weight=700,
     )
-    canvas = ensure_title_contrast(canvas, ink_bbox)
+    shift = COVER_TITLE_BOTTOM - relative_bbox[3]
+    title_bbox = (
+        relative_bbox[0],
+        relative_bbox[1] + shift,
+        relative_bbox[2],
+        relative_bbox[3] + shift,
+    )
+    kicker_y = title_bbox[1] - COVER_KICKER_GAP - COVER_KICKER_HEIGHT
+    draw_kicker_block(canvas, COVER_LABEL, x=KICKER_X, y=kicker_y)
+
+    canvas = ensure_title_contrast(canvas, title_bbox)
     draw = ImageDraw.Draw(canvas)
     for index, line in enumerate(cover.heading_lines):
         draw_tracked_text(
             draw,
-            (COVER_TITLE_X, COVER_TITLE_Y + index * title_line_height),
+            (COVER_TITLE_X, shift + index * title_line_height),
             line,
             font=title_font,
             fill=ON_SURFACE,

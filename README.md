@@ -160,6 +160,14 @@ render tokens. Both renderers and the deterministic image fallbacks import the
 same `SURFACE_*` and `BRAND_*` constants from it; `image_generation.py` owns no
 palette of its own.
 
+Both cover families anchor the white title at the lower safe area by the bottom
+of its ink box: y=1680 in the 1080×1920 Summary story and y=1200 in the
+1080×1350 Themenbeitrag. The colored kicker sits directly above it, left-aligned.
+A single charcoal scrim covers the lower roughly 60% and fades to fully
+transparent above; there is no local gray contrast box and no extra darkening at
+the top edge. Before drawing the title, the renderer validates white-on-scrim
+contrast against a worst-case white image and fails the render below 4.5:1.
+
 `src/`, `alembic/`, and a root `main.py` no longer exist. Database tables are
 created with SQLAlchemy `create_all()` on startup; migrations have not been
 introduced yet.
@@ -292,8 +300,8 @@ caption-summary-summary.txt
 The folder is reused idempotently. The cover and every card show the transparent
 logo directly on the artwork at the top left, without a plate. A Summary-Beitrag
 story has three to seven frames (cover plus two to six cards) and exactly one
-caption file whose content
-is the stored `post.caption`, starting with `Illustration: KI-generiert.` and
+caption file whose content is the stored `post.caption`, starting with
+`Bild: KI-generiert.` and
 carrying the source/date plus the SessionNet link or the manual-link hint. Image
 failures produce the blue brand fallback and the Beitrag still becomes `ready`;
 authentication errors stop the job immediately. A composition or fit failure
@@ -331,7 +339,7 @@ H2; continuation slides show the short chapter label, the `n/N` counter and a
 1 px hairline. Every content slide carries the transparent logo directly on the
 image at the bottom-right of the text block, right-aligned to the 600 px text
 column. The caption file is UTF-8, starts with
-`Illustration: KI-generiert.` and carries source/date plus the SessionNet link
+`Bild: KI-generiert.` and carries source/date plus the SessionNet link
 or the manual-link hint. Image failures produce the orange brand fallback and
 the Beitrag still becomes `ready`; authentication errors stop the job. A
 composition or fit failure (for example an H1 or H2 that cannot be laid out
@@ -357,7 +365,7 @@ and responds with `404` for an unknown protocol:
     "title": "Sitzung kompakt",
     "status": "ready",
     "failed_step": null,
-    "caption": "Illustration: KI-generiert. ...",
+    "caption": "Bild: KI-generiert. ...",
     "slide_count": 3,
     "created_at": "2024-01-15T10:00:00",
     "updated_at": "2024-01-15T11:00:00"
@@ -380,7 +388,7 @@ ordered `slides` and `assets`:
   "content_json": {"sections": []},
   "content_markdown": "## Haushalt\n\n...",
   "slide_plan_json": {"slides": []},
-  "caption": "Illustration: KI-generiert. ...",
+  "caption": "Bild: KI-generiert. ...",
   "alt_text_json": ["..."],
   "fact_check_json": {"passed": true, "issues": [], "repaired": false},
   "status": "ready",

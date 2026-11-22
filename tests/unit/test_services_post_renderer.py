@@ -9,7 +9,7 @@ from PIL import Image, ImageChops, ImageDraw
 
 from app.core.post_models import SummaryDraft
 from app.services import render_common
-from app.services.caption_writer import compose_caption
+from app.services.caption_writer import CAPTION_FIRST_LINE, compose_caption
 from app.services.post_renderer import (
     CARD_BOX,
     SUMMARY_SIZE,
@@ -26,6 +26,11 @@ SURFACE_BASE = (30, 30, 33)
 OUTLINE = (70, 70, 75)
 WHITE = (255, 255, 255)
 LOGO_COLOR = (255, 0, 255)
+
+SHORT_COVER_TITLE = "Haushalt beschlossen"
+LONG_COVER_TITLE = (
+    "Was der Rat zum Haushalt und zum Radweg in Rosdorf entschieden hat"
+)
 
 
 def _use_transparent_logo(monkeypatch, tmp_path) -> None:
@@ -119,6 +124,27 @@ def _has_color(image: Image.Image, box, color) -> bool:
     return any(pixel == color for _, pixel in colors)
 
 
+def _render_cover(
+    *, title: str | None = None, art: Image.Image | None = None
+) -> Image.Image:
+    draft = (
+        _draft()
+        if title is None
+        else _draft().model_copy(update={"cover_title": title})
+    )
+    composition = compose_summary_slides(draft)
+    return render_summary_frames(
+        draft,
+        composition,
+        cover_art=_cover_art() if art is None else art,
+        organ="Gemeinderat Rosdorf",
+    )[0]
+
+
+def _lower_white_bbox(cover: Image.Image, top: int):
+    return _color_bbox(cover, (0, top, SUMMARY_SIZE[0], SUMMARY_SIZE[1]), WHITE)
+
+
 def test_renderer_produces_cover_and_two_cards_at_1080x1920_rgb():
     _, composition, frames = _render_frames()
 
@@ -135,9 +161,103 @@ def test_cover_has_the_blue_top_rule_badge_kicker_and_white_title():
 
     assert cover.getpixel((540, 2)) == BLUE
     assert cover.getpixel((1000, 320)) == BLUE
-    assert cover.getpixel((200, 720)) == BLUE
-    assert cover.getpixel((64, 720)) != BLUE
-    assert _has_color(cover, (64, 800, 1014, 1100), WHITE)
+    assert _has_color(cover, (64, 1200, 600, 1690), BLUE)
+    assert _has_color(cover, (64, 1200, 1014, 1690), WHITE)
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        SHORT_COVER_TITLE,
+        "Was der Rat in Rosdorf entschieden hat",
+        LONG_COVER_TITLE,
+    ],
+    ids=["one-line", "two-line", "three-line"],
+)
+def test_cover_title_is_bottom_anchored_by_its_ink_box_at_1680(title):
+    cover = _render_cover(title=title)
+
+    title_bbox = _lower_white_bbox(cover, 1200)
+
+    assert title_bbox is not None
+    assert abs(title_bbox[3] - 1680) <= 6
+
+
+def test_cover_kicker_sits_directly_above_the_left_aligned_title():
+    cover = _render_cover(title=LONG_COVER_TITLE)
+
+    kicker_bbox = _color_bbox(cover, (0, 1200, 1080, 1920), BLUE)
+    assert kicker_bbox is not None
+    title_bbox = _lower_white_bbox(cover, kicker_bbox[3])
+    assert title_bbox is not None
+
+    assert kicker_bbox[0] == 64
+    assert 20 <= title_bbox[1] - kicker_bbox[3] <= 28
+    assert title_bbox[0] <= 74
+
+
+def test_cover_has_a_single_bottom_up_scrim_with_a_transparent_top():
+    height = SUMMARY_SIZE[1]
+    cover = _render_cover(art=Image.new("RGB", SUMMARY_SIZE, WHITE))
+
+    assert cover.getpixel((1050, 100)) == WHITE
+    assert cover.getpixel((1050, int(0.35 * (height - 1)))) == WHITE
+
+    assert sum(cover.getpixel((1050, int(0.60 * (height - 1))))) < 700
+
+    luminances = [
+        sum(cover.getpixel((1050, y)))
+        for y in range(int(0.42 * (height - 1)), height)
+    ]
+    assert luminances[0] < 765
+    assert all(
+        later <= earlier for earlier, later in zip(luminances, luminances[1:])
+    )
+
+
+def test_cover_has_no_local_gray_box_and_shows_the_artwork():
+    white_art = Image.new("RGB", SUMMARY_SIZE, WHITE)
+    white_cover = _render_cover(title=LONG_COVER_TITLE, art=white_art)
+
+    kicker_bbox = _color_bbox(white_cover, (0, 1200, 1080, 1920), BLUE)
+    assert kicker_bbox is not None
+    title_bbox = _lower_white_bbox(white_cover, kicker_bbox[3])
+    assert title_bbox is not None
+
+    row = title_bbox[1] - 4
+    row_colors = {
+        white_cover.getpixel((x, row)) for x in range(64, 1017)
+    }
+    assert len(row_colors) == 1
+
+    other_cover = _render_cover(
+        title=LONG_COVER_TITLE,
+        art=Image.new("RGB", SUMMARY_SIZE, (200, 40, 40)),
+    )
+    assert other_cover.getpixel((200, row)) != white_cover.getpixel((200, row))
+
+
+def test_cover_contrast_passes_against_a_worst_case_white_image():
+    cover = _render_cover(art=Image.new("RGB", SUMMARY_SIZE, WHITE))
+
+    assert _has_color(cover, (64, 1300, 1014, 1690), WHITE)
+    assert sum(cover.getpixel((1050, 1680))) < 250
+
+
+def test_cover_contrast_failure_is_a_hard_render_error(monkeypatch):
+    draft = _draft()
+    composition = compose_summary_slides(draft)
+    monkeypatch.setattr(
+        render_common, "COVER_SCRIM_STOPS", ((0.0, 0.0), (1.0, 0.0))
+    )
+
+    with pytest.raises(RenderError, match="contrast"):
+        render_summary_frames(
+            draft,
+            composition,
+            cover_art=Image.new("RGB", SUMMARY_SIZE, (10, 10, 10)),
+            organ="Gemeinderat Rosdorf",
+        )
 
 
 def test_cover_composites_a_transparent_240px_logo_at_the_top_left_without_a_plate(
@@ -200,11 +320,14 @@ def test_badge_and_kicker_have_rounded_corners_with_straight_edge_midpoints():
     assert cover.getpixel((800, 300)) == BLUE
     assert cover.getpixel((1000, 320)) == BLUE
 
-    assert cover.getpixel((64, 720)) != BLUE
-    assert cover.getpixel((67, 720)) != BLUE
-    assert cover.getpixel((74, 722)) == BLUE
-    assert cover.getpixel((200, 720)) == BLUE
-    assert cover.getpixel((64, 752)) == BLUE
+    kicker_bbox = _color_bbox(cover, (0, 1200, 1080, 1920), BLUE)
+    assert kicker_bbox is not None
+    kicker_left, kicker_top = kicker_bbox[0], kicker_bbox[1]
+    assert cover.getpixel((kicker_left, kicker_top)) != BLUE
+    assert cover.getpixel((kicker_left + 3, kicker_top)) != BLUE
+    assert cover.getpixel((kicker_left + 10, kicker_top + 2)) == BLUE
+    assert cover.getpixel((kicker_left + 136, kicker_top)) == BLUE
+    assert cover.getpixel((kicker_left, kicker_top + 32)) == BLUE
 
 
 def test_card_corners_show_the_background_and_clip_the_blue_edge():
@@ -320,7 +443,7 @@ def test_write_summary_output_creates_exact_filenames_and_one_caption(tmp_path):
     ]
     assert output.caption_path == folder / "caption-summary-summary.txt"
     assert output.caption_path.read_text(encoding="utf-8") == caption
-    assert caption.splitlines()[0] == "Illustration: KI-generiert."
+    assert caption.splitlines()[0] == CAPTION_FIRST_LINE
     assert "12.03.2024" in caption
     assert "https://sessionnet.example/rosdorf/BI/getfile.asp?id=4711" in caption
     for path in output.image_paths:
@@ -374,7 +497,7 @@ def test_write_summary_output_writes_the_manual_link_hint_when_the_link_is_missi
 
     text = output.caption_path.read_text(encoding="utf-8")
     assert text == caption
-    assert text.startswith("Illustration: KI-generiert.\n")
+    assert text.startswith(f"{CAPTION_FIRST_LINE}\n")
     assert "Hinweis: Der SessionNet-Link fehlt" in text
     assert "http" not in text
 
