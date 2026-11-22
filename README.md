@@ -155,6 +155,14 @@ render tokens. Both renderers and the deterministic image fallbacks import the
 same `SURFACE_*` and `BRAND_*` constants from it; `image_generation.py` owns no
 palette of its own.
 
+Both cover families anchor the white title at the lower safe area by the bottom
+of its ink box: y=1680 in the 1080×1920 Summary story and y=1200 in the
+1080×1350 Themenbeitrag. The colored kicker sits directly above it, left-aligned.
+A single charcoal scrim covers the lower roughly 60% and fades to fully
+transparent above; there is no local gray contrast box and no extra darkening at
+the top edge. Before drawing the title, the renderer validates white-on-scrim
+contrast against a worst-case white image and fails the render below 4.5:1.
+
 `src/`, `alembic/`, and a root `main.py` no longer exist. Database tables are
 created with SQLAlchemy `create_all()` on startup; migrations have not been
 introduced yet.
