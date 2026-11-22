@@ -9,7 +9,7 @@ from PIL import Image, ImageChops, ImageDraw
 
 from app.core.post_models import SummaryDraft
 from app.services import render_common
-from app.services.caption_writer import compose_caption
+from app.services.caption_writer import CAPTION_FIRST_LINE, compose_caption
 from app.services.post_renderer import (
     CARD_BOX,
     SUMMARY_SIZE,
@@ -320,7 +320,7 @@ def test_write_summary_output_creates_exact_filenames_and_one_caption(tmp_path):
     ]
     assert output.caption_path == folder / "caption-summary-summary.txt"
     assert output.caption_path.read_text(encoding="utf-8") == caption
-    assert caption.splitlines()[0] == "Illustration: KI-generiert."
+    assert caption.splitlines()[0] == CAPTION_FIRST_LINE
     assert "12.03.2024" in caption
     assert "https://sessionnet.example/rosdorf/BI/getfile.asp?id=4711" in caption
     for path in output.image_paths:
@@ -374,7 +374,7 @@ def test_write_summary_output_writes_the_manual_link_hint_when_the_link_is_missi
 
     text = output.caption_path.read_text(encoding="utf-8")
     assert text == caption
-    assert text.startswith("Illustration: KI-generiert.\n")
+    assert text.startswith(f"{CAPTION_FIRST_LINE}\n")
     assert "Hinweis: Der SessionNet-Link fehlt" in text
     assert "http" not in text
 

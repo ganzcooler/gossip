@@ -287,8 +287,8 @@ caption-summary-summary.txt
 The folder is reused idempotently. The cover and every card show the transparent
 logo directly on the artwork at the top left, without a plate. A Summary-Beitrag
 story has three to seven frames (cover plus two to six cards) and exactly one
-caption file whose content
-is the stored `post.caption`, starting with `Illustration: KI-generiert.` and
+caption file whose content is the stored `post.caption`, starting with
+`Bild: KI-generiert.` and
 carrying the source/date plus the SessionNet link or the manual-link hint. Image
 failures produce the blue brand fallback and the Beitrag still becomes `ready`;
 authentication errors stop the job immediately. A composition or fit failure
@@ -326,7 +326,7 @@ H2; continuation slides show the short chapter label, the `n/N` counter and a
 1 px hairline. Every content slide carries the transparent logo directly on the
 image at the bottom-right of the text block, right-aligned to the 600 px text
 column. The caption file is UTF-8, starts with
-`Illustration: KI-generiert.` and carries source/date plus the SessionNet link
+`Bild: KI-generiert.` and carries source/date plus the SessionNet link
 or the manual-link hint. Image failures produce the orange brand fallback and
 the Beitrag still becomes `ready`; authentication errors stop the job. A
 composition or fit failure (for example an H1 or H2 that cannot be laid out
@@ -352,7 +352,7 @@ and responds with `404` for an unknown protocol:
     "title": "Sitzung kompakt",
     "status": "ready",
     "failed_step": null,
-    "caption": "Illustration: KI-generiert. ...",
+    "caption": "Bild: KI-generiert. ...",
     "slide_count": 3,
     "created_at": "2024-01-15T10:00:00",
     "updated_at": "2024-01-15T11:00:00"
@@ -375,7 +375,7 @@ ordered `slides` and `assets`:
   "content_json": {"sections": []},
   "content_markdown": "## Haushalt\n\n...",
   "slide_plan_json": {"slides": []},
-  "caption": "Illustration: KI-generiert. ...",
+  "caption": "Bild: KI-generiert. ...",
   "alt_text_json": ["..."],
   "fact_check_json": {"passed": true, "issues": [], "repaired": false},
   "status": "ready",

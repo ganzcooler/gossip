@@ -21,6 +21,7 @@ from app.core.post_models import (
 from app.database import get_db
 from app.main import app
 from app.models import Post, PostSlide, Protocol
+from app.services.caption_writer import CAPTION_FIRST_LINE
 from app.services.llm_client import LLMSchemaError
 from app.services.post_pipeline import PostPipeline
 from app.services.slide_composer import compose_topic_slides
@@ -295,7 +296,7 @@ async def test_summary_failure_does_not_block_topic_content(
         assert post.slide_plan_json["family"] == "topic"
         assert post.slide_plan_json["body_size"] in (42, 39, 36)
         assert 4 <= len(post.slide_plan_json["slides"]) <= 7
-        assert post.caption.startswith("Illustration: KI-generiert.\n")
+        assert post.caption.startswith(f"{CAPTION_FIRST_LINE}\n")
         post_slides = await _slides(postgres_session, post)
         assert len(post.alt_text_json) == len(post_slides)
         assert all(post.alt_text_json)
@@ -355,7 +356,7 @@ async def test_summary_failure_does_not_block_topic_content(
     assert detail["content_json"]["draft"]["sections"]
     assert detail["content_markdown"].startswith("# ")
     assert detail["slide_plan_json"]["family"] == "topic"
-    assert detail["caption"].startswith("Illustration: KI-generiert.")
+    assert detail["caption"].startswith(CAPTION_FIRST_LINE)
     assert len(detail["slides"]) == len(detail["alt_text_json"])
     assert [slide["slide_index"] for slide in detail["slides"]] == list(
         range(1, len(detail["slides"]) + 1)
@@ -398,7 +399,7 @@ async def test_one_topic_fact_check_failure_leaves_other_topics_draft(
     assert summary.status == "ready"
     assert summary.content_json["draft"]["cover_title"] == plan.summary_title
     assert summary.fact_check_json["passed"] is True
-    assert summary.caption.startswith("Illustration: KI-generiert.")
+    assert summary.caption.startswith(CAPTION_FIRST_LINE)
 
     assert haushalt.status == "failed"
     assert haushalt.failed_step == "fact_check"

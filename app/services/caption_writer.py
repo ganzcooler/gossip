@@ -20,7 +20,7 @@ from app.core.post_prompts import build_caption_prompt
 from app.services.llm_client import LLMAuthenticationError, LLMClient, LLMError
 
 CAPTION_BODY_ROLE = "caption_writer"
-CAPTION_FIRST_LINE = "Illustration: KI-generiert."
+CAPTION_FIRST_LINE = "Bild: KI-generiert."
 MANUAL_LINK_HINT = (
     "Hinweis: Der SessionNet-Link fehlt und muss manuell ergänzt werden."
 )

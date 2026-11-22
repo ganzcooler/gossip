@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.api.routes import get_post_pipeline
 from app.database import get_db
 from app.main import app
+from app.services.caption_writer import CAPTION_FIRST_LINE
 from app.services.post_pipeline import PostPipelineResult, PostRunResult
 
 client = TestClient(app)
@@ -35,7 +36,7 @@ def _post(**overrides):
         "content_json": {"draft": {"title": "Haushalt"}},
         "content_markdown": "# Haushalt",
         "slide_plan_json": {"family": "topic"},
-        "caption": "Illustration: KI-generiert.",
+        "caption": CAPTION_FIRST_LINE,
         "alt_text_json": ["Alt"],
         "fact_check_json": {"passed": True, "issues": [], "repaired": False},
         "status": "failed",
