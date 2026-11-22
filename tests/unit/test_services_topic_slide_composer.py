@@ -6,6 +6,11 @@ import pytest
 
 from app.core.post_models import TopicDraft
 from app.services.slide_composer import (
+    TOPIC_BODY_BOTTOM,
+    TOPIC_BODY_LINE_HEIGHT,
+    TOPIC_CONTINUATION_TOP,
+    TOPIC_H2_BODY_GAP,
+    TOPIC_H2_TOP,
     TopicCompositionError,
     compose_topic_slides,
     derive_chapter_short,
@@ -66,6 +71,23 @@ def _content_slides(composition):
     return [
         slide for slide in composition.slides if slide.slide_type != "cover"
     ]
+
+
+def _section_slides(composition, section_index):
+    return [
+        slide
+        for slide in _content_slides(composition)
+        if slide.section_index == section_index
+    ]
+
+
+def _rendered_heading_capacity(slide) -> float:
+    body_top = TOPIC_H2_TOP + slide.heading_zone + TOPIC_H2_BODY_GAP
+    return TOPIC_BODY_BOTTOM - body_top
+
+
+def _rendered_body_height(slide) -> float:
+    return len(slide.body_lines) * slide.body_size * TOPIC_BODY_LINE_HEIGHT
 
 
 def test_cover_and_every_h2_start_a_new_slide():
@@ -152,6 +174,129 @@ def test_overlong_section_continues_with_chapter_short_and_same_pair_index():
         assert slide.pair_index == (position + 1) // 2
 
 
+def test_paragraph_that_fits_a_full_page_moves_whole_to_the_next_slide():
+    intro = _paragraph(
+        "Der Rat hat den Haushalt einstimmig beschlossen.", 80
+    )
+    full_page_paragraph = _paragraph(
+        "Der Rat hat den Haushalt einstimmig beschlossen und die Mittel "
+        "für alle Ortsteile freigegeben.",
+        420,
+    )
+    draft = _draft(
+        sections=[
+            {
+                "h2": H2_ONE,
+                "paragraphs": [intro, full_page_paragraph],
+            },
+            {
+                "h2": H2_TWO,
+                "paragraphs": [
+                    _paragraph(
+                        "Der Radweg an der Hauptstraße wird im Sommer gebaut "
+                        "und verbindet die Ortsteile besser.",
+                        720,
+                    )
+                ],
+            },
+        ]
+    )
+
+    composition = compose_topic_slides(draft)
+
+    assert 4 <= len(_content_slides(composition)) <= 7
+    section = _section_slides(composition, 0)
+    assert len(section) == 2
+    heading, continuation = section
+    assert heading.slide_type == "heading"
+    assert normalize_whitespace(heading.body) == normalize_whitespace(intro)
+    assert continuation.slide_type == "continuation"
+    assert normalize_whitespace(continuation.body) == normalize_whitespace(
+        full_page_paragraph
+    )
+    assert len(heading.body_paragraphs) == 1
+    assert len(continuation.body_paragraphs) == 1
+    continuation_capacity = TOPIC_BODY_BOTTOM - TOPIC_CONTINUATION_TOP
+    assert _rendered_body_height(continuation) <= continuation_capacity + 1e-9
+    assert (
+        _rendered_body_height(continuation)
+        > _rendered_heading_capacity(heading) + 1e-9
+    )
+
+
+def test_first_paragraph_is_measured_against_the_heading_capacity():
+    first_body = _paragraph(
+        "Der Rat hat den Haushalt einstimmig beschlossen und die Mittel "
+        "für alle Ortsteile freigegeben.",
+        340,
+    )
+    draft = _draft(
+        sections=[
+            {"h2": H2_ONE, "paragraphs": [first_body]},
+            {
+                "h2": H2_TWO,
+                "paragraphs": [
+                    _paragraph(
+                        "Der Radweg an der Hauptstraße wird im Sommer gebaut "
+                        "und verbindet die Ortsteile besser.",
+                        720,
+                    )
+                ],
+            },
+        ]
+    )
+
+    composition = compose_topic_slides(draft)
+
+    assert composition.body_size == 42
+    section = _section_slides(composition, 0)
+    assert len(section) == 2
+    heading, continuation = section
+    assert heading.slide_type == "heading"
+    assert heading.body
+    assert continuation.body
+    assert _rendered_body_height(heading) <= (
+        _rendered_heading_capacity(heading) + 1e-9
+    )
+    assert normalize_whitespace(first_body).startswith(
+        normalize_whitespace(heading.body) + " "
+    )
+    assert normalize_whitespace(heading.body) != normalize_whitespace(
+        first_body
+    )
+    assert normalize_whitespace(
+        heading.body + " " + continuation.body
+    ) == normalize_whitespace(first_body)
+    assert len(heading.body_paragraphs) == 1
+    assert len(continuation.body_paragraphs) == 1
+    assert "\n\n" not in heading.body
+    assert "\n\n" not in continuation.body
+
+
+def test_body_size_choice_keeps_whole_paragraph_packing_within_four_to_seven():
+    sections = [
+        {
+            "h2": f"Der Rat entscheidet über Thema Nummer {index}",
+            "paragraphs": [
+                _paragraph(
+                    "Der Rat hat zu diesem Thema ausführlich beraten und "
+                    "eine Entscheidung getroffen.",
+                    330,
+                )
+            ],
+        }
+        for index in range(1, 7)
+    ]
+    draft = _draft(title="T" * 20, sections=sections)
+
+    composition = compose_topic_slides(draft)
+
+    content = _content_slides(composition)
+    assert composition.body_size == 39
+    assert 4 <= len(content) <= 7
+    assert {slide.body_size for slide in content} == {composition.body_size}
+
+
 def test_all_content_slides_share_one_body_size_between_four_and_seven_slides():
     composition = compose_topic_slides(_draft())
 
@@ -191,6 +336,35 @@ def test_text_reconstruction_is_exact_and_never_reworded_or_truncated():
     )
     assert rebuilt == expected
     assert all("Fortsetzung" not in (slide.body or "") for slide in composition.slides)
+
+    for section_index, section in enumerate(draft.sections):
+        rebuilt_section = normalize_whitespace(
+            " ".join(
+                slide.body for slide in _section_slides(composition, section_index)
+            )
+        )
+        assert rebuilt_section == normalize_whitespace(" ".join(section.paragraphs))
+
+    for slide in _content_slides(composition):
+        flattened = tuple(
+            line for block in slide.body_paragraphs for line in block
+        )
+        assert flattened == slide.body_lines
+        assert slide.body == "\n\n".join(
+            " ".join(block) for block in slide.body_paragraphs
+        )
+
+    plan_entries = composition.slide_plan["slides"]
+    assert [entry["body"] for entry in plan_entries] == [
+        slide.body for slide in _content_slides(composition)
+    ]
+    assert [entry["body_lines"] for entry in plan_entries] == [
+        list(slide.body_lines) for slide in _content_slides(composition)
+    ]
+    assert [entry["body_paragraphs"] for entry in plan_entries] == [
+        [list(block) for block in slide.body_paragraphs]
+        for slide in _content_slides(composition)
+    ]
 
 
 def test_paragraph_gaps_only_appear_between_complete_paragraphs_on_a_slide():

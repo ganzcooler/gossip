@@ -557,7 +557,11 @@ def _wrap_topic_paragraph(
 def _balance_topic_slides(
     slides: list[list[_TopicBodyChunk]],
 ) -> list[list[_TopicBodyChunk]]:
-    """Move one line forward when the final slide would be a one-line orphan."""
+    """Move one line forward when the final slide would be a one-line orphan.
+
+    The moved line joins the existing chunk of the same paragraph so a split
+    paragraph is still rendered as one body block with no internal gap.
+    """
     if len(slides) < 2:
         return slides
     last, previous = slides[-1], slides[-2]
@@ -575,7 +579,9 @@ def _balance_topic_slides(
     previous[-1] = _TopicBodyChunk(
         previous_chunk.paragraph_index, previous_chunk.lines[:-1]
     )
-    last.insert(0, _TopicBodyChunk(previous_chunk.paragraph_index, (moved,)))
+    last[0] = _TopicBodyChunk(
+        last[0].paragraph_index, (moved,) + last[0].lines
+    )
     return slides
 
 
@@ -586,11 +592,27 @@ def _pack_topic_section(
     body_size: int,
     first_capacity: float,
 ) -> list[list[_TopicBodyChunk]]:
+    """Pack paragraphs into slides after checking each against its page.
+
+    The first paragraph of a section is measured against the smaller heading
+    slide (H2 present), every later paragraph against the continuation slide.
+    A paragraph that fits its full page is atomic: when it does not fit the
+    remainder of the current slide it moves whole to the next one. Only a
+    paragraph that exceeds its full page is split at line boundaries.
+    """
     line_height = body_size * TOPIC_BODY_LINE_HEIGHT
     paragraph_gap = round(body_size * TOPIC_PARAGRAPH_GAP_FACTOR)
+    continuation_capacity = TOPIC_BODY_BOTTOM - TOPIC_CONTINUATION_TOP
     wrapped = [
         _wrap_topic_paragraph(paragraph, font=font)
         for paragraph in paragraphs
+    ]
+    page_capacities = [first_capacity] + [continuation_capacity] * (
+        len(wrapped) - 1
+    )
+    overlong = [
+        len(lines) * line_height > capacity + 1e-9
+        for lines, capacity in zip(wrapped, page_capacities)
     ]
 
     slides: list[list[_TopicBodyChunk]] = []
@@ -599,46 +621,67 @@ def _pack_topic_section(
     capacity = first_capacity
 
     for paragraph_index, lines in enumerate(wrapped):
-        remaining = lines
-        while remaining:
-            gap = paragraph_gap if current else 0
-            available = capacity - used - gap
-            whole_height = len(remaining) * line_height
-
-            if whole_height <= available + 1e-9:
-                current.append(_TopicBodyChunk(paragraph_index, remaining))
-                used += gap + whole_height
-                remaining = ()
-                continue
-
+        if overlong[paragraph_index]:
+            # An overlong paragraph starts at the top of its page; it never
+            # fills the remainder of the slide that holds the previous one.
             if current:
-                # Prefer starting a new slide over splitting this paragraph.
                 slides.append(current)
                 current = []
                 used = 0.0
-                capacity = TOPIC_BODY_BOTTOM - TOPIC_CONTINUATION_TOP
-                continue
+                capacity = continuation_capacity
 
-            fitting = int((available + 1e-9) // line_height)
-            if fitting >= len(remaining):
-                current.append(_TopicBodyChunk(paragraph_index, remaining))
-                used = len(remaining) * line_height
-                remaining = ()
-                continue
-            if fitting < 1:
-                raise TopicCompositionError(
-                    "Topic body line does not fit any content slide"
+            remaining = lines
+            while remaining:
+                whole_height = len(remaining) * line_height
+                if whole_height <= capacity + 1e-9:
+                    current.append(
+                        _TopicBodyChunk(paragraph_index, remaining)
+                    )
+                    used = whole_height
+                    remaining = ()
+                    break
+
+                fitting = int((capacity + 1e-9) // line_height)
+                if fitting < 1:
+                    raise TopicCompositionError(
+                        "Topic body line does not fit any content slide"
+                    )
+                current.append(
+                    _TopicBodyChunk(paragraph_index, remaining[:fitting])
                 )
+                slides.append(current)
+                current = []
+                used = 0.0
+                capacity = continuation_capacity
+                remaining = remaining[fitting:]
+            continue
 
-            current.append(
-                _TopicBodyChunk(paragraph_index, remaining[:fitting])
+        # A paragraph that fits its full page stays atomic. If the current
+        # slide has no room left, move it whole to the next slide.
+        while True:
+            gap = paragraph_gap if current else 0
+            available = capacity - used - gap
+            whole_height = len(lines) * line_height
+
+            if whole_height <= available + 1e-9:
+                current.append(_TopicBodyChunk(paragraph_index, lines))
+                used += gap + whole_height
+                break
+
+            if current:
+                slides.append(current)
+                current = []
+                used = 0.0
+                capacity = continuation_capacity
+                continue
+
+            if capacity != continuation_capacity:
+                capacity = continuation_capacity
+                continue
+
+            raise TopicCompositionError(
+                "Topic body paragraph does not fit an empty content slide"
             )
-            used = fitting * line_height
-            remaining = remaining[fitting:]
-            slides.append(current)
-            current = []
-            used = 0.0
-            capacity = TOPIC_BODY_BOTTOM - TOPIC_CONTINUATION_TOP
 
     if current:
         slides.append(current)
