@@ -234,7 +234,7 @@ def test_split_text_balanced_keeps_sentence_ends_that_look_like_abbreviations(
 ):
     font = inter_font(36, weight=400)
     first = "Der Rat beschließt den Haushalt."
-    last = "Die Zahlen werden geprüft."
+    last = "Die Zahlen werden geprüft. Der Ausschuss tagt am Montag."
     text = normalize_whitespace(" ".join([first, middle, last]))
     line_height = 36 * 1.4
 

@@ -386,7 +386,7 @@ def _complete_sentences_after(
     punctuation does not count.
     """
     if _is_topic_sentence_boundary(text, position):
-        return sum(1 for end in sentence_ends if end >= position)
+        return sum(1 for end in sentence_ends if end > position)
     return max(
         0,
         sum(1 for end in sentence_ends if end > position) - 1,

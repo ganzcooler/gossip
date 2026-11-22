@@ -356,6 +356,40 @@ def test_overlong_paragraph_splits_at_sentences_with_substantial_continuation(
     assert "\n\n" not in continuation.body
 
 
+def test_three_sentence_paragraph_keeps_two_sentences_on_the_continuation():
+    sentences = [_sentence(112), _sentence(66), _sentence(239)]
+    paragraph = " ".join(sentences)
+    draft = _draft(
+        sections=[
+            {"h2": H2_ONE, "paragraphs": [paragraph]},
+            {
+                "h2": H2_TWO,
+                "paragraphs": [
+                    _paragraph(
+                        "Der Radweg an der Hauptstraße wird im Sommer gebaut "
+                        "und verbindet die Ortsteile besser.",
+                        720,
+                    )
+                ],
+            },
+        ]
+    )
+
+    composition = compose_topic_slides(draft)
+
+    assert composition.body_size == 42
+    section = _section_slides(composition, 0)
+    assert len(section) == 2
+    heading, continuation = section
+    # The short middle sentence makes the penultimate sentence boundary look
+    # near the middle; it is still not allowed because the continuation would
+    # contain only the final sentence.
+    assert len(_sentence_units(continuation.body)) >= 2
+    assert normalize_whitespace(
+        heading.body + " " + continuation.body
+    ) == normalize_whitespace(paragraph)
+
+
 def test_single_sentence_paragraph_uses_a_balanced_word_fallback():
     paragraph = _sentence(500)
     draft = _draft(
