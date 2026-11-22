@@ -5,11 +5,11 @@ from datetime import date
 from types import SimpleNamespace
 
 import pytest
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageDraw
 
 from app.core.post_models import TopicDraft
 from app.services import render_common
-from app.services.caption_writer import compose_caption
+from app.services.caption_writer import CAPTION_FIRST_LINE, compose_caption
 from app.services.post_renderer import RenderError
 from app.services.slide_composer import compose_topic_slides
 from app.services.topic_renderer import (
@@ -26,7 +26,8 @@ ORANGE_DEEP = (201, 62, 24)
 SURFACE_BASE = (30, 30, 33)
 ON_SURFACE = (255, 255, 255)
 OUTLINE = (70, 70, 75)
-PLATE_WHITE = (255, 255, 255)
+WHITE = (255, 255, 255)
+LOGO_COLOR = (255, 0, 255)
 
 PAIR_LEFT = (190, 70, 40)
 PAIR_RIGHT = (40, 80, 150)
@@ -107,23 +108,39 @@ def _has_color(image: Image.Image, box, color) -> bool:
     return any(pixel == color for _, pixel in colors)
 
 
-def _color_bbox(image: Image.Image, box, color):
-    """Return the exact-color bbox inside ``box`` in canvas coordinates."""
-    cropped = image.crop(box)
-    solid = Image.new("RGB", cropped.size, color)
-    mask = (
-        ImageChops.difference(cropped, solid)
-        .convert("L")
-        .point(lambda value: 255 if value == 0 else 0)
+def _use_transparent_logo(monkeypatch, tmp_path) -> None:
+    """Use a synthetic ring logo so the real asset can be replaced later."""
+    logo = Image.new("RGBA", (100, 50), (0, 0, 0, 0))
+    ImageDraw.Draw(logo).rectangle(
+        (0, 0, 99, 49), outline=(*LOGO_COLOR, 255), width=10
     )
+    path = tmp_path / "synthetic-logo.png"
+    logo.save(path)
+    monkeypatch.setattr(render_common, "LOGO_PATH", path)
+
+
+def _use_empty_logo(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "empty-logo.png"
+    Image.new("RGBA", (100, 50), (0, 0, 0, 0)).save(path)
+    monkeypatch.setattr(render_common, "LOGO_PATH", path)
+
+
+def _color_bbox(image: Image.Image, box, color) -> tuple[int, int, int, int] | None:
+    region = image.crop(box)
+    difference = ImageChops.difference(
+        region, Image.new("RGB", region.size, color)
+    )
+    red, green, blue = difference.split()
+    total = ImageChops.add(ImageChops.add(red, green), blue)
+    mask = total.point(lambda value: 255 if value == 0 else 0)
     bbox = mask.getbbox()
     if bbox is None:
         return None
     return (
-        bbox[0] + box[0],
-        bbox[1] + box[1],
-        bbox[2] + box[0],
-        bbox[3] + box[1],
+        box[0] + bbox[0],
+        box[1] + bbox[1],
+        box[0] + bbox[2],
+        box[1] + bbox[3],
     )
 
 
@@ -156,13 +173,11 @@ def test_renderer_produces_cover_and_four_content_slides_at_1080x1350_rgb():
         assert frame.mode == "RGB"
 
 
-def test_cover_has_orange_rule_white_plate_badge_kicker_and_bottom_anchored_title():
+def test_cover_has_orange_rule_badge_kicker_and_bottom_anchored_title():
     _, _, frames = _render()
     cover = frames[0]
 
     assert cover.getpixel((540, 2)) == ORANGE
-    assert cover.getpixel((80, 160)) == PLATE_WHITE
-    assert cover.getpixel((63, 160)) != PLATE_WHITE
     assert cover.getpixel((1000, 180)) == ORANGE_DEEP
     assert _has_color(cover, (64, 500, 700, 900), ORANGE_DEEP)
     assert _has_color(cover, (44, 700, 54, 1210), ORANGE_DEEP)
@@ -175,10 +190,71 @@ def test_cover_has_orange_rule_white_plate_badge_kicker_and_bottom_anchored_titl
     # The title ink bbox ends at y=1200; no white brand/title pixel below it.
     assert not _has_color(cover, (0, 1201, 1080, 1350), ON_SURFACE)
 
-    # Logo, badge, kicker, title and accent all sit inside the 1:1 safe band.
-    assert cover.getpixel((80, 149)) != PLATE_WHITE
-    assert cover.getpixel((250, 506)) == PLATE_WHITE
-    assert cover.getpixel((80, 507)) != PLATE_WHITE
+
+def test_cover_composites_a_transparent_288px_logo_at_the_top_left_without_a_plate(
+    tmp_path, monkeypatch
+):
+    _use_transparent_logo(monkeypatch, tmp_path)
+
+    _, _, frames = _render()
+    cover = frames[0]
+
+    assert _color_bbox(cover, (40, 130, 520, 440), LOGO_COLOR) == (
+        64,
+        150,
+        352,
+        294,
+    )
+    assert cover.getpixel((208, 222)) not in (WHITE, LOGO_COLOR)
+    assert not _has_color(cover, (64, 150, 456, 507), WHITE)
+
+
+def test_cover_badge_kicker_and_accent_bar_have_rounded_corners():
+    _, _, frames = _render()
+    cover = frames[0]
+
+    assert cover.getpixel((1015, 160)) != ORANGE_DEEP
+    assert cover.getpixel((800, 160)) == ORANGE_DEEP
+    assert cover.getpixel((1000, 180)) == ORANGE_DEEP
+
+    kicker_rows = [
+        y for y in range(cover.height) if cover.getpixel((100, y)) == ORANGE_DEEP
+    ]
+    kicker_top, kicker_bottom = min(kicker_rows), max(kicker_rows)
+    assert cover.getpixel((64, kicker_top)) != ORANGE_DEEP
+    assert cover.getpixel((200, kicker_top)) == ORANGE_DEEP
+    assert cover.getpixel((64, kicker_top + 32)) == ORANGE_DEEP
+    assert cover.getpixel((64, kicker_bottom)) != ORANGE_DEEP
+
+    # The accent bar is 10 px wide, so the 10 px token is clamped to 5 px.
+    # The tip rows still carry fill at the bar midpoint; a pill would not.
+    accent_rows = [
+        y for y in range(cover.height) if cover.getpixel((49, y)) == ORANGE_DEEP
+    ]
+    accent_top, accent_bottom = min(accent_rows), max(accent_rows)
+    assert cover.getpixel((49, accent_top)) == ORANGE_DEEP
+    assert cover.getpixel((49, accent_bottom)) == ORANGE_DEEP
+    assert cover.getpixel((44, accent_top)) != ORANGE_DEEP
+    assert cover.getpixel((44, accent_bottom)) != ORANGE_DEEP
+    accent_middle = (accent_top + accent_bottom) // 2
+    assert cover.getpixel((44, accent_middle)) == ORANGE_DEEP
+    assert cover.getpixel((53, accent_middle)) == ORANGE_DEEP
+
+
+def test_top_rule_heading_rule_hairline_and_image_edge_stay_square():
+    _, _, frames = _render()
+    cover, first, second = frames[0], frames[1], frames[2]
+
+    assert cover.getpixel((0, 0)) == ORANGE
+    assert cover.getpixel((1079, 5)) == ORANGE
+    assert first.getpixel((710, 0)) == ORANGE_DEEP
+    assert first.getpixel((719, 0)) == ORANGE_DEEP
+    assert first.getpixel((710, 1349)) == ORANGE_DEEP
+    assert first.getpixel((719, 1349)) == ORANGE_DEEP
+    assert first.getpixel((60, 236)) == ORANGE
+    assert first.getpixel((659, 238)) == ORANGE
+    assert second.getpixel((420, 135)) == OUTLINE
+    assert second.getpixel((1019, 135)) == OUTLINE
 
 
 def test_cover_has_no_local_gray_box_and_shows_the_artwork():
@@ -298,16 +374,29 @@ def test_unpaired_last_slide_uses_the_standalone_strip_without_a_seam():
     assert last.getpixel((400, 675)) == SURFACE_BASE
 
 
-def test_every_content_slide_has_the_footer_plate_on_the_text_side():
+def test_every_content_slide_has_a_transparent_footer_logo_right_aligned_to_the_column(
+    tmp_path, monkeypatch
+):
+    _use_transparent_logo(monkeypatch, tmp_path)
+
     _, _, frames = _render()
     for frame_index in (1, 2):
         frame = frames[frame_index]
         text_x = CONTENT_TEXT_X_LEFT if frame_index == 1 else CONTENT_TEXT_X_RIGHT
-        plate_x = text_x + 438
-        assert frame.getpixel((plate_x + 20, 1120)) == PLATE_WHITE
-        assert frame.getpixel((plate_x - 1, 1120)) != PLATE_WHITE
-        assert frame.getpixel((plate_x + 20, 1112)) == PLATE_WHITE
-        assert frame.getpixel((plate_x + 20, 1261)) != PLATE_WHITE
+        expected = (text_x + 496, 1110, text_x + 600, 1162)
+        assert (
+            _color_bbox(
+                frame, (text_x + 400, 1080, text_x + 620, 1220), LOGO_COLOR
+            )
+            == expected
+        )
+        assert frame.getpixel((text_x + 548, 1136)) not in (
+            WHITE,
+            LOGO_COLOR,
+        )
+        assert not _has_color(
+            frame, (text_x + 438, 1110, text_x + 600, 1260), WHITE
+        )
 
 
 def test_heading_and_continuation_share_one_body_size_and_body_zone():
@@ -407,7 +496,7 @@ def test_write_topic_output_creates_exact_filenames_and_one_caption(tmp_path):
     ]
     assert output.caption_path == folder / "caption-topic-haushalt.txt"
     assert output.caption_path.read_text(encoding="utf-8") == caption
-    assert caption.splitlines()[0] == "Illustration: KI-generiert."
+    assert caption.splitlines()[0] == CAPTION_FIRST_LINE
     assert "12.03.2024" in caption
     assert "https://sessionnet.example/rosdorf/BI/getfile.asp?id=4711" in caption
     for path in output.image_paths:
@@ -503,6 +592,20 @@ def test_missing_logo_is_a_hard_render_failure(monkeypatch):
     )
 
     with pytest.raises(RenderError, match="logo"):
+        render_topic_frames(
+            draft,
+            composition,
+            cover_art=_cover_art(),
+            pair_art=_pair_art(2),
+            organ="Gemeinderat Rosdorf",
+        )
+
+
+def test_empty_logo_is_a_hard_render_failure(monkeypatch, tmp_path):
+    draft, composition = _composition()
+    _use_empty_logo(monkeypatch, tmp_path)
+
+    with pytest.raises(RenderError, match="no visible pixels"):
         render_topic_frames(
             draft,
             composition,

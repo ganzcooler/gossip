@@ -6,6 +6,7 @@ import pytest
 from PIL import Image
 
 from app.services.image_generation import (
+    IMAGE_STYLE_SUFFIX,
     SUMMARY_ASPECT_RATIO,
     SUMMARY_IMAGE_SIZE,
     TOPIC_ASPECT_RATIO,
@@ -23,6 +24,7 @@ from app.services.image_generation import (
     topic_cover_fallback_art,
     topic_pair_fallback_art,
     topic_single_fallback_art,
+    with_image_style_suffix,
 )
 from app.services.llm_client import (
     LLMAuthenticationError,
@@ -63,7 +65,9 @@ async def test_summary_cover_requests_9_16_and_normalizes_to_1080x1920():
     assert len(fake.image_calls) == 1
     assert fake.image_calls[0].role == "summary_cover"
     assert fake.image_calls[0].aspect_ratio == SUMMARY_ASPECT_RATIO == "9:16"
-    assert fake.image_calls[0].prompt == "A wide calm civic scene"
+    assert fake.image_calls[0].prompt == (
+        f"A wide calm civic scene\n\n{IMAGE_STYLE_SUFFIX}"
+    )
 
 
 async def test_token_transport_failure_produces_the_blue_brand_fallback():
@@ -102,6 +106,38 @@ async def test_authentication_errors_propagate_immediately_without_fallback():
 
     with pytest.raises(LLMAuthenticationError, match="Insufficient credits"):
         await generate_summary_cover(fake, "Prompt")
+
+
+def test_image_style_suffix_forbids_illustration_and_frames():
+    assert IMAGE_STYLE_SUFFIX.startswith("Photorealistic editorial")
+    for required in (
+        "natural light",
+        "real materials",
+        "illustration",
+        "cartoon",
+        "drawing",
+        "watercolour",
+        "3D render",
+        "frame",
+        "border",
+        "passepartout",
+        "polaroid",
+        "picture-in-picture",
+        "collage",
+        "split screen",
+        "vignette",
+    ):
+        assert required in IMAGE_STYLE_SUFFIX
+
+
+def test_image_style_suffix_is_deterministic_and_idempotent():
+    base = "A wide calm civic scene"
+
+    once = with_image_style_suffix(base)
+    twice = with_image_style_suffix(once)
+
+    assert once == f"{base}\n\n{IMAGE_STYLE_SUFFIX}"
+    assert twice == once
 
 
 def test_normalize_image_uses_a_deterministic_center_fit():
@@ -175,7 +211,9 @@ async def test_topic_cover_requests_4_5_and_normalizes_to_1080x1350():
     assert len(fake.image_calls) == 1
     assert fake.image_calls[0].role == "topic_cover"
     assert fake.image_calls[0].aspect_ratio == TOPIC_ASPECT_RATIO == "4:5"
-    assert fake.image_calls[0].prompt == "A wide calm civic scene"
+    assert fake.image_calls[0].prompt == (
+        f"A wide calm civic scene\n\n{IMAGE_STYLE_SUFFIX}"
+    )
 
 
 async def test_topic_pair_art_center_crops_the_normalized_image_to_720x1350():
@@ -191,6 +229,7 @@ async def test_topic_pair_art_center_crops_the_normalized_image_to_720x1350():
     assert result.image.getpixel((719, 675)) == (200, 100, 50)
     assert fake.image_calls[0].role == "topic_pair_art"
     assert fake.image_calls[0].aspect_ratio == "4:5"
+    assert fake.image_calls[0].prompt == f"Pair prompt\n\n{IMAGE_STYLE_SUFFIX}"
 
 
 async def test_topic_single_art_center_crops_to_a_standalone_360x1350_strip():
@@ -205,6 +244,7 @@ async def test_topic_single_art_center_crops_to_a_standalone_360x1350_strip():
     assert result.image.getpixel((0, 675)) == (200, 100, 50)
     assert fake.image_calls[0].role == "topic_single_art"
     assert fake.image_calls[0].aspect_ratio == "4:5"
+    assert fake.image_calls[0].prompt == f"Single prompt\n\n{IMAGE_STYLE_SUFFIX}"
 
 
 async def test_topic_image_failures_produce_orange_family_fallbacks():

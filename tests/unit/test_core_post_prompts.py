@@ -23,6 +23,7 @@ from app.core.post_prompts import (
     build_topic_visual_prompt,
     build_topic_writer_prompt,
 )
+from app.services.caption_writer import CAPTION_FIRST_LINE
 
 PROTOCOL_TEXT = (
     "TOP 1 Begrüßung\n"
@@ -235,7 +236,7 @@ def test_caption_prompt_contains_draft_and_metadata_only():
     assert "Der Rat hat den Haushalt beschlossen." in prompt
     assert "Gemeinderat Rosdorf" in prompt
     assert "15.01.2024" in prompt
-    assert "Illustration: KI-generiert." not in prompt
+    assert CAPTION_FIRST_LINE not in prompt
     assert "http" not in prompt
     assert PROTOCOL_TEXT not in prompt
     assert EXCERPTS[0].excerpt not in prompt
@@ -248,10 +249,28 @@ def test_summary_visual_prompt_contains_only_the_draft_and_design_guardrails():
     for point in DRAFT.points:
         assert point.heading in prompt
     assert "9:16" in prompt
-    assert "Eine atmosphärische Illustration" in prompt
+    assert "Fotorealistische Editorial- und Reportagefotografie" in prompt
+    assert "natürlichem Licht" in prompt
+    assert "echten Materialien" in prompt
+    assert "glaubwürdigen Szene" in prompt
+    assert "Keine Illustration" in prompt
+    assert "kein Comic" in prompt
+    assert "keine Zeichnung" in prompt
+    assert "kein Aquarell" in prompt
+    assert "kein 3D-Render" in prompt
+    assert "Kein Rahmen" in prompt
+    assert "keine Umrandung" in prompt
+    assert "kein Passepartout" in prompt
+    assert "kein Polaroid-Rand" in prompt
+    assert "keine Bild-in-Bild-Komposition" in prompt
+    assert "keine Collage" in prompt
+    assert "kein Split-Screen" in prompt
+    assert "keine Vignette" in prompt
     assert "breite, ruhige" in prompt
     assert "durchgehenden Horizont" in prompt
     assert "Kein zentrales Motiv" in prompt
+    assert "oberen und mittleren Bildhälfte" in prompt
+    assert "untere Bildzone bleibt ruhig" in prompt
     assert "Kein Text" in prompt
     assert "Logos" in prompt
     assert "Parteisymbole" in prompt
@@ -259,6 +278,10 @@ def test_summary_visual_prompt_contains_only_the_draft_and_design_guardrails():
     assert "fotorealistischen" in prompt
     assert "Politiker" in prompt
     assert "artwork_prompts" in prompt
+
+    # The old illustration style is fully replaced.
+    assert "atmosphärische Illustration" not in prompt
+    assert "keine Dokumentarfotografie" not in prompt
 
     # The visual prompt writer never sees protocol text, excerpts or topic briefs.
     assert PROTOCOL_TEXT not in prompt
@@ -298,8 +321,27 @@ def test_topic_visual_prompt_contains_only_the_draft_and_pair_count():
         assert section.h2 in prompt
     assert "genau 3 Prompts" in prompt
     assert "4:5" in prompt
+    assert "Fotorealistische Editorial- und Reportagefotografie" in prompt
+    assert "natürlichem Licht" in prompt
+    assert "echten Materialien" in prompt
+    assert "glaubwürdigen Szene" in prompt
+    assert "Keine Illustration" in prompt
+    assert "kein Comic" in prompt
+    assert "keine Zeichnung" in prompt
+    assert "kein Aquarell" in prompt
+    assert "kein 3D-Render" in prompt
+    assert "Kein Rahmen" in prompt
+    assert "keine Umrandung" in prompt
+    assert "kein Passepartout" in prompt
+    assert "kein Polaroid-Rand" in prompt
+    assert "keine Bild-in-Bild-Komposition" in prompt
+    assert "keine Collage" in prompt
+    assert "kein Split-Screen" in prompt
+    assert "keine Vignette" in prompt
     assert "durchgehend fortlaufender Horizont" in prompt
     assert "Kein zentrales Motiv" in prompt
+    assert "oberen und mittleren Bildhälfte" in prompt
+    assert "untere Bildzone bleibt ruhig" in prompt
     assert "40 px vom Paar-Seam" in prompt
     assert "Kein Text" in prompt
     assert "Logos" in prompt
@@ -307,6 +349,10 @@ def test_topic_visual_prompt_contains_only_the_draft_and_pair_count():
     assert "erkennbaren Minderjährigen" in prompt
     assert "fotorealistischen" in prompt
     assert "artwork_prompts" in prompt
+
+    # The old illustration style is fully replaced.
+    assert "atmosphärische Illustration" not in prompt
+    assert "keine Dokumentarfotografie" not in prompt
 
     # The topic visual writer sees no protocol, excerpts, Summary or other topics.
     assert PROTOCOL_TEXT not in prompt

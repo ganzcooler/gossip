@@ -44,6 +44,13 @@ TOPIC_SINGLE_CROP = (360, 0, 720, 1350)
 ASSET_STATUS_READY = "ready"
 ASSET_STATUS_FALLBACK = "fallback"
 
+IMAGE_STYLE_SUFFIX = (
+    "Photorealistic editorial reportage photography with natural light, real "
+    "materials and a believable scene. No illustration, cartoon, comic, drawing, "
+    "watercolour or 3D render. No frame, border, passepartout, polaroid edge, "
+    "picture-in-picture, collage, split screen or vignette."
+)
+
 
 class ImageGenerationError(Exception):
     """The provider payload or the deterministic fallback could not be used."""
@@ -76,6 +83,14 @@ def normalize_image(image: Image.Image, size: tuple[int, int]) -> Image.Image:
         method=Image.Resampling.LANCZOS,
         centering=(0.5, 0.5),
     )
+
+
+def with_image_style_suffix(prompt: str) -> str:
+    """Append the deterministic realism/no-frame suffix exactly once."""
+    prompt = prompt.strip()
+    if prompt.endswith(IMAGE_STYLE_SUFFIX):
+        return prompt
+    return f"{prompt}\n\n{IMAGE_STYLE_SUFFIX}"
 
 
 def summary_fallback_art() -> Image.Image:
@@ -148,6 +163,7 @@ def _summary_fallback_result(error: Exception | str) -> GeneratedImage:
 
 async def generate_summary_cover(llm: LLMClient, prompt: str) -> GeneratedImage:
     """Generate and normalize the Summary cover art, or its brand fallback."""
+    prompt = with_image_style_suffix(prompt)
     try:
         payload = await llm.generate_image(
             role=SUMMARY_COVER_ROLE,
@@ -168,6 +184,7 @@ def _normalized_topic_art(payload: bytes) -> Image.Image:
 
 async def generate_topic_cover(llm: LLMClient, prompt: str) -> GeneratedImage:
     """Generate and normalize the 1080x1350 topic cover art or its fallback."""
+    prompt = with_image_style_suffix(prompt)
     try:
         payload = await llm.generate_image(
             role=TOPIC_COVER_ROLE,
@@ -189,6 +206,7 @@ async def generate_topic_cover(llm: LLMClient, prompt: str) -> GeneratedImage:
 
 async def generate_topic_pair_art(llm: LLMClient, prompt: str) -> GeneratedImage:
     """Generate one 4:5 artwork and center-crop it to a 720x1350 pair."""
+    prompt = with_image_style_suffix(prompt)
     try:
         payload = await llm.generate_image(
             role=TOPIC_PAIR_ROLE,
@@ -210,6 +228,7 @@ async def generate_topic_pair_art(llm: LLMClient, prompt: str) -> GeneratedImage
 
 async def generate_topic_single_art(llm: LLMClient, prompt: str) -> GeneratedImage:
     """Generate one 4:5 artwork and center-crop it to a 360x1350 strip."""
+    prompt = with_image_style_suffix(prompt)
     try:
         payload = await llm.generate_image(
             role=TOPIC_SINGLE_ROLE,
@@ -233,6 +252,7 @@ __all__ = [
     "ASSET_STATUS_FALLBACK",
     "ASSET_STATUS_READY",
     "GeneratedImage",
+    "IMAGE_STYLE_SUFFIX",
     "ImageGenerationError",
     "SUMMARY_ASPECT_RATIO",
     "SUMMARY_COVER_ROLE",
@@ -256,4 +276,5 @@ __all__ = [
     "topic_cover_fallback_art",
     "topic_pair_fallback_art",
     "topic_single_fallback_art",
+    "with_image_style_suffix",
 ]

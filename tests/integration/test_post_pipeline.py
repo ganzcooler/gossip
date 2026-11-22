@@ -23,6 +23,8 @@ from app.database import get_db
 from app.main import app
 from app.models import EditorialPlan as EditorialPlanRow
 from app.models import Post, PostAsset, PostSlide, Protocol
+from app.services.caption_writer import CAPTION_FIRST_LINE
+from app.services.image_generation import IMAGE_STYLE_SUFFIX
 from app.services.llm_client import LLMAuthenticationError, LLMSchemaError
 from app.services.post_pipeline import PostPipeline
 from app.services.slide_composer import compose_topic_slides
@@ -346,7 +348,7 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     assert len(summary.alt_text_json) == 3
     assert all(summary.alt_text_json)
 
-    assert summary.caption.startswith("Illustration: KI-generiert.\n")
+    assert summary.caption.startswith(f"{CAPTION_FIRST_LINE}\n")
     assert "Gemeinderat Rosdorf" in summary.caption
     assert "15.01.2024" in summary.caption
     assert "Ratsprotokoll vom 15.01.2024" in summary.caption
@@ -379,7 +381,9 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     assert cover_asset.status == "ready"
     assert cover_asset.error is None
     assert cover_asset.model == OPENROUTER_IMAGE_MODEL
-    assert cover_asset.prompt == "Weite, ruhige Szene am Ortsrand."
+    assert cover_asset.prompt == (
+        f"Weite, ruhige Szene am Ortsrand.\n\n{IMAGE_STYLE_SUFFIX}"
+    )
     assert cover_asset.path is not None
     assert cover_asset.path.endswith("summary-2024-01-15-story-01.png")
     output_folder = tmp_path / "240115_gemeinderat"
@@ -411,7 +415,7 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     assert haushalt.content_json["excerpts"][0]["anchor"] == SUMMARY_ANCHOR_1
     assert haushalt.content_markdown.startswith("# ")
     assert haushalt.slide_plan_json["family"] == "topic"
-    assert haushalt.caption.startswith("Illustration: KI-generiert.\n")
+    assert haushalt.caption.startswith(f"{CAPTION_FIRST_LINE}\n")
     assert all(haushalt.alt_text_json)
     haushalt_slides = await _slides(postgres_session, haushalt)
     assert haushalt_slides[0].slide_type == "cover"
@@ -428,6 +432,16 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
         "pair_2",
     ]
     assert all(asset.path for asset in haushalt_assets)
+    assert all(
+        asset.prompt.endswith(IMAGE_STYLE_SUFFIX) for asset in haushalt_assets
+    )
+    assert [asset.prompt for asset in haushalt_assets] == [
+        call.prompt for call in fake.image_calls[1:4]
+    ]
+    assert fake.calls_for("summary_cover")[0].prompt == cover_asset.prompt
+    assert all(
+        call.prompt.endswith(IMAGE_STYLE_SUFFIX) for call in fake.image_calls
+    )
     assert haushalt_assets[0].path.endswith(
         "topic-haushalt/topic-2024-01-15-01.png"
     )
@@ -496,7 +510,7 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     assert summary_detail["content_json"]["draft"]["cover_title"] == plan.summary_title
     assert summary_detail["content_markdown"].startswith(f"# {plan.summary_title}")
     assert summary_detail["slide_plan_json"]["body_size"] in (42, 39, 36)
-    assert summary_detail["caption"].startswith("Illustration: KI-generiert.")
+    assert summary_detail["caption"].startswith(CAPTION_FIRST_LINE)
     assert summary_detail["fact_check_json"]["passed"] is True
     assert len(summary_detail["slides"]) == 3
     assert [slide["slide_index"] for slide in summary_detail["slides"]] == [1, 2, 3]
@@ -518,7 +532,7 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     assert detail["content_json"]["excerpts"][0]["anchor"] == SUMMARY_ANCHOR_1
     assert detail["content_markdown"].startswith("# ")
     assert detail["slide_plan_json"]["family"] == "topic"
-    assert detail["caption"].startswith("Illustration: KI-generiert.")
+    assert detail["caption"].startswith(CAPTION_FIRST_LINE)
     assert len(detail["slides"]) == len(detail["alt_text_json"])
 
 
@@ -908,6 +922,14 @@ async def test_rerun_resumes_draft_summary_and_topics_without_rewriting_content(
     assert len(fake.calls_for("summary_writer")) == 1
     assert len(fake.calls_for("topic_writer")) == 2
 
+    # A Beitrag that was already ready before the caption-prefix change keeps
+    # its legacy caption; the rerun must not rewrite existing ready posts.
+    legacy_caption = (
+        "Illustration: KI-generiert.\n\n"
+        "Gemeinderat Rosdorf · Sitzung vom 15.01.2024\n"
+    )
+    haushalt.caption = legacy_caption
+
     # Simulate a job that saved the content but stopped before the terminal
     # transition, so the next run resumes at the visual stage.
     summary.status = "draft"
@@ -936,6 +958,7 @@ async def test_rerun_resumes_draft_summary_and_topics_without_rewriting_content(
     assert len(fake.calls_for("topic_writer")) == 2
     assert haushalt.status == haushalt_again.status == "ready"
     assert radweg.status == radweg_again.status == "ready"
+    assert haushalt_again.caption == legacy_caption
     assert haushalt.content_json["draft"]["sections"]
     assert [post.status for post in second_result.posts] == [
         "ready",

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.database import get_db
 from app.main import app
+from app.services.caption_writer import CAPTION_FIRST_LINE
 
 client = TestClient(app)
 
@@ -26,7 +27,7 @@ def _post(**overrides):
         "slug": "summary",
         "post_index": 0,
         "title": "Sitzung kompakt",
-        "caption": "Illustration: KI-generiert.",
+        "caption": CAPTION_FIRST_LINE,
         "status": "ready",
         "failed_step": None,
         "created_at": datetime(2024, 1, 15, 10, 0, 0),
@@ -75,7 +76,7 @@ def test_list_protocol_posts_returns_compact_posts():
             "title": "Sitzung kompakt",
             "status": "ready",
             "failed_step": None,
-            "caption": "Illustration: KI-generiert.",
+            "caption": CAPTION_FIRST_LINE,
             "slide_count": 3,
             "created_at": "2024-01-15T10:00:00",
             "updated_at": "2024-01-15T11:00:00",
@@ -89,7 +90,7 @@ def test_list_protocol_posts_returns_compact_posts():
             "title": "Haushalt",
             "status": "draft",
             "failed_step": "writer",
-            "caption": "Illustration: KI-generiert.",
+            "caption": CAPTION_FIRST_LINE,
             "slide_count": 1,
             "created_at": "2024-01-15T10:00:00",
             "updated_at": "2024-01-15T11:00:00",
@@ -186,7 +187,7 @@ def test_get_post_returns_slides_and_assets():
         "content_json": {"sections": [{"heading": "Haushalt", "paragraphs": ["Text"]}]},
         "content_markdown": "## Haushalt\n\nText",
         "slide_plan_json": {"slides": [{"type": "cover"}]},
-        "caption": "Illustration: KI-generiert.",
+        "caption": CAPTION_FIRST_LINE,
         "alt_text_json": ["Blaue Story-Karte", "Orange Folie"],
         "fact_check_json": {"passed": True, "issues": []},
         "status": "failed",

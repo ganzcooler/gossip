@@ -38,7 +38,12 @@ has been removed; legacy articles remain readable through the API.
    deterministically at one post-wide body size. The Summary-Beitrag also gets
    a composed caption and deterministic Alt-Texte.
 6. **Visualise the Summary** — a stateless visual-prompt call writes the cover
-   prompt from the Summary draft only. Image generation requests a 9:16 image
+   prompt from the Summary draft only. Prompts request photorealistic editorial
+   and reportage photography with natural light, real materials and a believable
+   scene. A fixed deterministic suffix is appended before every image-provider
+   call and forbids illustration, comic, drawing, watercolour, 3D render,
+   frames, borders, passepartouts, polaroid edges, picture-in-picture, collages,
+   split-screens and vignettes. Image generation requests a 9:16 image
    through the LLM port, center-fits it to exactly 1080×1920, and substitutes
    the deterministic blue brand fallback if the provider or payload fails. The
    renderer writes the cover and two to six cards as
@@ -49,19 +54,23 @@ has been removed; legacy articles remain readable through the API.
    Themen-Writer sees only that brief and its excerpts and writes an H1 plus
    two to six H2 sections with paragraphs under a hard 3,000-character budget.
    The same Fact-Check gate applies, and the 4:5 content slides are composed
-   deterministically: every H2 starts a new slide, overflow continues with the
-   short chapter label at one post-wide body size, and the article text is
-   never reworded or truncated. A stateless Themen visual-prompt call writes a
+   deterministically: every H2 starts a new slide, each paragraph is checked
+   against its slide capacity so a paragraph that fits a full page moves whole
+   to the next slide, only overlong paragraphs continue with the short chapter
+   label at one post-wide body size, and the article text is never reworded or
+   truncated. A stateless Themen visual-prompt call writes a
    cover and `ceil(content_slides / 2)` pair prompts from the Themenentwurf only.
-   Image generation requests 4:5 artwork, normalizes the cover to 1080×1350,
-   and center-crops each pair to 720×1350 or a final unpaired strip to
-   360×1350. The renderer slices pairs into the zigzag layout and writes
-   `topic-<date>-<slide>.png` plus exactly one `caption-topic-<slug>.txt`
-   inside the topic's own `topic-<slug>/` subfolder. Themenbeitrag image
-   failures produce orange brand fallbacks and the Beitrag still
-   becomes `ready`; authentication errors stop the job. Alt-Texte stay in
-   PostgreSQL and the API; no JSON, Markdown, prompt, or manifest files are
-   written.
+   These prompts use the same photorealistic editorial/reportage style and
+   deterministic no-frame suffix. Image generation requests 4:5 artwork,
+   normalizes the cover to 1080×1350, and center-crops each pair to 720×1350 or
+   a final unpaired strip to 360×1350. The renderer slices pairs into the
+   zigzag layout and writes `topic-<date>-<slide>.png` plus exactly one
+   `caption-topic-<slug>.txt` inside the topic's own `topic-<slug>/` subfolder.
+   Themenbeitrag image failures produce orange brand fallbacks and the Beitrag
+   still becomes `ready`; authentication errors stop the job. Alt-Texte stay in
+   PostgreSQL and the API. The final visual prompt including the suffix is
+   stored in `post_assets.prompt` and exposed by `GET /api/posts/{id}`; no JSON,
+   Markdown, prompt, or manifest files are written.
 8. **Retry and reprocess** — `POST /api/posts/{id}/retry` resets one Beitrag and
    resumes at its `failed_step` with cached drafts, compositions, fact-check
    results, captions and visual prompts. `force=true` clears only that
@@ -113,10 +122,10 @@ app/
 │   ├── slide_composer.py      Deterministic Summary cards and topic slides
 │   ├── caption_writer.py      Caption body role and deterministic composition
 │   ├── visual_prompts.py      Stateless visual-prompt role for covers/artwork
-│   ├── image_generation.py    Image decode, deterministic fit, brand fallbacks
+│   ├── image_generation.py    Image decode, realism suffix, fit, brand fallbacks
 │   ├── post_renderer.py       Deterministic Summary story renderer
 │   ├── topic_renderer.py      Deterministic topic carousel renderer
-│   ├── render_common.py       Single brand palette/token source, logo plate, scrim, badge, folders
+│   ├── render_common.py       Single brand palette/token source, logo, scrim, badge, folders
 │   ├── output_cleanup.py      Scoped force-retry/reprocess file cleanup
 │   ├── text_layout.py         Shared font loading, wrapping and fit primitives
 │   ├── organs.py              Finite Organ seed and deterministic resolver
@@ -136,7 +145,7 @@ local-testing/                 Local compose file and database dump
 ```
 
 The renderer requires three committed runtime assets in `app/res/`:
-`logo-gossip.png` (colored RGBA logo, placed on the white plate),
+`logo-gossip.png` (transparent RGBA logo, composited directly on the artwork),
 `Oswald-var.ttf` (titles, headings, numbers, kickers) and `Inter-var.ttf`
 (body copy, badges, page labels). A missing asset is a hard render failure; it
 never falls back to another font or logo.
@@ -283,9 +292,11 @@ summary-2024-01-15-story-03.png   # second card
 caption-summary-summary.txt
 ```
 
-The folder is reused idempotently. A Summary-Beitrag story has three to seven
-frames (cover plus two to six cards) and exactly one caption file whose content
-is the stored `post.caption`, starting with `Illustration: KI-generiert.` and
+The folder is reused idempotently. The cover and every card show the transparent
+logo directly on the artwork at the top left, without a plate. A Summary-Beitrag
+story has three to seven frames (cover plus two to six cards) and exactly one
+caption file whose content is the stored `post.caption`, starting with
+`Bild: KI-generiert.` and
 carrying the source/date plus the SessionNet link or the manual-link hint. Image
 failures produce the blue brand fallback and the Beitrag still becomes `ready`;
 authentication errors stop the job immediately. A composition or fit failure
@@ -320,9 +331,10 @@ image-left/text-right; each 720×1350 pair artwork is split into the left and
 right 360×1350 strips, and an unpaired final slide uses a standalone strip. The
 first slide gets the large orange number, one-word kicker, 3 px rule and fitted
 H2; continuation slides show the short chapter label, the `n/N` counter and a
-1 px hairline. Every content slide carries the colored logo on its white plate
-at the bottom-right of the text block. The caption file is UTF-8, starts with
-`Illustration: KI-generiert.` and carries source/date plus the SessionNet link
+1 px hairline. Every content slide carries the transparent logo directly on the
+image at the bottom-right of the text block, right-aligned to the 600 px text
+column. The caption file is UTF-8, starts with
+`Bild: KI-generiert.` and carries source/date plus the SessionNet link
 or the manual-link hint. Image failures produce the orange brand fallback and
 the Beitrag still becomes `ready`; authentication errors stop the job. A
 composition or fit failure (for example an H1 or H2 that cannot be laid out
@@ -348,7 +360,7 @@ and responds with `404` for an unknown protocol:
     "title": "Sitzung kompakt",
     "status": "ready",
     "failed_step": null,
-    "caption": "Illustration: KI-generiert. ...",
+    "caption": "Bild: KI-generiert. ...",
     "slide_count": 3,
     "created_at": "2024-01-15T10:00:00",
     "updated_at": "2024-01-15T11:00:00"
@@ -371,7 +383,7 @@ ordered `slides` and `assets`:
   "content_json": {"sections": []},
   "content_markdown": "## Haushalt\n\n...",
   "slide_plan_json": {"slides": []},
-  "caption": "Illustration: KI-generiert. ...",
+  "caption": "Bild: KI-generiert. ...",
   "alt_text_json": ["..."],
   "fact_check_json": {"passed": true, "issues": [], "repaired": false},
   "status": "ready",

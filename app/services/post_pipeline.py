@@ -59,6 +59,7 @@ from app.services.image_generation import (
     generate_topic_cover,
     generate_topic_pair_art,
     generate_topic_single_art,
+    with_image_style_suffix,
 )
 from app.services.llm_client import LLMAuthenticationError, LLMClient
 from app.services.organs import UnknownOrganError, resolve_organ
@@ -1130,6 +1131,7 @@ class PostPipeline:
                 return
             cover_prompt = visual_prompts.cover_prompt
 
+        cover_prompt = with_image_style_suffix(cover_prompt)
         asset = await self._prepare_cover_asset(db, post, cover_prompt)
 
         try:
@@ -1541,6 +1543,10 @@ class PostPipeline:
             if has_single:
                 prompts["single_last"] = visual_prompts.artwork_prompts[-1]
 
+        prompts = {
+            role: with_image_style_suffix(prompt)
+            for role, prompt in prompts.items()
+        }
         assets = await self._prepare_topic_assets(
             db, post, list(prompts.items())
         )
