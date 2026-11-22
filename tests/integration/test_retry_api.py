@@ -6,6 +6,7 @@ import pytest
 from app.api.routes import get_post_pipeline
 from app.database import get_db
 from app.main import app
+from app.services.caption_writer import CAPTION_FIRST_LINE
 from app.services.llm_client import LLMSchemaError
 from tests.integration.test_post_retry import (
     _plan,
@@ -61,7 +62,7 @@ async def test_retry_endpoint_returns_the_same_full_shape_as_get_post(
     data = retry_response.json()
     assert data["status"] == "ready"
     assert data["failed_step"] is None
-    assert data["caption"].startswith("Illustration: KI-generiert.")
+    assert data["caption"].startswith(CAPTION_FIRST_LINE)
     assert data["slides"]
     assert data["assets"]
     assert missing_response.status_code == 404

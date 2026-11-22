@@ -22,6 +22,7 @@ from app.database import get_db
 from app.main import app
 from app.models import Post, PostAsset, PostSlide, Protocol
 from app.services import post_pipeline as pipeline_module
+from app.services.caption_writer import CAPTION_FIRST_LINE
 from app.services.image_generation import topic_pair_fallback_art
 from app.services.llm_client import (
     LLMAuthenticationError,
@@ -274,7 +275,7 @@ async def test_full_protocol_renders_summary_and_topics_with_assets_and_api_path
     assert protocol.processed is True
 
     for post in (summary, haushalt, radweg):
-        assert post.caption.startswith("Illustration: KI-generiert.\n")
+        assert post.caption.startswith(f"{CAPTION_FIRST_LINE}\n")
         assert post.alt_text_json
 
     haushalt_assets = await _assets(postgres_session, haushalt)

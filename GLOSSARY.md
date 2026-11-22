@@ -65,7 +65,7 @@ The gate that compares a draft against the retrieved source excerpts from the Pr
 _Avoid_: Fact Check, QA
 
 **Caption**:
-The Instagram caption of a Beitrag. It carries source, date, and the first-line label `Illustration: KI-generiert.`
+The Instagram caption of a Beitrag. It carries source, date, and the first-line label `Bild: KI-generiert.`
 _Avoid_: Beschreibung, Text
 
 **Alt-Text**:

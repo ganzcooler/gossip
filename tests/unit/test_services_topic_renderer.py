@@ -9,7 +9,7 @@ from PIL import Image
 
 from app.core.post_models import TopicDraft
 from app.services import render_common
-from app.services.caption_writer import compose_caption
+from app.services.caption_writer import CAPTION_FIRST_LINE, compose_caption
 from app.services.post_renderer import RenderError
 from app.services.slide_composer import compose_topic_slides
 from app.services.topic_renderer import (
@@ -301,7 +301,7 @@ def test_write_topic_output_creates_exact_filenames_and_one_caption(tmp_path):
     ]
     assert output.caption_path == folder / "caption-topic-haushalt.txt"
     assert output.caption_path.read_text(encoding="utf-8") == caption
-    assert caption.splitlines()[0] == "Illustration: KI-generiert."
+    assert caption.splitlines()[0] == CAPTION_FIRST_LINE
     assert "12.03.2024" in caption
     assert "https://sessionnet.example/rosdorf/BI/getfile.asp?id=4711" in caption
     for path in output.image_paths:

@@ -19,6 +19,7 @@ from app.core.post_models import (
 )
 from app.models import EditorialPlan as EditorialPlanRow
 from app.models import Post, PostAsset, PostSlide, Protocol
+from app.services.caption_writer import CAPTION_FIRST_LINE
 from app.services.llm_client import LLMAuthenticationError, LLMSchemaError
 from app.services.output_cleanup import (
     cleanup_summary_output,
@@ -543,7 +544,7 @@ async def test_summary_retry_resumes_from_failed_step(
     assert summary.status == "ready"
     assert summary.failed_step is None
     assert summary.title == _summary_draft(plan).cover_title
-    assert summary.caption.startswith("Illustration: KI-generiert.")
+    assert summary.caption.startswith(CAPTION_FIRST_LINE)
     assert summary.fact_check_json["passed"] is True
     assert await _slides(postgres_session, summary)
     assert await _assets(postgres_session, summary)
@@ -585,7 +586,7 @@ async def test_topic_retry_resumes_from_failed_step(
     assert topic.status == "ready"
     assert topic.failed_step is None
     assert topic.title == _topic_draft(plan.topic_briefs[0]).title
-    assert topic.caption.startswith("Illustration: KI-generiert.")
+    assert topic.caption.startswith(CAPTION_FIRST_LINE)
     assert topic.fact_check_json["passed"] is True
     assert await _slides(postgres_session, topic)
     assert await _assets(postgres_session, topic)
@@ -828,7 +829,7 @@ async def test_force_retry_clears_only_that_post_and_reuses_plan_and_excerpts(
     assert summary.status == "ready"
     assert summary.content_json["excerpts"] == old_excerpts
     assert summary.fact_check_json["passed"] is True
-    assert summary.caption.startswith("Illustration: KI-generiert.")
+    assert summary.caption.startswith(CAPTION_FIRST_LINE)
     new_slides = await _slides(postgres_session, summary)
     new_assets = await _assets(postgres_session, summary)
     assert new_slides and new_assets

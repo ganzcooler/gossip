@@ -108,7 +108,8 @@ def test_composed_caption_starts_with_the_ai_label_and_contains_source_and_link(
 
     lines = caption.splitlines()
     assert lines[0] == CAPTION_FIRST_LINE
-    assert caption.startswith("Illustration: KI-generiert.\n")
+    assert caption.startswith("Bild: KI-generiert.\n")
+    assert "Illustration: KI-generiert." not in caption
     assert "Gemeinderat Rosdorf" in caption
     assert "15.01.2024" in caption
     assert "Ratsprotokoll vom 15.01.2024" in caption
@@ -128,7 +129,7 @@ def test_missing_link_keeps_the_caption_successful_with_a_manual_hint():
         protocol=protocol,
     )
 
-    assert caption.startswith("Illustration: KI-generiert.\n")
+    assert caption.startswith(f"{CAPTION_FIRST_LINE}\n")
     assert "Gemeinderat Rosdorf" in caption
     assert "Ratsprotokoll vom 15.01.2024" in caption
     assert MANUAL_LINK_HINT in caption

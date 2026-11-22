@@ -23,6 +23,7 @@ from app.core.post_prompts import (
     build_topic_visual_prompt,
     build_topic_writer_prompt,
 )
+from app.services.caption_writer import CAPTION_FIRST_LINE
 
 PROTOCOL_TEXT = (
     "TOP 1 Begrüßung\n"
@@ -235,7 +236,7 @@ def test_caption_prompt_contains_draft_and_metadata_only():
     assert "Der Rat hat den Haushalt beschlossen." in prompt
     assert "Gemeinderat Rosdorf" in prompt
     assert "15.01.2024" in prompt
-    assert "Illustration: KI-generiert." not in prompt
+    assert CAPTION_FIRST_LINE not in prompt
     assert "http" not in prompt
     assert PROTOCOL_TEXT not in prompt
     assert EXCERPTS[0].excerpt not in prompt
