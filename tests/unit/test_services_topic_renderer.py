@@ -5,7 +5,7 @@ from datetime import date
 from types import SimpleNamespace
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageChops
 
 from app.core.post_models import TopicDraft
 from app.services import render_common
@@ -107,6 +107,45 @@ def _has_color(image: Image.Image, box, color) -> bool:
     return any(pixel == color for _, pixel in colors)
 
 
+def _color_bbox(image: Image.Image, box, color):
+    """Return the exact-color bbox inside ``box`` in canvas coordinates."""
+    cropped = image.crop(box)
+    solid = Image.new("RGB", cropped.size, color)
+    mask = (
+        ImageChops.difference(cropped, solid)
+        .convert("L")
+        .point(lambda value: 255 if value == 0 else 0)
+    )
+    bbox = mask.getbbox()
+    if bbox is None:
+        return None
+    return (
+        bbox[0] + box[0],
+        bbox[1] + box[1],
+        bbox[2] + box[0],
+        bbox[3] + box[1],
+    )
+
+
+def _render_cover(*, art: Image.Image | None = None) -> Image.Image:
+    draft, composition = _composition()
+    content_count = len(composition.slides) - 1
+    pair_count = content_count // 2
+    single = _single_art() if content_count % 2 else None
+    return render_topic_frames(
+        draft,
+        composition,
+        cover_art=_cover_art() if art is None else art,
+        pair_art=_pair_art(pair_count),
+        single_art=single,
+        organ="Gemeinderat Rosdorf",
+    )[0]
+
+
+def _lower_white_bbox(cover: Image.Image, top: int):
+    return _color_bbox(cover, (0, top, TOPIC_SIZE[0], TOPIC_SIZE[1]), ON_SURFACE)
+
+
 def test_renderer_produces_cover_and_four_content_slides_at_1080x1350_rgb():
     _, composition, frames = _render()
 
@@ -129,6 +168,10 @@ def test_cover_has_orange_rule_white_plate_badge_kicker_and_bottom_anchored_titl
     assert _has_color(cover, (44, 700, 54, 1210), ORANGE_DEEP)
     assert _has_color(cover, (64, 1150, 1014, 1201), ON_SURFACE)
 
+    title_bbox = _lower_white_bbox(cover, 600)
+    assert title_bbox is not None
+    assert abs(title_bbox[3] - 1200) <= 6
+
     # The title ink bbox ends at y=1200; no white brand/title pixel below it.
     assert not _has_color(cover, (0, 1201, 1080, 1350), ON_SURFACE)
 
@@ -136,6 +179,69 @@ def test_cover_has_orange_rule_white_plate_badge_kicker_and_bottom_anchored_titl
     assert cover.getpixel((80, 149)) != PLATE_WHITE
     assert cover.getpixel((250, 506)) == PLATE_WHITE
     assert cover.getpixel((80, 507)) != PLATE_WHITE
+
+
+def test_cover_has_no_local_gray_box_and_shows_the_artwork():
+    white_art = Image.new("RGB", TOPIC_SIZE, ON_SURFACE)
+    white_cover = _render_cover(art=white_art)
+
+    kicker_bbox = _color_bbox(white_cover, (60, 600, 1080, 1350), ORANGE_DEEP)
+    assert kicker_bbox is not None
+    title_bbox = _lower_white_bbox(white_cover, kicker_bbox[3])
+    assert title_bbox is not None
+
+    row = title_bbox[1] - 4
+    row_colors = {
+        white_cover.getpixel((x, row)) for x in range(64, 1017)
+    }
+    assert len(row_colors) == 1
+
+    other_cover = _render_cover(
+        art=Image.new("RGB", TOPIC_SIZE, (200, 40, 40))
+    )
+    assert other_cover.getpixel((200, row)) != white_cover.getpixel((200, row))
+
+
+def test_cover_has_a_single_bottom_up_scrim_with_a_transparent_top():
+    height = TOPIC_SIZE[1]
+    cover = _render_cover(art=Image.new("RGB", TOPIC_SIZE, ON_SURFACE))
+
+    assert cover.getpixel((1050, 100)) == ON_SURFACE
+    assert cover.getpixel((1050, int(0.35 * (height - 1)))) == ON_SURFACE
+
+    assert sum(cover.getpixel((1050, int(0.60 * (height - 1))))) < 700
+
+    luminances = [
+        sum(cover.getpixel((1050, y)))
+        for y in range(int(0.42 * (height - 1)), height)
+    ]
+    assert luminances[0] < 765
+    assert all(
+        later <= earlier for earlier, later in zip(luminances, luminances[1:])
+    )
+
+
+def test_cover_contrast_passes_against_a_worst_case_white_image():
+    cover = _render_cover(art=Image.new("RGB", TOPIC_SIZE, ON_SURFACE))
+
+    assert _has_color(cover, (64, 900, 1014, 1201), ON_SURFACE)
+    assert sum(cover.getpixel((1050, 1200))) < 250
+
+
+def test_cover_contrast_failure_is_a_hard_render_error(monkeypatch):
+    draft, composition = _composition()
+    monkeypatch.setattr(
+        render_common, "COVER_SCRIM_STOPS", ((0.0, 0.0), (1.0, 0.0))
+    )
+
+    with pytest.raises(RenderError, match="contrast"):
+        render_topic_frames(
+            draft,
+            composition,
+            cover_art=Image.new("RGB", TOPIC_SIZE, (10, 10, 10)),
+            pair_art=_pair_art(2),
+            organ="Gemeinderat Rosdorf",
+        )
 
 
 def test_heading_slide_geometry_zigzag_edge_and_image_side():

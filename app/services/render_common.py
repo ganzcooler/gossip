@@ -41,7 +41,15 @@ PLATE_RADIUS = 16
 PLATE_PADDING = 16
 PLATE_SUPERSAMPLE = 4
 
-COVER_SCRIM_STOPS = ((0.0, 0.72), (0.30, 0.18), (0.58, 0.26), (1.0, 0.94))
+COVER_SCRIM_STOPS = (
+    (0.00, 0.00),
+    (0.40, 0.00),
+    (0.47, 0.20),
+    (0.55, 0.52),
+    (0.62, 0.72),
+    (0.78, 0.88),
+    (1.00, 0.94),
+)
 MIN_TITLE_CONTRAST = 4.5
 
 
@@ -227,39 +235,30 @@ def _clamp_box(box: tuple[int, int, int, int], size: tuple[int, int]):
 def ensure_title_contrast(
     image: Image.Image, ink_bbox: tuple[int, int, int, int]
 ) -> Image.Image:
-    """Raise the local scrim until white title text reaches WCAG 4.5:1."""
-    result = image.convert("RGB").copy()
+    """Fail the render when white title text misses 4.5:1 on the cover scrim.
+
+    The check uses a worst-case white artwork instead of the actual image, so a
+    dark photo cannot hide a scrim that is too weak for a bright one. It never
+    changes the image: the single bottom-up scrim is the only darkening.
+    """
     box = _clamp_box(
         (ink_bbox[0] - 8, ink_bbox[1] - 8, ink_bbox[2] + 8, ink_bbox[3] + 8),
-        result.size,
+        image.size,
     )
     if box[2] <= box[0] or box[3] <= box[1]:
-        return result
+        raise RenderError("Cover title contrast box is empty")
 
-    def worst_contrast() -> float:
-        region = result.crop(box)
-        extrema = region.getextrema()
-        return _white_contrast(
-            extrema[0][1], extrema[1][1], extrema[2][1]
+    white_art = Image.new("RGB", image.size, ON_SURFACE)
+    extrema = apply_cover_scrim(white_art).crop(box).getextrema()
+    contrast = _white_contrast(
+        extrema[0][1], extrema[1][1], extrema[2][1]
+    )
+    if contrast < MIN_TITLE_CONTRAST:
+        raise RenderError(
+            f"Cover title contrast {contrast:.2f}:1 is below "
+            f"{MIN_TITLE_CONTRAST:g}:1 against a white image"
         )
-
-    if worst_contrast() >= MIN_TITLE_CONTRAST:
-        return result
-
-    overlay = Image.new("RGB", (box[2] - box[0], box[3] - box[1]), SURFACE_SUNKEN)
-    original_region = result.crop(box)
-    for percentage in range(4, 97, 4):
-        alpha = round(percentage / 100 * 255)
-        mask = Image.new("L", overlay.size, alpha)
-        result.paste(
-            Image.composite(overlay, original_region, mask),
-            (box[0], box[1]),
-        )
-        if worst_contrast() >= MIN_TITLE_CONTRAST:
-            return result
-
-    result.paste(overlay, (box[0], box[1]))
-    return result
+    return image
 
 
 def draw_organ_badge(

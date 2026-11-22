@@ -5,7 +5,7 @@ from datetime import date
 from types import SimpleNamespace
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageChops
 
 from app.core.post_models import SummaryDraft
 from app.services import render_common
@@ -25,6 +25,12 @@ BLUE = (30, 123, 181)
 SURFACE_BASE = (30, 30, 33)
 OUTLINE = (70, 70, 75)
 PLATE_WHITE = (255, 255, 255)
+WHITE = (255, 255, 255)
+
+SHORT_COVER_TITLE = "Haushalt beschlossen"
+LONG_COVER_TITLE = (
+    "Was der Rat zum Haushalt und zum Radweg in Rosdorf entschieden hat"
+)
 
 
 def _draft() -> SummaryDraft:
@@ -82,6 +88,47 @@ def _has_color(image: Image.Image, box, color) -> bool:
     return any(pixel == color for _, pixel in colors)
 
 
+def _color_bbox(image: Image.Image, box, color):
+    """Return the exact-color bbox inside ``box`` in canvas coordinates."""
+    cropped = image.crop(box)
+    solid = Image.new("RGB", cropped.size, color)
+    mask = (
+        ImageChops.difference(cropped, solid)
+        .convert("L")
+        .point(lambda value: 255 if value == 0 else 0)
+    )
+    bbox = mask.getbbox()
+    if bbox is None:
+        return None
+    return (
+        bbox[0] + box[0],
+        bbox[1] + box[1],
+        bbox[2] + box[0],
+        bbox[3] + box[1],
+    )
+
+
+def _render_cover(
+    *, title: str | None = None, art: Image.Image | None = None
+) -> Image.Image:
+    draft = (
+        _draft()
+        if title is None
+        else _draft().model_copy(update={"cover_title": title})
+    )
+    composition = compose_summary_slides(draft)
+    return render_summary_frames(
+        draft,
+        composition,
+        cover_art=_cover_art() if art is None else art,
+        organ="Gemeinderat Rosdorf",
+    )[0]
+
+
+def _lower_white_bbox(cover: Image.Image, top: int):
+    return _color_bbox(cover, (0, top, SUMMARY_SIZE[0], SUMMARY_SIZE[1]), WHITE)
+
+
 def test_renderer_produces_cover_and_two_cards_at_1080x1920_rgb():
     _, composition, frames = _render_frames()
 
@@ -100,8 +147,103 @@ def test_cover_has_the_blue_top_rule_logo_plate_badge_kicker_and_white_title():
     assert cover.getpixel((80, 290)) == PLATE_WHITE
     assert cover.getpixel((63, 290)) != PLATE_WHITE
     assert cover.getpixel((1000, 320)) == BLUE
-    assert cover.getpixel((64, 720)) == BLUE
-    assert _has_color(cover, (64, 800, 1014, 1100), (255, 255, 255))
+    assert _has_color(cover, (64, 1200, 600, 1690), BLUE)
+    assert _has_color(cover, (64, 1200, 1014, 1690), WHITE)
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        SHORT_COVER_TITLE,
+        "Was der Rat in Rosdorf entschieden hat",
+        LONG_COVER_TITLE,
+    ],
+    ids=["one-line", "two-line", "three-line"],
+)
+def test_cover_title_is_bottom_anchored_by_its_ink_box_at_1680(title):
+    cover = _render_cover(title=title)
+
+    title_bbox = _lower_white_bbox(cover, 1200)
+
+    assert title_bbox is not None
+    assert abs(title_bbox[3] - 1680) <= 6
+
+
+def test_cover_kicker_sits_directly_above_the_left_aligned_title():
+    cover = _render_cover(title=LONG_COVER_TITLE)
+
+    kicker_bbox = _color_bbox(cover, (0, 1200, 1080, 1920), BLUE)
+    assert kicker_bbox is not None
+    title_bbox = _lower_white_bbox(cover, kicker_bbox[3])
+    assert title_bbox is not None
+
+    assert kicker_bbox[0] == 64
+    assert 20 <= title_bbox[1] - kicker_bbox[3] <= 28
+    assert title_bbox[0] <= 74
+
+
+def test_cover_has_a_single_bottom_up_scrim_with_a_transparent_top():
+    height = SUMMARY_SIZE[1]
+    cover = _render_cover(art=Image.new("RGB", SUMMARY_SIZE, WHITE))
+
+    assert cover.getpixel((1050, 100)) == WHITE
+    assert cover.getpixel((1050, int(0.35 * (height - 1)))) == WHITE
+
+    assert sum(cover.getpixel((1050, int(0.60 * (height - 1))))) < 700
+
+    luminances = [
+        sum(cover.getpixel((1050, y)))
+        for y in range(int(0.42 * (height - 1)), height)
+    ]
+    assert luminances[0] < 765
+    assert all(
+        later <= earlier for earlier, later in zip(luminances, luminances[1:])
+    )
+
+
+def test_cover_has_no_local_gray_box_and_shows_the_artwork():
+    white_art = Image.new("RGB", SUMMARY_SIZE, WHITE)
+    white_cover = _render_cover(title=LONG_COVER_TITLE, art=white_art)
+
+    kicker_bbox = _color_bbox(white_cover, (0, 1200, 1080, 1920), BLUE)
+    assert kicker_bbox is not None
+    title_bbox = _lower_white_bbox(white_cover, kicker_bbox[3])
+    assert title_bbox is not None
+
+    row = title_bbox[1] - 4
+    row_colors = {
+        white_cover.getpixel((x, row)) for x in range(64, 1017)
+    }
+    assert len(row_colors) == 1
+
+    other_cover = _render_cover(
+        title=LONG_COVER_TITLE,
+        art=Image.new("RGB", SUMMARY_SIZE, (200, 40, 40)),
+    )
+    assert other_cover.getpixel((200, row)) != white_cover.getpixel((200, row))
+
+
+def test_cover_contrast_passes_against_a_worst_case_white_image():
+    cover = _render_cover(art=Image.new("RGB", SUMMARY_SIZE, WHITE))
+
+    assert _has_color(cover, (64, 1300, 1014, 1690), WHITE)
+    assert sum(cover.getpixel((1050, 1680))) < 250
+
+
+def test_cover_contrast_failure_is_a_hard_render_error(monkeypatch):
+    draft = _draft()
+    composition = compose_summary_slides(draft)
+    monkeypatch.setattr(
+        render_common, "COVER_SCRIM_STOPS", ((0.0, 0.0), (1.0, 0.0))
+    )
+
+    with pytest.raises(RenderError, match="contrast"):
+        render_summary_frames(
+            draft,
+            composition,
+            cover_art=Image.new("RGB", SUMMARY_SIZE, (10, 10, 10)),
+            organ="Gemeinderat Rosdorf",
+        )
 
 
 def test_card_has_the_blue_edge_profile_card_rule_number_and_page_label():
