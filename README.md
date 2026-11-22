@@ -516,7 +516,7 @@ the `public` schema is never dropped. The database user therefore needs
 test proves the complete pipeline against real systems: a real PostgreSQL
 database through `TEST_DATABASE_URL`, real OpenRouter text and image calls
 through `OpenRouterLLMClient`, the real FastAPI app through `TestClient`, and
-a temporary output directory. It uses no fake LLM and no patched network.
+a retained per-run output folder. It uses no fake LLM and no patched network.
 
 Requirements:
 
@@ -539,10 +539,16 @@ The test inserts a sanitized `Gemeinderat` fixture protocol (fixed date, no
 real personal data), starts the pipeline with
 `POST /api/protocols/{id}/reprocess`, and asserts the Summary-Beitrag and
 Themenbeiträge, slides, assets, Alt-Texte, image dimensions and names, captions,
-and the clean output folder. Output is written under pytest's temporary directory. In a
-`finally` block the test deletes the fixture rows, drops the throwaway schema
-and removes the generated files. It skips cleanly when `OPENROUTER_API_KEY` or
-`TEST_DATABASE_URL` is missing, and it is never part of the default suite.
+and the clean output folder. Every run writes its PNGs and captions to its own
+folder under `tests/manual/output/<YYYYMMDD-HHMMSS>-<run-id>/`. Successful and
+failed runs keep that folder; there is no automatic `rmtree`. The default
+`tests/manual/output/` folder is gitignored, so generated files never enter the
+repository. Set `SMOKE_OUTPUT_DIR` to use another base output root: the
+timestamped run folder is still created underneath it, so repeated runs never
+overwrite each other. In a `finally` block the test deletes the fixture rows and
+drops the throwaway schema; only the files remain. It skips cleanly when
+`OPENROUTER_API_KEY` or `TEST_DATABASE_URL` is missing, and it is never part of
+the default suite.
 
 Pipeline tests use `tests/support/fake_llm.py` at the injected LLM port. The
 fake scripts responses per role, records every role/prompt/schema/aspect-ratio
