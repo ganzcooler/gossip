@@ -11,13 +11,14 @@ from app.services.slide_composer import (
     TOPIC_CONTINUATION_TOP,
     TOPIC_H2_BODY_GAP,
     TOPIC_H2_TOP,
+    TOPIC_TEXT_WIDTH,
     TopicCompositionError,
     compose_topic_slides,
     derive_chapter_short,
     derive_topic_kicker,
     render_topic_markdown,
 )
-from app.services.text_layout import normalize_whitespace
+from app.services.text_layout import inter_font, normalize_whitespace, wrap_text
 
 TITLE = "Was der Rat in Rosdorf entschieden hat"
 H2_ONE = "Der Rat hat den Haushalt beschlossen"
@@ -32,6 +33,36 @@ def _paragraph(seed: str, length: int) -> str:
     if len(text) > length:
         text = text[:length].rsplit(" ", 1)[0]
     return text.rstrip(" ,;") + "."
+
+
+_SENTENCE_SEED = (
+    "Der Rat hat den Haushalt einstimmig beschlossen und die Mittel "
+    "für alle Ortsteile freigegeben"
+)
+
+
+def _sentence(length: int) -> str:
+    """Build one sentence of roughly ``length`` characters without a period."""
+    text = ""
+    while len(text) < length:
+        text = f"{text} {_SENTENCE_SEED}".strip()
+    if len(text) > length:
+        text = text[:length].rsplit(" ", 1)[0]
+    return text.rstrip(" ,;") + "."
+
+
+def _sentences(count: int, total_length: int = 500) -> str:
+    """Build exactly ``count`` sentences of roughly equal length."""
+    per_sentence = total_length // count
+    return " ".join(_sentence(per_sentence) for _ in range(count))
+
+
+def _sentence_units(text: str) -> list[str]:
+    return [
+        unit
+        for unit in re.split(r"(?<=[.!?…])\s+", text.strip())
+        if unit
+    ]
 
 
 def _draft(
@@ -271,6 +302,133 @@ def test_first_paragraph_is_measured_against_the_heading_capacity():
     assert len(continuation.body_paragraphs) == 1
     assert "\n\n" not in heading.body
     assert "\n\n" not in continuation.body
+
+
+@pytest.mark.parametrize("sentence_count", [3, 4, 5])
+def test_overlong_paragraph_splits_at_sentences_with_substantial_continuation(
+    sentence_count,
+):
+    paragraph = _sentences(sentence_count)
+    draft = _draft(
+        sections=[
+            {"h2": H2_ONE, "paragraphs": [paragraph]},
+            {
+                "h2": H2_TWO,
+                "paragraphs": [
+                    _paragraph(
+                        "Der Radweg an der Hauptstraße wird im Sommer gebaut "
+                        "und verbindet die Ortsteile besser.",
+                        720,
+                    )
+                ],
+            },
+        ]
+    )
+
+    composition = compose_topic_slides(draft)
+
+    assert composition.body_size == 42
+    section = _section_slides(composition, 0)
+    assert len(section) == 2
+    heading, continuation = section
+    assert heading.slide_type == "heading"
+    assert continuation.slide_type == "continuation"
+    assert heading.body.rstrip().endswith((".", "!", "?", "…"))
+    assert len(_sentence_units(continuation.body)) >= 2
+    assert len(continuation.body_lines) >= 2
+
+    full_lines = len(
+        wrap_text(
+            paragraph,
+            inter_font(composition.body_size, weight=400),
+            TOPIC_TEXT_WIDTH,
+            allow_char_split=False,
+        )
+    )
+    full_height = full_lines * composition.body_size * TOPIC_BODY_LINE_HEIGHT
+    assert _rendered_body_height(continuation) >= 0.25 * full_height - 1e-9
+    assert normalize_whitespace(
+        heading.body + " " + continuation.body
+    ) == normalize_whitespace(paragraph)
+    assert len(heading.body_paragraphs) == 1
+    assert len(continuation.body_paragraphs) == 1
+    assert "\n\n" not in heading.body
+    assert "\n\n" not in continuation.body
+
+
+def test_single_sentence_paragraph_uses_a_balanced_word_fallback():
+    paragraph = _sentence(500)
+    draft = _draft(
+        sections=[
+            {"h2": H2_ONE, "paragraphs": [paragraph]},
+            {
+                "h2": H2_TWO,
+                "paragraphs": [
+                    _paragraph(
+                        "Der Radweg an der Hauptstraße wird im Sommer gebaut "
+                        "und verbindet die Ortsteile besser.",
+                        720,
+                    )
+                ],
+            },
+        ]
+    )
+
+    composition = compose_topic_slides(draft)
+
+    assert composition.body_size == 42
+    section = _section_slides(composition, 0)
+    assert len(section) == 2
+    heading, continuation = section
+    assert not heading.body.rstrip().endswith((".", "!", "?", "…"))
+    assert len(continuation.body_lines) >= 2
+    assert abs(len(heading.body_lines) - len(continuation.body_lines)) <= 1
+    assert normalize_whitespace(
+        heading.body + " " + continuation.body
+    ) == normalize_whitespace(paragraph)
+    assert len(heading.body_paragraphs) == 1
+    assert len(continuation.body_paragraphs) == 1
+
+
+def test_common_abbreviations_are_not_treated_as_sentence_ends():
+    sentences = [
+        "Der Rat hat z. B. die Mittel für alle Ortsteile freigegeben und "
+        "die Verwaltung informiert die Anwohner über den Beschluss.",
+        "Die Gemeinde baut d. h. den Radweg an der Hauptstraße und die "
+        "Anwohner werden u. a. vorher über die Arbeiten informiert.",
+        "Die Kosten teilen sich usw. zwischen Land und Gemeinde und die "
+        "Arbeiten beginnen ca. im Sommer nach der Ausschreibung.",
+        "Das ist Nr. 42 und Dr. Meyer prüft St. Marien und die Zahlen im "
+        "Frühjahr gemeinsam mit der Verwaltung.",
+    ]
+    paragraph = " ".join(sentences)
+    draft = _draft(
+        sections=[
+            {"h2": H2_ONE, "paragraphs": [paragraph]},
+            {
+                "h2": H2_TWO,
+                "paragraphs": [
+                    _paragraph(
+                        "Der Radweg an der Hauptstraße wird im Sommer gebaut "
+                        "und verbindet die Ortsteile besser.",
+                        720,
+                    )
+                ],
+            },
+        ]
+    )
+
+    composition = compose_topic_slides(draft)
+
+    assert composition.body_size == 42
+    section = _section_slides(composition, 0)
+    assert len(section) == 2
+    heading, continuation = section
+    assert normalize_whitespace(heading.body) == " ".join(sentences[:2])
+    assert normalize_whitespace(continuation.body) == " ".join(sentences[2:])
+    assert normalize_whitespace(
+        heading.body + " " + continuation.body
+    ) == normalize_whitespace(paragraph)
 
 
 def test_body_size_choice_keeps_whole_paragraph_packing_within_four_to_seven():

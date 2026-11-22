@@ -10,6 +10,7 @@ from app.services.text_layout import (
     normalize_whitespace,
     oswald_font,
     reconstruct_lines,
+    split_text_balanced,
     split_text_to_fit,
     wrap_text,
 )
@@ -165,6 +166,113 @@ def test_split_text_to_fit_balances_two_parts_at_word_boundaries():
     assert len(parts) == 2
     assert " ".join(parts) == text
     assert abs(len(parts[0]) - len(parts[1])) <= len("Haushalt") + 1
+
+
+def test_split_text_balanced_prefers_a_sentence_boundary_and_reconstructs():
+    font = inter_font(36, weight=400)
+    sentences = [
+        "Der Rat beschließt den Haushalt einstimmig.",
+        "Die Verwaltung zahlt die Mittel im Frühjahr aus.",
+        "Der Radweg an der Hauptstraße wird im Sommer gebaut.",
+        "Die Anwohner werden vorher informiert.",
+        "Die Kosten teilen sich Land und Gemeinde.",
+    ]
+    text = normalize_whitespace(" ".join(sentences))
+
+    parts = split_text_balanced(
+        text,
+        font,
+        width=300,
+        first_capacity=400,
+        continuation_capacity=500,
+        line_height=36 * 1.4,
+    )
+
+    assert len(parts) == 2
+    assert " ".join(parts) == text
+    assert parts[0] == " ".join(sentences[:2])
+    assert parts[1] == " ".join(sentences[2:])
+
+
+def test_split_text_balanced_does_not_split_after_common_abbreviations():
+    font = inter_font(36, weight=400)
+    sentences = [
+        "Der Rat hat z. B. die Mittel für alle Ortsteile freigegeben.",
+        "Die Verwaltung zahlt d. h. die Beiträge im Frühjahr aus.",
+        "Der Radweg wird u. a. im Sommer gebaut.",
+        "Die Anwohner werden vorher informiert.",
+    ]
+    text = normalize_whitespace(" ".join(sentences))
+
+    parts = split_text_balanced(
+        text,
+        font,
+        width=300,
+        first_capacity=500,
+        continuation_capacity=500,
+        line_height=36 * 1.4,
+    )
+
+    assert len(parts) == 2
+    assert " ".join(parts) == text
+    # The abbreviation boundaries "d." / "h." / "u." / "a." are closer to the
+    # middle than the real sentence boundary, but must not count as sentence
+    # ends.
+    assert parts[0] == " ".join(sentences[:2])
+
+
+@pytest.mark.parametrize(
+    "middle",
+    [
+        "Das ist ein ausführlicher Test.",
+        "Die Reise führt quer durch Africa.",
+        "Das ist ein ausführlicher Test.“",
+    ],
+)
+def test_split_text_balanced_keeps_sentence_ends_that_look_like_abbreviations(
+    middle,
+):
+    font = inter_font(36, weight=400)
+    first = "Der Rat beschließt den Haushalt."
+    last = "Die Zahlen werden geprüft."
+    text = normalize_whitespace(" ".join([first, middle, last]))
+    line_height = 36 * 1.4
+
+    parts = split_text_balanced(
+        text,
+        font,
+        width=300,
+        first_capacity=4 * line_height,
+        continuation_capacity=4 * line_height,
+        line_height=line_height,
+    )
+
+    assert len(parts) == 2
+    assert " ".join(parts) == text
+    # "Test." ends in "st." and "Africa." ends in "ca.", but neither is an
+    # abbreviation; both remain valid sentence boundaries.
+    assert parts[0] == f"{first} {middle}"
+
+
+def test_split_text_balanced_uses_a_balanced_word_fallback_for_one_sentence():
+    font = inter_font(36, weight=400)
+    text = normalize_whitespace(" ".join(["Haushalt"] * 12))
+    line_height = 36 * 1.4
+
+    parts = split_text_balanced(
+        text,
+        font,
+        width=300,
+        first_capacity=4 * line_height,
+        continuation_capacity=4 * line_height,
+        line_height=line_height,
+    )
+
+    assert len(parts) >= 2
+    assert " ".join(parts) == text
+    assert all(part for part in parts)
+    assert not any(part.endswith("-") for part in parts)
+    assert parts[0].count(" ") != 0
 
 
 def test_split_text_to_fit_returns_none_when_nothing_fits():

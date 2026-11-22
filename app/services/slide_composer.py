@@ -20,6 +20,7 @@ from app.services.text_layout import (
     fit_lines,
     inter_font,
     normalize_whitespace,
+    split_text_balanced,
     split_text_to_fit,
     wrap_text,
 )
@@ -554,37 +555,6 @@ def _wrap_topic_paragraph(
     return tuple(lines)
 
 
-def _balance_topic_slides(
-    slides: list[list[_TopicBodyChunk]],
-) -> list[list[_TopicBodyChunk]]:
-    """Move one line forward when the final slide would be a one-line orphan.
-
-    The moved line joins the existing chunk of the same paragraph so a split
-    paragraph is still rendered as one body block with no internal gap.
-    """
-    if len(slides) < 2:
-        return slides
-    last, previous = slides[-1], slides[-2]
-    if not last or not previous:
-        return slides
-    last_lines = sum(len(chunk.lines) for chunk in last)
-    if last_lines >= 2:
-        return slides
-    if last[0].paragraph_index != previous[-1].paragraph_index:
-        return slides
-    previous_chunk = previous[-1]
-    if len(previous_chunk.lines) < 2:
-        return slides
-    moved = previous_chunk.lines[-1]
-    previous[-1] = _TopicBodyChunk(
-        previous_chunk.paragraph_index, previous_chunk.lines[:-1]
-    )
-    last[0] = _TopicBodyChunk(
-        last[0].paragraph_index, (moved,) + last[0].lines
-    )
-    return slides
-
-
 def _pack_topic_section(
     paragraphs: list[str],
     *,
@@ -598,7 +568,10 @@ def _pack_topic_section(
     slide (H2 present), every later paragraph against the continuation slide.
     A paragraph that fits its full page is atomic: when it does not fit the
     remainder of the current slide it moves whole to the next one. Only a
-    paragraph that exceeds its full page is split at line boundaries.
+    paragraph that exceeds its full page is split, at sentence boundaries near
+    the middle or at balanced word boundaries when no sentence qualifies. Each
+    split part occupies its own slide as one body block, so a split paragraph
+    never produces an internal paragraph gap.
     """
     line_height = body_size * TOPIC_BODY_LINE_HEIGHT
     paragraph_gap = round(body_size * TOPIC_PARAGRAPH_GAP_FACTOR)
@@ -630,30 +603,32 @@ def _pack_topic_section(
                 used = 0.0
                 capacity = continuation_capacity
 
-            remaining = lines
-            while remaining:
-                whole_height = len(remaining) * line_height
-                if whole_height <= capacity + 1e-9:
-                    current.append(
-                        _TopicBodyChunk(paragraph_index, remaining)
-                    )
-                    used = whole_height
-                    remaining = ()
-                    break
-
-                fitting = int((capacity + 1e-9) // line_height)
-                if fitting < 1:
-                    raise TopicCompositionError(
-                        "Topic body line does not fit any content slide"
-                    )
-                current.append(
-                    _TopicBodyChunk(paragraph_index, remaining[:fitting])
+            try:
+                parts = split_text_balanced(
+                    paragraphs[paragraph_index],
+                    font,
+                    width=TOPIC_TEXT_WIDTH,
+                    first_capacity=capacity,
+                    continuation_capacity=continuation_capacity,
+                    line_height=line_height,
                 )
-                slides.append(current)
-                current = []
-                used = 0.0
-                capacity = continuation_capacity
-                remaining = remaining[fitting:]
+            except TextOverflowError as exc:
+                raise TopicCompositionError(
+                    "Topic body paragraph cannot be split into fitting parts "
+                    f"without changing it: {paragraphs[paragraph_index][:80]!r}"
+                ) from exc
+
+            for part in parts:
+                slides.append(
+                    [
+                        _TopicBodyChunk(
+                            paragraph_index,
+                            _wrap_topic_paragraph(part, font=font),
+                        )
+                    ]
+                )
+            capacity = continuation_capacity
+            used = 0.0
             continue
 
         # A paragraph that fits its full page stays atomic. If the current
@@ -685,7 +660,7 @@ def _pack_topic_section(
 
     if current:
         slides.append(current)
-    return _balance_topic_slides(slides)
+    return slides
 
 
 def _topic_body_text(chunks: list[_TopicBodyChunk]) -> str:
