@@ -12,6 +12,13 @@ The complete pipeline runs through the real FastAPI app with overridden
 ``get_db`` and ``get_post_pipeline`` dependencies. The app lifespan is never
 entered, so the scheduler does not start. The fixture protocol is sanitized and
 contains no real personal data.
+
+Each run writes its PNGs and captions to its own retained folder under
+``tests/manual/output/<YYYYMMDD-HHMMSS>-<run-id>/``. Successful and failed runs
+keep their output; only the throwaway PostgreSQL schema and fixture rows are
+cleaned up. Set ``SMOKE_OUTPUT_DIR`` to use another base output root: the
+timestamped run folder is still created underneath it, so runs never overwrite
+each other. The default ``tests/manual/output/`` folder is gitignored.
 """
 
 from __future__ import annotations
@@ -19,9 +26,8 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-import shutil
 import uuid
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -69,6 +75,21 @@ TOPIC_IMAGE_PATTERN = re.compile(
     rf"^topic-{FIXTURE_SESSION_DATE.isoformat()}-(\d{{2}})\.png$"
 )
 SLUG_PATTERN = re.compile(r"^[a-z0-9-]+$")
+
+MANUAL_OUTPUT_ROOT = Path(__file__).resolve().parent / "output"
+
+
+def _smoke_run_dir() -> Path:
+    """Create and return this run's retained, timestamped output folder.
+
+    ``SMOKE_OUTPUT_DIR`` is a base output root: the timestamped run folder is
+    always created underneath it.
+    """
+    root = Path(os.getenv("SMOKE_OUTPUT_DIR") or MANUAL_OUTPUT_ROOT).expanduser()
+    run_id = f"{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:8]}"
+    run_dir = root / run_id
+    run_dir.mkdir(parents=True, exist_ok=False)
+    return run_dir
 
 
 def _quote_identifier(identifier: str) -> str:
@@ -338,7 +359,7 @@ def _assert_post_detail(detail: dict, *, output_folder: Path) -> None:
         assert asset_path.is_file(), f"asset output is missing: {asset_path}"
         assert asset_path.resolve().is_relative_to(
             output_folder.resolve()
-        ), f"asset {asset_path} was not written to the temp output folder"
+        ), f"asset {asset_path} was not written to the run output folder"
 
 
 def _assert_summary_output(folder: Path, post_id: int) -> None:
@@ -414,7 +435,7 @@ def _assert_topic_output(
     return topic_folder
 
 
-def test_real_openrouter_pipeline_end_to_end(tmp_path):
+def test_real_openrouter_pipeline_end_to_end():
     """Run one sanitized protocol through the real API, OpenRouter and Postgres."""
     test_url = os.getenv("TEST_DATABASE_URL")
     if not test_url or not os.getenv("OPENROUTER_API_KEY"):
@@ -433,8 +454,10 @@ def test_real_openrouter_pipeline_end_to_end(tmp_path):
     from app.utils.folder_utils import protocol_folder_path
 
     schema = f"e2e_smoke_{uuid.uuid4().hex}"
+    run_dir = _smoke_run_dir()
+    print(f"Smoke output: {run_dir}")
     protocol_folder = protocol_folder_path(
-        tmp_path, FIXTURE_SESSION_DATE, FIXTURE_TITLE
+        run_dir, FIXTURE_SESSION_DATE, FIXTURE_TITLE
     )
     protocol_id: int | None = None
     client = None
@@ -445,7 +468,7 @@ def test_real_openrouter_pipeline_end_to_end(tmp_path):
         # A deliberate dependency override: no app lifespan, no scheduler.
         app.dependency_overrides[get_db] = _session_override(test_url, schema)
         app.dependency_overrides[get_post_pipeline] = lambda: PostPipeline(
-            OpenRouterLLMClient(), output_dir=tmp_path
+            OpenRouterLLMClient(), output_dir=run_dir
         )
         client = TestClient(app)
 
@@ -604,7 +627,4 @@ def test_real_openrouter_pipeline_end_to_end(tmp_path):
         app.dependency_overrides.clear()
         if client is not None:
             client.close()
-        try:
-            asyncio.run(_cleanup_database(test_url, schema, protocol_id))
-        finally:
-            shutil.rmtree(tmp_path, ignore_errors=True)
+        asyncio.run(_cleanup_database(test_url, schema, protocol_id))
