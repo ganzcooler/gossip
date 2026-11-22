@@ -27,7 +27,7 @@ from app.services.render_common import (
     SURFACE_SUNKEN,
     apply_cover_scrim,
     draw_kicker_block,
-    draw_logo_plate,
+    draw_logo,
     draw_organ_badge,
     draw_tracked_text,
     ensure_title_contrast,
@@ -62,8 +62,8 @@ CARD_BOX = (64, 460, 1016, 1680)
 CARD_EDGE_WIDTH = 10
 CARD_TEXT_X = 118
 
-COVER_LOGO_WIDTH = 300
-CARD_LOGO_WIDTH = 140
+COVER_LOGO_WIDTH = 240
+CARD_LOGO_WIDTH = 112
 COVER_TITLE_X = 64
 COVER_TITLE_Y = 800
 KICKER_X = 64
@@ -251,11 +251,11 @@ def _render_cover(
     draw = ImageDraw.Draw(canvas)
     draw.rectangle((0, 0, SUMMARY_SIZE[0] - 1, 5), fill=BRAND_BLUE)
 
-    logo_box = draw_logo_plate(canvas, 64, 280, COVER_LOGO_WIDTH)
+    logo_box = draw_logo(canvas, 64, 280, COVER_LOGO_WIDTH)
     badge_box = draw_organ_badge(canvas, organ, top=_ORGAN_BADGE_TOP)
     _require(
         badge_box[0] >= logo_box[2] + _LOGO_CLEAR_SPACE,
-        "Organ badge collides with the cover logo plate",
+        "Organ badge collides with the cover logo",
     )
 
     draw_kicker_block(canvas, COVER_LABEL, x=KICKER_X, y=KICKER_Y)
@@ -326,11 +326,11 @@ def _render_card(
     canvas = background.copy()
     draw = ImageDraw.Draw(canvas)
 
-    logo_box = draw_logo_plate(canvas, 64, 280, CARD_LOGO_WIDTH)
+    logo_box = draw_logo(canvas, 64, 280, CARD_LOGO_WIDTH)
     badge_box = draw_organ_badge(canvas, organ, top=_ORGAN_BADGE_TOP)
     _require(
         badge_box[0] >= logo_box[2] + _LOGO_CLEAR_SPACE,
-        "Organ badge collides with the card logo plate",
+        "Organ badge collides with the card logo",
     )
 
     x0, y0, x1, y1 = CARD_BOX

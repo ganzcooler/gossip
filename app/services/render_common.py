@@ -2,9 +2,9 @@
 
 This module is the single source of the brand palette and render tokens.
 Everything here is deterministic and side-effect free until a caller writes a
-file. The logo plate follows ADR 0007 exactly: the colored repository logo is
-flattened onto white, resized, and placed on a white rounded rectangle with a
-16 px radius and 16 px padding, without a shadow.
+file. The transparent logo follows ADR 0011: it is cropped to its alpha ink and
+composited directly on the artwork without a plate, padding, radius, shadow or
+glow.
 """
 
 from __future__ import annotations
@@ -35,11 +35,6 @@ BRAND_BLUE = (30, 123, 181)
 BRAND_BLUE_DEEP = (21, 90, 133)
 BRAND_ORANGE = (233, 79, 35)
 BRAND_ORANGE_DEEP = (201, 62, 24)
-PLATE_WHITE = (255, 255, 255)
-
-PLATE_RADIUS = 16
-PLATE_PADDING = 16
-PLATE_SUPERSAMPLE = 4
 
 COVER_SCRIM_STOPS = ((0.0, 0.72), (0.30, 0.18), (0.58, 0.26), (1.0, 0.94))
 MIN_TITLE_CONTRAST = 4.5
@@ -122,51 +117,33 @@ def _cropped_logo(path: str) -> Image.Image:
 
 
 @lru_cache(maxsize=None)
-def _flattened_logo(path: str, width: int) -> Image.Image:
+def _scaled_logo(path: str, width: int) -> Image.Image:
     logo = _cropped_logo(path)
     height = max(1, round(width * logo.height / logo.width))
-    flat = Image.new("RGBA", logo.size, (255, 255, 255, 255))
-    flat.alpha_composite(logo)
-    return flat.convert("RGB").resize(
-        (width, height), Image.Resampling.LANCZOS
+    # Resize premultiplied so transparent edge pixels do not darken the ink.
+    return (
+        logo.convert("RGBa")
+        .resize((width, height), Image.Resampling.LANCZOS)
+        .convert("RGBA")
     )
 
 
-@lru_cache(maxsize=None)
-def _plate_mask(width: int, height: int) -> Image.Image:
-    scale = PLATE_SUPERSAMPLE
-    mask = Image.new("L", (width * scale, height * scale), 0)
-    draw = ImageDraw.Draw(mask)
-    draw.rounded_rectangle(
-        (0, 0, width * scale - 1, height * scale - 1),
-        radius=PLATE_RADIUS * scale,
-        fill=255,
-    )
-    return mask.resize((width, height), Image.Resampling.LANCZOS)
-
-
-def logo_plate_size(logo_width: int) -> tuple[int, int]:
-    """Return the white plate size for a requested logo ink width."""
+def logo_size(logo_width: int) -> tuple[int, int]:
+    """Return the rendered logo ink size for a requested width."""
     logo = _cropped_logo(str(LOGO_PATH))
     height = max(1, round(logo_width * logo.height / logo.width))
-    return (
-        logo_width + PLATE_PADDING * 2,
-        height + PLATE_PADDING * 2,
-    )
+    return (logo_width, height)
 
 
-def draw_logo_plate(
+def draw_logo(
     canvas: Image.Image, x: int, y: int, logo_width: int
 ) -> tuple[int, int, int, int]:
-    """Draw the colored logo on its white plate and return the plate box."""
+    """Composite the transparent logo at its ink anchor and return the box."""
     if canvas.mode != "RGB":
-        raise RenderError("The logo plate must be drawn on an RGB canvas")
-    flat = _flattened_logo(str(LOGO_PATH), logo_width)
-    plate_width, plate_height = logo_plate_size(logo_width)
-    mask = _plate_mask(plate_width, plate_height)
-    canvas.paste(PLATE_WHITE, (x, y), mask)
-    canvas.paste(flat, (x + PLATE_PADDING, y + PLATE_PADDING))
-    return (x, y, x + plate_width, y + plate_height)
+        raise RenderError("The logo must be drawn on an RGB canvas")
+    logo = _scaled_logo(str(LOGO_PATH), logo_width)
+    canvas.paste(logo, (x, y), logo)
+    return (x, y, x + logo.width, y + logo.height)
 
 
 def _interpolate_scrim_alpha(t: float) -> float:
@@ -353,21 +330,18 @@ __all__ = [
     "ON_SURFACE",
     "ON_SURFACE_MUTED",
     "OUTLINE",
-    "PLATE_PADDING",
-    "PLATE_RADIUS",
-    "PLATE_WHITE",
     "RESOURCE_DIR",
     "RenderError",
     "SURFACE_BASE",
     "SURFACE_SUNKEN",
     "apply_cover_scrim",
     "draw_kicker_block",
-    "draw_logo_plate",
+    "draw_logo",
     "draw_organ_badge",
     "draw_tracked_text",
     "ensure_title_contrast",
     "font",
-    "logo_plate_size",
+    "logo_size",
     "protocol_output_folder",
     "text_advance",
     "write_caption_file",
