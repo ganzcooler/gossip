@@ -23,6 +23,7 @@ from app.database import get_db
 from app.main import app
 from app.models import EditorialPlan as EditorialPlanRow
 from app.models import Post, PostAsset, PostSlide, Protocol
+from app.services.image_generation import IMAGE_STYLE_SUFFIX
 from app.services.llm_client import LLMAuthenticationError, LLMSchemaError
 from app.services.post_pipeline import PostPipeline
 from app.services.slide_composer import compose_topic_slides
@@ -379,7 +380,9 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     assert cover_asset.status == "ready"
     assert cover_asset.error is None
     assert cover_asset.model == OPENROUTER_IMAGE_MODEL
-    assert cover_asset.prompt == "Weite, ruhige Szene am Ortsrand."
+    assert cover_asset.prompt == (
+        f"Weite, ruhige Szene am Ortsrand.\n\n{IMAGE_STYLE_SUFFIX}"
+    )
     assert cover_asset.path is not None
     assert cover_asset.path.endswith("summary-2024-01-15-story-01.png")
     output_folder = tmp_path / "240115_gemeinderat"
@@ -428,6 +431,16 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
         "pair_2",
     ]
     assert all(asset.path for asset in haushalt_assets)
+    assert all(
+        asset.prompt.endswith(IMAGE_STYLE_SUFFIX) for asset in haushalt_assets
+    )
+    assert [asset.prompt for asset in haushalt_assets] == [
+        call.prompt for call in fake.image_calls[1:4]
+    ]
+    assert fake.calls_for("summary_cover")[0].prompt == cover_asset.prompt
+    assert all(
+        call.prompt.endswith(IMAGE_STYLE_SUFFIX) for call in fake.image_calls
+    )
     assert haushalt_assets[0].path.endswith(
         "topic-haushalt/topic-2024-01-15-01.png"
     )

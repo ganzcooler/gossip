@@ -22,7 +22,7 @@ from app.database import get_db
 from app.main import app
 from app.models import Post, PostAsset, PostSlide, Protocol
 from app.services import post_pipeline as pipeline_module
-from app.services.image_generation import topic_pair_fallback_art
+from app.services.image_generation import IMAGE_STYLE_SUFFIX, topic_pair_fallback_art
 from app.services.llm_client import (
     LLMAuthenticationError,
     LLMSchemaError,
@@ -291,6 +291,7 @@ async def test_full_protocol_renders_summary_and_topics_with_assets_and_api_path
     for asset in haushalt_assets:
         assert asset.model
         assert asset.prompt
+        assert asset.prompt.endswith(IMAGE_STYLE_SUFFIX)
         assert asset.error is None
         assert asset.path
     assert haushalt_assets[0].path.endswith(
@@ -681,6 +682,7 @@ async def test_topic_image_failures_produce_orange_fallbacks_and_stay_ready(
     ]
     assert "cover down" in assets[0].error
     assert "pair down" in assets[1].error
+    assert all(asset.prompt.endswith(IMAGE_STYLE_SUFFIX) for asset in assets)
     assert all(asset.path for asset in assets)
 
     folder = tmp_path / "240115_gemeinderat" / "topic-haushalt"
@@ -757,6 +759,7 @@ async def test_odd_content_count_records_a_single_last_asset_and_strip(
         "ready",
         "ready",
     ]
+    assert all(asset.prompt.endswith(IMAGE_STYLE_SUFFIX) for asset in assets)
     assert assets[-1].path.endswith(
         "topic-haushalt/topic-2024-01-15-06.png"
     )
