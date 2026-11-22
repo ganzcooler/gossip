@@ -32,6 +32,15 @@ FAMILY_PATHS = {
 _MIN_VISIBLE_CHARS = 4
 _WHITESPACE = re.compile(r"[ \t\r\n\f\v]+")
 _SENTENCE_END = ".!?…"
+_CLOSING_QUOTES = "\"'„“”‘’"
+_ABBREVIATION_TAIL = re.compile(
+    r"(?<!\w)(?:z\.\s*B\.|d\.\s*h\.|u\.\s*a\.|usw\.|Nr\.|Dr\.|St\.|ca\.)$",
+    re.IGNORECASE,
+)
+_ABBREVIATION_STEM = re.compile(
+    r"(?<!\w)(?:z\.|d\.|u\.)$",
+    re.IGNORECASE,
+)
 
 
 class TextOverflowError(Exception):
@@ -334,6 +343,56 @@ def _is_sentence_boundary(text: str, position: int) -> bool:
     )
 
 
+def _is_abbreviation_boundary(text: str, position: int) -> bool:
+    """Return whether ``position`` closes a known German abbreviation."""
+    before = text[:position].rstrip()
+    if not before:
+        return False
+    core = before.rstrip(_CLOSING_QUOTES).rstrip()
+    return bool(
+        _ABBREVIATION_TAIL.search(core) or _ABBREVIATION_STEM.search(core)
+    )
+
+
+def _is_topic_sentence_boundary(text: str, position: int) -> bool:
+    """Sentence-end heuristic for topic body copy.
+
+    Extends the shared heuristic with a static abbreviation list so ``z. B.``,
+    ``d. h.``, ``usw.`` and friends do not start a new slide. The ``(?<!\\w)``
+    guard keeps real sentence ends such as ``Test.`` and ``Africa.`` valid.
+    """
+    return _is_sentence_boundary(text, position) and not (
+        _is_abbreviation_boundary(text, position)
+    )
+
+
+def _sentence_end_positions(text: str) -> list[int]:
+    positions = [
+        position
+        for position in _word_boundaries(text)
+        if _is_topic_sentence_boundary(text, position)
+    ]
+    if _is_sentence_boundary(text, len(text)):
+        positions.append(len(text))
+    return positions
+
+
+def _complete_sentences_after(
+    text: str, position: int, sentence_ends: Sequence[int]
+) -> int:
+    """Count complete sentences in the suffix that starts at ``position``.
+
+    A split inside a sentence leaves that sentence incomplete, so its closing
+    punctuation does not count.
+    """
+    if _is_topic_sentence_boundary(text, position):
+        return sum(1 for end in sentence_ends if end >= position)
+    return max(
+        0,
+        sum(1 for end in sentence_ends if end > position) - 1,
+    )
+
+
 def _fit_two_parts(
     text: str,
     font: ImageFont.FreeTypeFont,
@@ -436,6 +495,166 @@ def split_text_to_fit(
         remainder = remainder[len(chosen):].strip()
 
     return None
+
+
+def _choose_balanced_split(
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    *,
+    width: float,
+    capacity: float,
+    continuation_capacity: float,
+    line_height: float,
+) -> int | None:
+    """Choose the best word boundary for the next balanced part.
+
+    Sentence boundaries near the middle are preferred. A word boundary is the
+    fallback and never splits inside a known abbreviation while a neutral
+    boundary exists. Tiers rank substantial continuations above relaxed ones.
+    """
+    full_lines = len(wrap_text(text, font, width, allow_char_split=False))
+    full_height = full_lines * line_height
+    sentence_ends = _sentence_end_positions(text)
+    needs_two_sentences = len(sentence_ends) >= 3
+    needs_size = full_lines >= 4
+    can_finish_in_two = (
+        full_height <= capacity + continuation_capacity + 1e-9
+    )
+    target = min(capacity, full_height / 2) if not can_finish_in_two else 0.0
+
+    candidates: list[tuple[int, float, int, int]] = []
+    boundaries = _word_boundaries(text)
+    sentence_positions = [
+        position
+        for position in boundaries
+        if _is_topic_sentence_boundary(text, position)
+    ]
+    sentence_position_set = set(sentence_positions)
+
+    def evaluate(position: int) -> tuple[int, float, int, int] | None:
+        first = text[:position].strip()
+        second = text[position:].strip()
+        if not first or not second:
+            return None
+
+        first_height = _height_of(first, font, width, line_height)
+        if first_height > capacity + 1e-9:
+            return None
+        second_lines = wrap_text(
+            second, font, width, allow_char_split=False
+        )
+        second_height = len(second_lines) * line_height
+        if can_finish_in_two and second_height > continuation_capacity + 1e-9:
+            return None
+
+        is_sentence = position in sentence_position_set
+        is_abbreviation = _is_abbreviation_boundary(text, position)
+        enough_sentences = (
+            not needs_two_sentences
+            or _complete_sentences_after(text, position, sentence_ends) >= 2
+        )
+        enough_size = (
+            not needs_size
+            or (
+                len(second_lines) >= 2
+                and second_height >= 0.25 * full_height - 1e-9
+            )
+        )
+
+        if is_sentence and enough_sentences and enough_size:
+            tier = 0
+        elif not is_abbreviation and enough_sentences and enough_size:
+            tier = 1
+        elif is_sentence:
+            tier = 2
+        elif not is_abbreviation:
+            tier = 3
+        else:
+            tier = 4
+
+        balance = (
+            abs(first_height - second_height)
+            if can_finish_in_two
+            else abs(first_height - target)
+        )
+        return (tier, balance, -position, position)
+
+    for position in sentence_positions:
+        candidate = evaluate(position)
+        if candidate is not None:
+            candidates.append(candidate)
+    if any(candidate[0] == 0 for candidate in candidates):
+        return min(candidate for candidate in candidates if candidate[0] == 0)[-1]
+
+    for position in boundaries:
+        if position in sentence_position_set:
+            continue
+        candidate = evaluate(position)
+        if candidate is not None:
+            candidates.append(candidate)
+    if any(candidate[0] == 1 for candidate in candidates):
+        return min(candidate for candidate in candidates if candidate[0] == 1)[-1]
+
+    if not candidates:
+        return None
+    return min(candidates)[-1]
+
+
+def split_text_balanced(
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    *,
+    width: float,
+    first_capacity: float,
+    continuation_capacity: float,
+    line_height: float,
+) -> list[str]:
+    """Split topic copy into substantial parts that each fit a page.
+
+    The first part fits ``first_capacity``; every later part fits
+    ``continuation_capacity``. Sentence boundaries near the middle win, with
+    the continuation keeping at least two complete sentences when the text has
+    at least three. A continuation of at least two rendered lines and 25 % of
+    the paragraph height is required for paragraphs of four or more lines.
+    Without a suitable sentence boundary the best balanced word boundary is
+    used. Parts join with single spaces to the normalized input, so no text is
+    reworded, shortened, hyphenated or character-split.
+    """
+    normalized = normalize_whitespace(text)
+    if not normalized:
+        return []
+    if first_capacity <= 0 or continuation_capacity <= 0:
+        raise TextOverflowError("split capacities must be positive")
+
+    if _height_of(normalized, font, width, line_height) <= first_capacity + 1e-9:
+        return [normalized]
+
+    parts: list[str] = []
+    remainder = normalized
+    capacity = first_capacity
+    while _height_of(remainder, font, width, line_height) > capacity + 1e-9:
+        position = _choose_balanced_split(
+            remainder,
+            font,
+            width=width,
+            capacity=capacity,
+            continuation_capacity=continuation_capacity,
+            line_height=line_height,
+        )
+        if position is None:
+            raise TextOverflowError(
+                "text cannot be split into fitting parts without rewriting"
+            )
+        parts.append(remainder[:position].strip())
+        remainder = remainder[position:].strip()
+        if not remainder:
+            raise TextOverflowError(
+                "text cannot be split into fitting parts without rewriting"
+            )
+        capacity = continuation_capacity
+
+    parts.append(remainder)
+    return parts
 
 
 def body_size_that_fits(
