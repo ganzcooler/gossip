@@ -56,6 +56,9 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
+# Manual smoke-test artifacts
+tests/manual/output/
+
 # Translations
 *.mo
 *.pot
