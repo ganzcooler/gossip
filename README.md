@@ -61,9 +61,10 @@ has been removed; legacy articles remain readable through the API.
    sentences the continuation keeps at least two complete sentences, and for a
    paragraph of four or more lines it also keeps at least two lines and 25 % of
    the paragraph's original height, whenever the page geometry allows it. If no
-   sentence boundary can satisfy that, the composer tries a smaller body size
-   before it falls back to a balanced word boundary; for such a paragraph the
-   last continuation is never a single complete sentence. Continuation slides
+   boundary at the current size can satisfy that, the composer tries a smaller
+   body size; only when no size can satisfy it does it fall back to a balanced
+   word boundary, and in that fallback the last continuation is never a single
+   complete sentence. Continuation slides
    carry the short chapter label at one post-wide body size, and the article
    text is never reworded, shortened or hyphenated. A stateless Themen
    visual-prompt call writes a cover and `ceil(content_slides / 2)` pair prompts
