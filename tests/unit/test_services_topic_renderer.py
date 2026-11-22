@@ -186,6 +186,54 @@ def test_cover_composites_a_transparent_288px_logo_at_the_top_left_without_a_pla
     assert not _has_color(cover, (64, 150, 456, 507), WHITE)
 
 
+def test_cover_badge_kicker_and_accent_bar_have_rounded_corners():
+    _, _, frames = _render()
+    cover = frames[0]
+
+    assert cover.getpixel((1015, 160)) != ORANGE_DEEP
+    assert cover.getpixel((800, 160)) == ORANGE_DEEP
+    assert cover.getpixel((1000, 180)) == ORANGE_DEEP
+
+    kicker_rows = [
+        y for y in range(cover.height) if cover.getpixel((100, y)) == ORANGE_DEEP
+    ]
+    kicker_top, kicker_bottom = min(kicker_rows), max(kicker_rows)
+    assert cover.getpixel((64, kicker_top)) != ORANGE_DEEP
+    assert cover.getpixel((200, kicker_top)) == ORANGE_DEEP
+    assert cover.getpixel((64, kicker_top + 32)) == ORANGE_DEEP
+    assert cover.getpixel((64, kicker_bottom)) != ORANGE_DEEP
+
+    # The accent bar is 10 px wide, so the 10 px token is clamped to 5 px.
+    # The tip rows still carry fill at the bar midpoint; a pill would not.
+    accent_rows = [
+        y for y in range(cover.height) if cover.getpixel((49, y)) == ORANGE_DEEP
+    ]
+    accent_top, accent_bottom = min(accent_rows), max(accent_rows)
+    assert cover.getpixel((49, accent_top)) == ORANGE_DEEP
+    assert cover.getpixel((49, accent_bottom)) == ORANGE_DEEP
+    assert cover.getpixel((44, accent_top)) != ORANGE_DEEP
+    assert cover.getpixel((44, accent_bottom)) != ORANGE_DEEP
+    accent_middle = (accent_top + accent_bottom) // 2
+    assert cover.getpixel((44, accent_middle)) == ORANGE_DEEP
+    assert cover.getpixel((53, accent_middle)) == ORANGE_DEEP
+
+
+def test_top_rule_heading_rule_hairline_and_image_edge_stay_square():
+    _, _, frames = _render()
+    cover, first, second = frames[0], frames[1], frames[2]
+
+    assert cover.getpixel((0, 0)) == ORANGE
+    assert cover.getpixel((1079, 5)) == ORANGE
+    assert first.getpixel((710, 0)) == ORANGE_DEEP
+    assert first.getpixel((719, 0)) == ORANGE_DEEP
+    assert first.getpixel((710, 1349)) == ORANGE_DEEP
+    assert first.getpixel((719, 1349)) == ORANGE_DEEP
+    assert first.getpixel((60, 236)) == ORANGE
+    assert first.getpixel((659, 238)) == ORANGE
+    assert second.getpixel((420, 135)) == OUTLINE
+    assert second.getpixel((1019, 135)) == OUTLINE
+
+
 def test_heading_slide_geometry_zigzag_edge_and_image_side():
     _, _, frames = _render()
     first = frames[1]

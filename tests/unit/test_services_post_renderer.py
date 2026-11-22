@@ -135,7 +135,8 @@ def test_cover_has_the_blue_top_rule_badge_kicker_and_white_title():
 
     assert cover.getpixel((540, 2)) == BLUE
     assert cover.getpixel((1000, 320)) == BLUE
-    assert cover.getpixel((64, 720)) == BLUE
+    assert cover.getpixel((200, 720)) == BLUE
+    assert cover.getpixel((64, 720)) != BLUE
     assert _has_color(cover, (64, 800, 1014, 1100), WHITE)
 
 
@@ -189,6 +190,57 @@ def test_card_composites_a_transparent_112px_logo_at_the_top_left_without_a_plat
     )
     assert card.getpixel((120, 308)) not in (WHITE, LOGO_COLOR)
     assert not _has_color(card, (64, 280, 236, 439), WHITE)
+
+
+def test_badge_and_kicker_have_rounded_corners_with_straight_edge_midpoints():
+    _, _, frames = _render_frames()
+    cover = frames[0]
+
+    assert cover.getpixel((1015, 300)) != BLUE
+    assert cover.getpixel((800, 300)) == BLUE
+    assert cover.getpixel((1000, 320)) == BLUE
+
+    assert cover.getpixel((64, 720)) != BLUE
+    assert cover.getpixel((67, 720)) != BLUE
+    assert cover.getpixel((74, 722)) == BLUE
+    assert cover.getpixel((200, 720)) == BLUE
+    assert cover.getpixel((64, 752)) == BLUE
+
+
+def test_card_corners_show_the_background_and_clip_the_blue_edge():
+    _, _, frames = _render_frames()
+    card = frames[1]
+
+    for corner in ((64, 460), (1015, 460), (64, 1679), (1015, 1679)):
+        assert card.getpixel(corner) not in (SURFACE_BASE, BLUE)
+
+    assert card.getpixel((540, 460)) == SURFACE_BASE
+    assert card.getpixel((540, 1679)) == SURFACE_BASE
+    assert card.getpixel((70, 1000)) == BLUE
+    assert card.getpixel((100, 1000)) == SURFACE_BASE
+    assert card.getpixel((1015, 1000)) == SURFACE_BASE
+
+    # The 10 px radius is clamped to the card size, not larger.
+    assert card.getpixel((74, 460)) == SURFACE_BASE
+    assert card.getpixel((67, 460)) != SURFACE_BASE
+    assert card.getpixel((64, 474)) == BLUE
+    assert card.getpixel((64, 463)) != BLUE
+
+    # The colored edge shares the card mask, so no square blue tip survives.
+    for box in ((64, 460, 66, 462), (64, 1678, 66, 1680)):
+        region = card.crop(box)
+        colors = region.getcolors(maxcolors=region.width * region.height) or []
+        assert all(pixel != BLUE for _, pixel in colors)
+
+
+def test_top_rule_and_card_rule_stay_square():
+    _, _, frames = _render_frames()
+    cover, card = frames[0], frames[1]
+
+    assert cover.getpixel((0, 0)) == BLUE
+    assert cover.getpixel((1079, 5)) == BLUE
+    assert card.getpixel((118, 691)) == OUTLINE
+    assert card.getpixel((917, 693)) == OUTLINE
 
 
 def test_body_top_follows_the_heading_line_boxes_plus_38px():

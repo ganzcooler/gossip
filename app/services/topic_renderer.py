@@ -31,6 +31,7 @@ from app.services.render_common import (
     draw_logo,
     draw_organ_badge,
     draw_tracked_text,
+    draw_ui_rect,
     ensure_title_contrast,
     font,
     logo_size,
@@ -640,14 +641,16 @@ def _render_cover(
             f"Topic cover {label} leaves the 1:1 safe band",
         )
 
-    draw.rectangle(
+    draw_ui_rect(
+        canvas,
         (
             COVER_ACCENT_X,
             ink_top - 8,
-            COVER_ACCENT_X + COVER_ACCENT_WIDTH - 1,
-            ink_bottom + 8 - 1,
+            COVER_ACCENT_X + COVER_ACCENT_WIDTH,
+            ink_bottom + 8,
         ),
         fill=BRAND_ORANGE_DEEP,
+        maximum=5,
     )
 
     canvas = ensure_title_contrast(canvas, shifted_bbox)
