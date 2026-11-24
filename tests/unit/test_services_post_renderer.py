@@ -129,9 +129,9 @@ def test_cover_has_the_blue_top_rule_badge_kicker_and_white_title():
     cover = frames[0]
 
     assert cover.getpixel((540, 2)) == BLUE
-    assert cover.getpixel((1000, 320)) == BLUE
-    assert _has_color(cover, (64, 1200, 600, 1690), BLUE)
-    assert _has_color(cover, (64, 1200, 1014, 1690), WHITE)
+    assert cover.getpixel((1000, 280)) == BLUE
+    assert _has_color(cover, (64, 1200, 600, 1730), BLUE)
+    assert _has_color(cover, (64, 1200, 1014, 1730), WHITE)
 
 
 @pytest.mark.parametrize(
@@ -143,13 +143,13 @@ def test_cover_has_the_blue_top_rule_badge_kicker_and_white_title():
     ],
     ids=["one-line", "two-line", "three-line"],
 )
-def test_cover_title_is_bottom_anchored_by_its_ink_box_at_1680(title):
+def test_cover_title_is_bottom_anchored_by_its_ink_box_at_1720(title):
     cover = _render_cover(title=title)
 
     title_bbox = _lower_white_bbox(cover, 1200)
 
     assert title_bbox is not None
-    assert abs(title_bbox[3] - 1680) <= 6
+    assert abs(title_bbox[3] - 1720) <= 6
 
 
 def test_cover_kicker_sits_directly_above_the_left_aligned_title():
@@ -209,8 +209,8 @@ def test_cover_has_no_local_gray_box_and_shows_the_artwork():
 def test_cover_contrast_passes_against_a_worst_case_white_image():
     cover = _render_cover(art=Image.new("RGB", SUMMARY_SIZE, WHITE))
 
-    assert _has_color(cover, (64, 1300, 1014, 1690), WHITE)
-    assert sum(cover.getpixel((1050, 1680))) < 250
+    assert _has_color(cover, (64, 1300, 1014, 1730), WHITE)
+    assert sum(cover.getpixel((1050, 1720))) < 250
 
 
 def test_cover_contrast_failure_is_a_hard_render_error(monkeypatch):
@@ -233,14 +233,14 @@ def test_cover_uses_the_real_square_logo_with_its_white_plate():
     _, _, frames = _render_frames()
     cover = frames[0]
 
-    assert _color_bbox(cover, (40, 260, 520, 560), WHITE) == (
+    assert _color_bbox(cover, (40, 200, 520, 520), WHITE) == (
         64,
-        280,
+        240,
         304,
-        520,
+        480,
     )
     # The plate's transparent rounded corner lets the artwork through.
-    assert cover.getpixel((65, 281)) != WHITE
+    assert cover.getpixel((65, 241)) != WHITE
 
 
 def test_cover_composites_a_synthetic_transparent_240px_logo_without_adding_a_plate(
@@ -251,16 +251,16 @@ def test_cover_composites_a_synthetic_transparent_240px_logo_without_adding_a_pl
     _, _, frames = _render_frames()
     cover = frames[0]
 
-    assert _color_bbox(cover, (40, 260, 520, 540), LOGO_COLOR) == (
+    assert _color_bbox(cover, (40, 200, 520, 500), LOGO_COLOR) == (
         64,
-        280,
+        240,
         304,
-        400,
+        360,
     )
     # The synthetic logo's transparent center shows the artwork; the renderer
     # adds no plate of its own.
-    assert cover.getpixel((184, 340)) not in (WHITE, LOGO_COLOR)
-    assert not _has_color(cover, (64, 280, 396, 583), WHITE)
+    assert cover.getpixel((184, 300)) not in (WHITE, LOGO_COLOR)
+    assert not _has_color(cover, (64, 240, 396, 543), WHITE)
 
 
 def test_card_has_the_blue_edge_profile_card_rule_number_and_page_label():
@@ -269,27 +269,27 @@ def test_card_has_the_blue_edge_profile_card_rule_number_and_page_label():
 
     assert card.getpixel((70, 1000)) == BLUE
     assert card.getpixel((100, 1000)) == SURFACE_BASE
-    assert card.getpixel((540, 1670)) == SURFACE_BASE
+    assert card.getpixel((540, 1710)) == SURFACE_BASE
     assert card.getpixel((40, 1000)) != SURFACE_BASE
-    assert card.getpixel((118, 691)) == OUTLINE
-    assert card.getpixel((540, 692)) == OUTLINE
-    assert _has_color(card, (118, 500, 320, 630), BLUE)
-    assert _has_color(card, (118, 1630, 400, 1660), BLUE)
-    assert _has_color(card, (118, 718, 918, 1000), WHITE)
+    assert card.getpixel((118, 651)) == OUTLINE
+    assert card.getpixel((540, 652)) == OUTLINE
+    assert _has_color(card, (118, 460, 320, 590), BLUE)
+    assert _has_color(card, (118, 1670, 400, 1700), BLUE)
+    assert _has_color(card, (118, 678, 918, 1000), WHITE)
 
 
 def test_card_uses_the_real_square_logo_with_its_white_plate():
     _, _, frames = _render_frames()
     card = frames[1]
 
-    assert _color_bbox(card, (40, 260, 520, 560), WHITE) == (
+    assert _color_bbox(card, (40, 200, 520, 520), WHITE) == (
         64,
-        280,
+        240,
         176,
-        392,
+        352,
     )
     # The plate's transparent rounded corner lets the card surface through.
-    assert card.getpixel((65, 281)) != WHITE
+    assert card.getpixel((65, 241)) != WHITE
 
 
 def test_card_composites_a_synthetic_transparent_112px_logo_without_adding_a_plate(
@@ -300,23 +300,23 @@ def test_card_composites_a_synthetic_transparent_112px_logo_without_adding_a_pla
     _, _, frames = _render_frames()
     card = frames[1]
 
-    assert _color_bbox(card, (40, 260, 520, 540), LOGO_COLOR) == (
+    assert _color_bbox(card, (40, 200, 520, 500), LOGO_COLOR) == (
         64,
-        280,
+        240,
         176,
-        336,
+        296,
     )
-    assert card.getpixel((120, 308)) not in (WHITE, LOGO_COLOR)
-    assert not _has_color(card, (64, 280, 236, 439), WHITE)
+    assert card.getpixel((120, 268)) not in (WHITE, LOGO_COLOR)
+    assert not _has_color(card, (64, 240, 236, 399), WHITE)
 
 
 def test_badge_and_kicker_have_rounded_corners_with_straight_edge_midpoints():
     _, _, frames = _render_frames()
     cover = frames[0]
 
-    assert cover.getpixel((1015, 300)) != BLUE
-    assert cover.getpixel((800, 300)) == BLUE
-    assert cover.getpixel((1000, 320)) == BLUE
+    assert cover.getpixel((1015, 260)) != BLUE
+    assert cover.getpixel((800, 260)) == BLUE
+    assert cover.getpixel((1000, 280)) == BLUE
 
     kicker_bbox = _color_bbox(cover, (0, 1200, 1080, 1920), BLUE)
     assert kicker_bbox is not None
@@ -332,23 +332,23 @@ def test_card_corners_show_the_background_and_clip_the_blue_edge():
     _, _, frames = _render_frames()
     card = frames[1]
 
-    for corner in ((64, 460), (1015, 460), (64, 1679), (1015, 1679)):
+    for corner in ((64, 420), (1015, 420), (64, 1719), (1015, 1719)):
         assert card.getpixel(corner) not in (SURFACE_BASE, BLUE)
 
-    assert card.getpixel((540, 460)) == SURFACE_BASE
-    assert card.getpixel((540, 1679)) == SURFACE_BASE
+    assert card.getpixel((540, 420)) == SURFACE_BASE
+    assert card.getpixel((540, 1719)) == SURFACE_BASE
     assert card.getpixel((70, 1000)) == BLUE
     assert card.getpixel((100, 1000)) == SURFACE_BASE
     assert card.getpixel((1015, 1000)) == SURFACE_BASE
 
     # The 10 px radius is clamped to the card size, not larger.
-    assert card.getpixel((74, 460)) == SURFACE_BASE
-    assert card.getpixel((67, 460)) != SURFACE_BASE
-    assert card.getpixel((64, 474)) == BLUE
-    assert card.getpixel((64, 463)) != BLUE
+    assert card.getpixel((74, 420)) == SURFACE_BASE
+    assert card.getpixel((67, 420)) != SURFACE_BASE
+    assert card.getpixel((64, 434)) == BLUE
+    assert card.getpixel((64, 423)) != BLUE
 
     # The colored edge shares the card mask, so no square blue tip survives.
-    for box in ((64, 460, 66, 462), (64, 1678, 66, 1680)):
+    for box in ((64, 420, 66, 422), (64, 1718, 66, 1720)):
         region = card.crop(box)
         colors = region.getcolors(maxcolors=region.width * region.height) or []
         assert all(pixel != BLUE for _, pixel in colors)
@@ -360,21 +360,21 @@ def test_top_rule_and_card_rule_stay_square():
 
     assert cover.getpixel((0, 0)) == BLUE
     assert cover.getpixel((1079, 5)) == BLUE
-    assert card.getpixel((118, 691)) == OUTLINE
-    assert card.getpixel((917, 693)) == OUTLINE
+    assert card.getpixel((118, 651)) == OUTLINE
+    assert card.getpixel((917, 653)) == OUTLINE
 
 
 def test_body_top_follows_the_heading_line_boxes_plus_38px():
-    assert summary_body_top(76, 1) == pytest.approx(838.08)
-    assert summary_body_top(76, 2) == pytest.approx(920.16)
-    assert summary_body_top(76, 3) == pytest.approx(1002.24)
-    assert summary_body_top(68, 1) == pytest.approx(829.44)
+    assert summary_body_top(76, 1) == pytest.approx(798.08)
+    assert summary_body_top(76, 2) == pytest.approx(880.16)
+    assert summary_body_top(76, 3) == pytest.approx(962.24)
+    assert summary_body_top(68, 1) == pytest.approx(789.44)
 
 
-def test_card_geometry_is_the_approved_952x1220_box():
-    assert CARD_BOX == (64, 460, 1016, 1680)
+def test_card_geometry_is_the_approved_952x1300_box():
+    assert CARD_BOX == (64, 420, 1016, 1720)
     x0, y0, x1, y1 = CARD_BOX
-    assert (x1 - x0, y1 - y0) == (952, 1220)
+    assert (x1 - x0, y1 - y0) == (952, 1300)
 
 
 def test_stored_slide_plan_and_slides_reconstruct_the_rendering_composition():
@@ -514,6 +514,40 @@ def test_overlong_heading_lines_are_a_render_failure_not_truncation():
     with pytest.raises(RenderError, match="heading"):
         render_summary_frames(
             draft, broken, cover_art=_cover_art(), organ="Gemeinderat Rosdorf"
+        )
+
+
+def test_card_body_capacity_follows_the_grown_card_bottom():
+    draft, composition, _ = _render_frames()
+    assert composition.body_size == 42
+
+    def with_body_lines(line_count: int):
+        slide = replace(
+            composition.slides[1],
+            heading_lines=("Test",),
+            body_lines=tuple("Zeile" for _ in range(line_count)),
+        )
+        return replace(
+            composition,
+            slides=(composition.slides[0], slide, composition.slides[2]),
+        )
+
+    # 798.08 body top + 14 * 58.8 = 1621.28, inside the 1640 body bottom.
+    frames = render_summary_frames(
+        draft,
+        with_body_lines(14),
+        cover_art=_cover_art(),
+        organ="Gemeinderat Rosdorf",
+    )
+    assert len(frames) == 3
+
+    # 15 lines end at 1680.08 and still overflow the grown card.
+    with pytest.raises(RenderError, match="body"):
+        render_summary_frames(
+            draft,
+            with_body_lines(15),
+            cover_art=_cover_art(),
+            organ="Gemeinderat Rosdorf",
         )
 
 

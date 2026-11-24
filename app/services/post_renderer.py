@@ -59,26 +59,26 @@ from app.services.slide_composer import (
 logger = logging.getLogger(__name__)
 
 SUMMARY_SIZE = (1080, 1920)
-CARD_BOX = (64, 460, 1016, 1680)
+CARD_BOX = (64, 420, 1016, 1720)
 CARD_EDGE_WIDTH = 10
 CARD_TEXT_X = 118
 
 COVER_LOGO_WIDTH = 240
 CARD_LOGO_WIDTH = 112
 COVER_TITLE_X = 64
-COVER_TITLE_BOTTOM = 1680
+COVER_TITLE_BOTTOM = 1720
 KICKER_X = 64
 COVER_KICKER_GAP = 24
 COVER_KICKER_HEIGHT = 64
 
-CARD_NUMBER_POSITION = (118, 500)
-CARD_KICKER_POSITION = (118, 646)
-CARD_RULE_BOX = (118, 691, 918, 694)
-CARD_HEADING_POSITION = (118, 718)
-CARD_PAGE_POSITION = (118, 1630)
+CARD_NUMBER_POSITION = (118, 460)
+CARD_KICKER_POSITION = (118, 606)
+CARD_RULE_BOX = (118, 651, 918, 654)
+CARD_HEADING_POSITION = (118, 678)
+CARD_PAGE_POSITION = (118, 1670)
 
 _ORGAN_BADGE_LEFT = 1016
-_ORGAN_BADGE_TOP = 300
+_ORGAN_BADGE_TOP = 260
 _ORGAN_BADGE_HEIGHT = 62
 _LOGO_CLEAR_SPACE = 24
 
@@ -253,7 +253,7 @@ def _render_cover(
     draw = ImageDraw.Draw(canvas)
     draw.rectangle((0, 0, SUMMARY_SIZE[0] - 1, 5), fill=BRAND_BLUE)
 
-    logo_box = draw_logo(canvas, 64, 280, COVER_LOGO_WIDTH)
+    logo_box = draw_logo(canvas, 64, 240, COVER_LOGO_WIDTH)
     badge_box = draw_organ_badge(canvas, organ, top=_ORGAN_BADGE_TOP)
     _require(
         badge_box[0] >= logo_box[2] + _LOGO_CLEAR_SPACE,
@@ -336,7 +336,7 @@ def _render_card(
     canvas = background.copy()
     draw = ImageDraw.Draw(canvas)
 
-    logo_box = draw_logo(canvas, 64, 280, CARD_LOGO_WIDTH)
+    logo_box = draw_logo(canvas, 64, 240, CARD_LOGO_WIDTH)
     badge_box = draw_organ_badge(canvas, organ, top=_ORGAN_BADGE_TOP)
     _require(
         badge_box[0] >= logo_box[2] + _LOGO_CLEAR_SPACE,

@@ -92,7 +92,7 @@ def test_overlong_point_splits_onto_two_consecutive_cards_without_rewriting():
     cards = [slide for slide in composition.slides if slide.slide_type == "heading"]
     assert len(cards) == 3
     split_cards = cards[:2]
-    assert composition.body_size == 39
+    assert composition.body_size == 42
     assert split_cards[0].label == split_cards[1].label == point["kicker"]
     assert split_cards[0].headline == split_cards[1].headline == point["heading"]
     assert split_cards[0].card_number == 1
@@ -128,7 +128,14 @@ def test_five_points_with_one_split_fit_exactly_six_cards():
 
 
 def test_more_than_six_cards_is_a_render_content_error():
-    points = [_point(index, body=WIDE_BODY if index in (1, 2) else None) for index in range(1, 7)]
+    points = [
+        _point(
+            1,
+            heading="Der Rat hat über das Thema und den Haushalt beraten",
+            body=WIDE_BODY,
+        ),
+        *[_point(index) for index in range(2, 7)],
+    ]
 
     with pytest.raises(SummaryCompositionError, match="six|6"):
         compose_summary_slides(_draft(points=points))
