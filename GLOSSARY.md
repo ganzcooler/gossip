@@ -40,6 +40,14 @@ _Avoid_: Themenpost, Topic-Post, Artikel
 One H2 with its paragraphs inside a Themenbeitrag. A Themenabschnitt starts a new slide and may continue across slides.
 _Avoid_: Section, Kapitel
 
+**Kicker**:
+The one-word uppercase label of a Themenabschnitt, shown on its H2 slide and on every Folgeslide of that section.
+_Avoid_: chapter_short, section label
+
+**Folgeslide**:
+A content slide of a Themenabschnitt without its own H2. It continues the section body and shows the section's Kicker plus the page counter.
+_Avoid_: Continuation, continuation slide
+
 **Artikelkopf**:
 The H1 of a Themenbeitrag; it is also the cover title.
 _Avoid_: Headline, Überschrift (when the H1 is meant)
