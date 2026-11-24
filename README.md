@@ -165,7 +165,7 @@ same `SURFACE_*` and `BRAND_*` constants from it; `image_generation.py` owns no
 palette of its own.
 
 Both cover families anchor the white title at the lower safe area by the bottom
-of its ink box: y=1680 in the 1080×1920 Summary story and y=1200 in the
+of its ink box: y=1720 in the 1080×1920 Summary story and y=1200 in the
 1080×1350 Themenbeitrag. The colored kicker sits directly above it, left-aligned.
 A single charcoal scrim covers the lower roughly 60% and fades to fully
 transparent above; there is no local gray contrast box and no extra darkening at
