@@ -187,29 +187,47 @@ def test_cover_has_orange_rule_badge_kicker_and_bottom_anchored_title():
     assert cover.getpixel((540, 2)) == ORANGE
     assert cover.getpixel((1000, 180)) == ORANGE_DEEP
     assert _has_color(cover, (64, 500, 700, 900), ORANGE_DEEP)
-    assert _has_color(cover, (44, 700, 54, 1210), ORANGE_DEEP)
-    assert _has_color(cover, (64, 1150, 1014, 1201), ON_SURFACE)
+    assert _has_color(cover, (44, 700, 54, 1250), ORANGE_DEEP)
+    assert _has_color(cover, (64, 1190, 1014, 1241), ON_SURFACE)
 
     title_bbox = _lower_white_bbox(cover, 600)
     assert title_bbox is not None
-    assert abs(title_bbox[3] - 1200) <= 6
+    assert abs(title_bbox[3] - 1240) <= 6
 
-    # The title ink bbox ends at y=1200; no white brand/title pixel below it.
-    assert not _has_color(cover, (0, 1201, 1080, 1350), ON_SURFACE)
+    # The title ink bbox ends at y=1240; no white brand/title pixel below it.
+    assert not _has_color(cover, (0, 1241, 1080, 1350), ON_SURFACE)
+
+
+def test_cover_uses_the_105_to_1255_safe_band_with_its_bottom_anchored_title():
+    _, _, frames = _render()
+    cover = frames[0]
+
+    logo = _color_bbox(cover, (0, 0, 540, 520), WHITE)
+    assert logo == (64, 120, 352, 408)
+    badge = _color_bbox(cover, (700, 0, 1080, 240), ORANGE_DEEP)
+    assert badge is not None
+    assert badge[1] == 130
+    title = _lower_white_bbox(cover, 600)
+    assert title is not None
+    assert abs(title[3] - 1240) <= 6
+
+    for box in (logo, badge, title):
+        assert box[1] >= 105
+        assert box[3] <= 1255
 
 
 def test_cover_uses_the_real_square_logo_with_its_white_plate():
     _, _, frames = _render()
     cover = frames[0]
 
-    assert _color_bbox(cover, (40, 130, 520, 460), WHITE) == (
+    assert _color_bbox(cover, (40, 100, 520, 460), WHITE) == (
         64,
-        150,
+        120,
         352,
-        438,
+        408,
     )
     # The plate's transparent rounded corner shows the unscrimmed cover art.
-    assert cover.getpixel((65, 151)) == _cover_art().getpixel((65, 151))
+    assert cover.getpixel((65, 121)) == _cover_art().getpixel((65, 121))
 
 
 def test_cover_composites_a_synthetic_transparent_288px_logo_without_adding_a_plate(
@@ -220,22 +238,22 @@ def test_cover_composites_a_synthetic_transparent_288px_logo_without_adding_a_pl
     _, _, frames = _render()
     cover = frames[0]
 
-    assert _color_bbox(cover, (40, 130, 520, 440), LOGO_COLOR) == (
+    assert _color_bbox(cover, (40, 100, 520, 440), LOGO_COLOR) == (
         64,
-        150,
+        120,
         352,
-        294,
+        264,
     )
-    assert cover.getpixel((208, 222)) not in (WHITE, LOGO_COLOR)
-    assert not _has_color(cover, (64, 150, 456, 507), WHITE)
+    assert cover.getpixel((208, 192)) not in (WHITE, LOGO_COLOR)
+    assert not _has_color(cover, (64, 120, 456, 477), WHITE)
 
 
 def test_cover_badge_kicker_and_accent_bar_have_rounded_corners():
     _, _, frames = _render()
     cover = frames[0]
 
-    assert cover.getpixel((1015, 160)) != ORANGE_DEEP
-    assert cover.getpixel((800, 160)) == ORANGE_DEEP
+    assert cover.getpixel((1015, 130)) != ORANGE_DEEP
+    assert cover.getpixel((800, 130)) == ORANGE_DEEP
     assert cover.getpixel((1000, 180)) == ORANGE_DEEP
 
     kicker_rows = [
@@ -360,8 +378,8 @@ def test_cover_has_a_single_bottom_up_scrim_with_a_transparent_top():
 def test_cover_contrast_passes_against_a_worst_case_white_image():
     cover = _render_cover(art=Image.new("RGB", TOPIC_SIZE, ON_SURFACE))
 
-    assert _has_color(cover, (64, 900, 1014, 1201), ON_SURFACE)
-    assert sum(cover.getpixel((1050, 1200))) < 250
+    assert _has_color(cover, (64, 900, 1014, 1241), ON_SURFACE)
+    assert sum(cover.getpixel((1050, 1240))) < 250
 
 
 def test_cover_contrast_failure_is_a_hard_render_error(monkeypatch):
@@ -439,16 +457,19 @@ def test_every_content_slide_uses_the_real_square_footer_logo_with_its_white_pla
     for frame_index in (1, 2):
         frame = frames[frame_index]
         text_x = CONTENT_TEXT_X_LEFT if frame_index == 1 else CONTENT_TEXT_X_RIGHT
-        assert _color_bbox(
-            frame, (text_x + 400, 1080, text_x + 620, 1240), WHITE
-        ) == (
-            text_x + 496,
-            1110,
-            text_x + 600,
-            1214,
+        logo_bbox = _color_bbox(
+            frame, (text_x + 400, 1120, text_x + 620, 1280), WHITE
         )
+        assert logo_bbox == (
+            text_x + 496,
+            1150,
+            text_x + 600,
+            1254,
+        )
+        # The footer logo starts at y=1150 and stays fully on the canvas.
+        assert logo_bbox[3] <= TOPIC_SIZE[1]
         # The plate's transparent rounded corner lets the slide through.
-        assert frame.getpixel((text_x + 497, 1111)) != WHITE
+        assert frame.getpixel((text_x + 497, 1151)) != WHITE
 
 
 def test_every_content_slide_has_a_synthetic_transparent_footer_logo_right_aligned_to_the_column(
@@ -460,19 +481,19 @@ def test_every_content_slide_has_a_synthetic_transparent_footer_logo_right_align
     for frame_index in (1, 2):
         frame = frames[frame_index]
         text_x = CONTENT_TEXT_X_LEFT if frame_index == 1 else CONTENT_TEXT_X_RIGHT
-        expected = (text_x + 496, 1110, text_x + 600, 1162)
+        expected = (text_x + 496, 1150, text_x + 600, 1202)
         assert (
             _color_bbox(
-                frame, (text_x + 400, 1080, text_x + 620, 1220), LOGO_COLOR
+                frame, (text_x + 400, 1120, text_x + 620, 1260), LOGO_COLOR
             )
             == expected
         )
-        assert frame.getpixel((text_x + 548, 1136)) not in (
+        assert frame.getpixel((text_x + 548, 1176)) not in (
             WHITE,
             LOGO_COLOR,
         )
         assert not _has_color(
-            frame, (text_x + 438, 1110, text_x + 600, 1260), WHITE
+            frame, (text_x + 438, 1150, text_x + 600, 1300), WHITE
         )
 
 
