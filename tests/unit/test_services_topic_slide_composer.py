@@ -129,7 +129,7 @@ def test_cover_and_every_h2_start_a_new_slide():
     cover = composition.slides[0]
     assert cover.slide_index == 1
     assert cover.slide_type == "cover"
-    assert cover.label == "THEMA IM FOKUS"
+    assert cover.label == "IM FOKUS"
     assert cover.headline == draft.title
     assert cover.body is None
     assert cover.pair_index is None
@@ -828,7 +828,7 @@ def test_slide_plan_describes_the_deterministic_composition():
     assert plan["body_size"] == composition.body_size
     assert plan["content_slides"] == len(_content_slides(composition))
     assert plan["total_slides"] == len(composition.slides)
-    assert plan["cover"]["label"] == "THEMA IM FOKUS"
+    assert plan["cover"]["label"] == "IM FOKUS"
     assert " ".join(plan["cover"]["title_lines"]) == normalize_whitespace(
         draft.title
     )

@@ -491,6 +491,48 @@ def test_stored_slide_plan_and_slides_reconstruct_the_render_composition():
     assert restored.slides[0].headline == draft.title
 
 
+def test_stored_plan_with_the_old_cover_label_renders_the_runtime_label():
+    draft, composition, frames = _render()
+    old_plan = {
+        **composition.slide_plan,
+        "cover": {
+            **composition.slide_plan["cover"],
+            "label": "THEMA IM FOKUS",
+        },
+    }
+    stored_slides = [
+        SimpleNamespace(
+            slide_index=slide.slide_index,
+            slide_type=slide.slide_type,
+            label=(
+                "THEMA IM FOKUS"
+                if slide.slide_type == "cover"
+                else slide.label
+            ),
+            headline=slide.headline,
+            body=slide.body,
+            alt_text=slide.alt_text,
+        )
+        for slide in composition.slides
+    ]
+
+    restored = topic_composition_from_stored(
+        draft, old_plan, stored_slides
+    )
+    content_count = len(restored.slides) - 1
+    rerendered = render_topic_frames(
+        draft,
+        restored,
+        cover_art=_cover_art(),
+        pair_art=_pair_art(content_count // 2),
+        single_art=_single_art() if content_count % 2 else None,
+        organ="Gemeinderat Rosdorf",
+    )
+
+    assert restored.slides[0].label == "IM FOKUS"
+    assert rerendered[0].tobytes() == frames[0].tobytes()
+
+
 def test_write_topic_output_creates_exact_filenames_and_one_caption(tmp_path):
     draft, composition, frames = _render()
     caption = compose_caption(

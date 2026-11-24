@@ -309,7 +309,7 @@ async def test_summary_failure_does_not_block_topic_content(
     slides = await _slides(postgres_session, haushalt)
     assert slides[0].slide_index == 1
     assert slides[0].slide_type == "cover"
-    assert slides[0].label == "THEMA IM FOKUS"
+    assert slides[0].label == "IM FOKUS"
     assert slides[0].headline == haushalt.content_json["draft"]["title"]
     assert slides[0].body is None
     assert slides[1].slide_index == 2
