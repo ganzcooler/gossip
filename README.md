@@ -154,7 +154,8 @@ local-testing/                 Local compose file and database dump
 ```
 
 The renderer requires three committed runtime assets in `app/res/`:
-`logo-gossip.png` (transparent RGBA logo, composited directly on the artwork),
+`gossip-logo-weiss-bgr.png` (square RGBA logo with its own opaque white,
+rounded plate and transparent corners, composited unchanged),
 `Oswald-var.ttf` (titles, headings, numbers, kickers) and `Inter-var.ttf`
 (body copy, badges, page labels). A missing asset is a hard render failure; it
 never falls back to another font or logo.
@@ -301,8 +302,9 @@ summary-2024-01-15-story-03.png   # second card
 caption-summary-summary.txt
 ```
 
-The folder is reused idempotently. The cover and every card show the transparent
-logo directly on the artwork at the top left, without a plate. A Summary-Beitrag
+The folder is reused idempotently. The cover and every card show the square
+logo with its own white rounded plate directly on the artwork at the top left.
+The renderer adds no plate of its own. A Summary-Beitrag
 story has three to seven frames (cover plus two to six cards) and exactly one
 caption file whose content is the stored `post.caption`, starting with
 `Bild: KI-generiert.` and
@@ -340,9 +342,9 @@ image-left/text-right; each 720×1350 pair artwork is split into the left and
 right 360×1350 strips, and an unpaired final slide uses a standalone strip. The
 first slide gets the large orange number, one-word kicker, 3 px rule and fitted
 H2; continuation slides show the short chapter label, the `n/N` counter and a
-1 px hairline. Every content slide carries the transparent logo directly on the
-image at the bottom-right of the text block, right-aligned to the 600 px text
-column. The caption file is UTF-8, starts with
+1 px hairline. Every content slide carries the square logo with its own white
+plate directly on the image at the bottom-right of the text block, right-aligned
+to the 600 px text column. The caption file is UTF-8, starts with
 `Bild: KI-generiert.` and carries source/date plus the SessionNet link
 or the manual-link hint. Image failures produce the orange brand fallback and
 the Beitrag still becomes `ready`; authentication errors stop the job. A
