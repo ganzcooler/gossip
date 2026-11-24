@@ -23,6 +23,16 @@ from app.services.render_common import (
     ON_SURFACE_MUTED,
     OUTLINE,
     RenderError,
+    SUMMARY_BADGE_TOP,
+    SUMMARY_CARD_BOTTOM,
+    SUMMARY_CARD_HEADING_TOP,
+    SUMMARY_CARD_KICKER_TOP,
+    SUMMARY_CARD_NUMBER_TOP,
+    SUMMARY_CARD_PAGE_TOP,
+    SUMMARY_CARD_RULE_TOP,
+    SUMMARY_CARD_TOP,
+    SUMMARY_COVER_TITLE_BOTTOM,
+    SUMMARY_LOGO_TOP,
     SURFACE_BASE,
     SURFACE_SUNKEN,
     apply_cover_scrim,
@@ -59,26 +69,32 @@ from app.services.slide_composer import (
 logger = logging.getLogger(__name__)
 
 SUMMARY_SIZE = (1080, 1920)
-CARD_BOX = (64, 420, 1016, 1720)
+CARD_BOX = (64, SUMMARY_CARD_TOP, 1016, SUMMARY_CARD_BOTTOM)
 CARD_EDGE_WIDTH = 10
 CARD_TEXT_X = 118
 
 COVER_LOGO_WIDTH = 240
 CARD_LOGO_WIDTH = 112
 COVER_TITLE_X = 64
-COVER_TITLE_BOTTOM = 1720
+COVER_TITLE_BOTTOM = SUMMARY_COVER_TITLE_BOTTOM
 KICKER_X = 64
 COVER_KICKER_GAP = 24
 COVER_KICKER_HEIGHT = 64
 
-CARD_NUMBER_POSITION = (118, 460)
-CARD_KICKER_POSITION = (118, 606)
-CARD_RULE_BOX = (118, 651, 918, 654)
-CARD_HEADING_POSITION = (118, 678)
-CARD_PAGE_POSITION = (118, 1670)
+CARD_NUMBER_POSITION = (118, SUMMARY_CARD_NUMBER_TOP)
+CARD_KICKER_POSITION = (118, SUMMARY_CARD_KICKER_TOP)
+CARD_RULE_HEIGHT = 3
+CARD_RULE_BOX = (
+    118,
+    SUMMARY_CARD_RULE_TOP,
+    918,
+    SUMMARY_CARD_RULE_TOP + CARD_RULE_HEIGHT,
+)
+CARD_HEADING_POSITION = (118, SUMMARY_CARD_HEADING_TOP)
+CARD_PAGE_POSITION = (118, SUMMARY_CARD_PAGE_TOP)
 
 _ORGAN_BADGE_LEFT = 1016
-_ORGAN_BADGE_TOP = 260
+_ORGAN_BADGE_TOP = SUMMARY_BADGE_TOP
 _ORGAN_BADGE_HEIGHT = 62
 _LOGO_CLEAR_SPACE = 24
 
@@ -253,7 +269,7 @@ def _render_cover(
     draw = ImageDraw.Draw(canvas)
     draw.rectangle((0, 0, SUMMARY_SIZE[0] - 1, 5), fill=BRAND_BLUE)
 
-    logo_box = draw_logo(canvas, 64, 240, COVER_LOGO_WIDTH)
+    logo_box = draw_logo(canvas, 64, SUMMARY_LOGO_TOP, COVER_LOGO_WIDTH)
     badge_box = draw_organ_badge(canvas, organ, top=_ORGAN_BADGE_TOP)
     _require(
         badge_box[0] >= logo_box[2] + _LOGO_CLEAR_SPACE,
@@ -336,7 +352,7 @@ def _render_card(
     canvas = background.copy()
     draw = ImageDraw.Draw(canvas)
 
-    logo_box = draw_logo(canvas, 64, 240, CARD_LOGO_WIDTH)
+    logo_box = draw_logo(canvas, 64, SUMMARY_LOGO_TOP, CARD_LOGO_WIDTH)
     badge_box = draw_organ_badge(canvas, organ, top=_ORGAN_BADGE_TOP)
     _require(
         badge_box[0] >= logo_box[2] + _LOGO_CLEAR_SPACE,
