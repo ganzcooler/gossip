@@ -56,7 +56,6 @@ from app.services.slide_composer import (
     TOPIC_H2_SIZES,
     TOPIC_H2_TOP,
     TOPIC_H2_ZONE,
-    TOPIC_MAX_CHAPTER_SHORT,
     TOPIC_MAX_CONTENT_SLIDES,
     TOPIC_MIN_CONTENT_SLIDES,
     TOPIC_PARAGRAPH_GAP_FACTOR,
@@ -78,9 +77,9 @@ CONTENT_TEXT_X_LEFT = 60
 CONTENT_TEXT_X_RIGHT = 420
 CONTENT_TEXT_WIDTH = 600
 EDGE_WIDTH = 10
-CONTENT_TOP = 90
+CONTENT_TOP = 74
 HEADING_NUMBER_SIZE = 96
-HEADING_NUMBER_Y = 90
+HEADING_NUMBER_Y = 74
 HEADING_KICKER_Y = 194
 HEADING_RULE_Y = 236
 HEADING_RULE_HEIGHT = 3
@@ -269,22 +268,66 @@ def _verify_cover(
     return size, lines, x, width
 
 
-def _kicker_text(slide: ComposedTopicSlide) -> str:
-    label = (slide.label or "").strip()
-    if not label or len(label.split()) != 1:
-        logger.warning(
-            "Topic heading slide %s has a missing or invalid kicker; using THEMA",
-            slide.slide_index,
+def _follow_counter(slide: ComposedTopicSlide, content_total: int) -> str:
+    return f"{slide.content_position:02d}/{content_total:02d}"
+
+
+def _visible_kickers(
+    content_slides: Sequence[ComposedTopicSlide],
+    *,
+    body_size: int,
+    content_total: int,
+) -> dict[int, str]:
+    """Resolve one visible kicker per section for the heading and follow slides.
+
+    The section keeps its own kicker only when it is one word and the combined
+    advance of kicker, gap and follow counter fits the 600px column on every
+    slide of the section. Otherwise the whole section shows the neutral THEMA.
+    """
+    size = body_size + 2
+    kicker_font = font("inter", size, 600)
+    counter_font = font("oswald", size, 600)
+    counter_tracking = 0.04 * size
+    by_section: dict[int, list[ComposedTopicSlide]] = {}
+    for slide in content_slides:
+        section_index = slide.section_index
+        _require(
+            section_index is not None,
+            "Topic content slide has no section index",
         )
-        return TOPIC_FALLBACK_LABEL
-    text = label.upper()
-    if text_advance(font("inter", 22, 700), text, 3) > CONTENT_TEXT_WIDTH:
-        logger.warning(
-            "Topic heading slide %s has a kicker wider than the column; using THEMA",
-            slide.slide_index,
+        by_section.setdefault(section_index, []).append(slide)
+
+    visible: dict[int, str] = {}
+    for section_index, slides in by_section.items():
+        heading = next(
+            (slide for slide in slides if slide.slide_type == "heading"), None
         )
-        return TOPIC_FALLBACK_LABEL
-    return text
+        label = ((heading.kicker or heading.label) if heading else "") or ""
+        candidate = label.strip().upper()
+        fits = bool(candidate) and len(candidate.split()) == 1
+        if fits:
+            kicker_width = text_advance(kicker_font, candidate)
+            fits = all(
+                kicker_width
+                + 20
+                + text_advance(
+                    counter_font,
+                    _follow_counter(slide, content_total),
+                    counter_tracking,
+                )
+                <= CONTENT_TEXT_WIDTH
+                for slide in slides
+            )
+        if not fits:
+            logger.warning(
+                "Topic section %s has a kicker that does not fit the follow-slide "
+                "header; using THEMA",
+                section_index,
+            )
+            visible[section_index] = TOPIC_FALLBACK_LABEL
+        else:
+            visible[section_index] = candidate
+    return visible
 
 
 def _body_paragraphs(slide: ComposedTopicSlide) -> tuple[tuple[str, ...], ...]:
@@ -375,6 +418,7 @@ def _side(content_position: int) -> tuple[int, int, tuple[int, int, int, int]]:
 def _render_heading_slide(
     slide: ComposedTopicSlide,
     *,
+    kicker: str,
     content_position: int,
     content_total: int,
     body_size: int,
@@ -445,7 +489,7 @@ def _render_heading_slide(
     draw_tracked_text(
         draw,
         (text_x, HEADING_KICKER_Y),
-        _kicker_text(slide),
+        kicker,
         font=kicker_font,
         fill=ON_SURFACE,
         tracking=3,
@@ -493,6 +537,7 @@ def _render_heading_slide(
 def _render_continuation_slide(
     slide: ComposedTopicSlide,
     *,
+    kicker: str,
     content_position: int,
     content_total: int,
     body_size: int,
@@ -507,30 +552,23 @@ def _render_continuation_slide(
         fill=BRAND_ORANGE_DEEP,
     )
 
-    chapter = (slide.chapter_short or slide.label or "").strip()
-    _require(bool(chapter), "Topic continuation slide has no chapter label")
-    _require(
-        len(chapter) <= TOPIC_MAX_CHAPTER_SHORT,
-        f"Topic chapter label exceeds {TOPIC_MAX_CHAPTER_SHORT} characters",
-    )
-    _require("\n" not in chapter, "Topic chapter label must be one line")
-
-    counter = f"{content_position}/{content_total}"
-    chapter_font = font("inter", 24, 600)
-    counter_font = font("oswald", 24, 600)
-    counter_tracking = 0.04 * 24
-    chapter_width = text_advance(chapter_font, chapter)
+    counter = _follow_counter(slide, content_total)
+    size = body_size + 2
+    kicker_font = font("inter", size, 600)
+    counter_font = font("oswald", size, 600)
+    counter_tracking = 0.04 * size
+    kicker_width = text_advance(kicker_font, kicker)
     counter_width = text_advance(counter_font, counter, counter_tracking)
     _require(
-        chapter_width + 20 + counter_width <= CONTENT_TEXT_WIDTH,
-        "Topic chapter label and counter do not fit the 600px column",
+        kicker_width + 20 + counter_width <= CONTENT_TEXT_WIDTH,
+        "Topic follow kicker and counter do not fit the 600px column",
     )
 
     draw_tracked_text(
         draw,
         (text_x, CONTENT_TOP),
-        chapter,
-        font=chapter_font,
+        kicker,
+        font=kicker_font,
         fill=ON_SURFACE,
         anchor="la",
     )
@@ -767,6 +805,11 @@ def render_topic_frames(
         "Topic content positions are not consecutive",
     )
 
+    visible_kickers = _visible_kickers(
+        content_slides,
+        body_size=composition.body_size,
+        content_total=content_total,
+    )
     frames = [
         _render_cover(draft, composition, cover_art=cover_art, organ=organ)
     ]
@@ -776,9 +819,11 @@ def render_topic_frames(
             pair_art=pair_art,
             single_art=single_art,
         )
+        kicker = visible_kickers[slide.section_index]
         if slide.slide_type == "heading":
             frame = _render_heading_slide(
                 slide,
+                kicker=kicker,
                 content_position=content_position,
                 content_total=content_total,
                 body_size=composition.body_size,
@@ -787,6 +832,7 @@ def render_topic_frames(
         else:
             frame = _render_continuation_slide(
                 slide,
+                kicker=kicker,
                 content_position=content_position,
                 content_total=content_total,
                 body_size=composition.body_size,
@@ -811,6 +857,16 @@ def _stored_slide_plan(
     raise RenderError(
         f"Stored topic slide plan has no entry for slide {slide_index}"
     )
+
+
+def _stored_kicker(entry: Mapping[str, Any], fallback: Any) -> str | None:
+    """Prefer the plan's stored kicker; fall back to a slide label if absent."""
+    kicker = entry.get("kicker")
+    if isinstance(kicker, str) and kicker.strip():
+        return kicker
+    if isinstance(fallback, str) and fallback.strip():
+        return fallback
+    return None
 
 
 def topic_composition_from_stored(
@@ -859,8 +915,21 @@ def topic_composition_from_stored(
                 alt_text=cover_row.alt_text or "",
             )
         ]
-        for slide in ordered[1:]:
-            entry = _stored_slide_plan(slide_plan, slide.slide_index)
+        stored_entries = [
+            (slide, _stored_slide_plan(slide_plan, slide.slide_index))
+            for slide in ordered[1:]
+        ]
+        section_kickers: dict[int, str] = {}
+        for slide, entry in stored_entries:
+            if slide.slide_type != "heading":
+                continue
+            section_index = int(entry["section_index"])
+            kicker = _stored_kicker(entry, slide.label)
+            if kicker is not None:
+                section_kickers[section_index] = kicker
+
+        for slide, entry in stored_entries:
+            section_index = int(entry["section_index"])
             composed.append(
                 ComposedTopicSlide(
                     slide_index=slide.slide_index,
@@ -871,7 +940,10 @@ def topic_composition_from_stored(
                     alt_text=slide.alt_text or "",
                     pair_index=int(entry["pair_index"]),
                     content_position=int(entry["content_position"]),
-                    section_index=int(entry["section_index"]),
+                    section_index=section_index,
+                    kicker=_stored_kicker(
+                        entry, section_kickers.get(section_index)
+                    ),
                     chapter_short=entry.get("chapter_short"),
                     heading_size=entry.get("heading_size"),
                     heading_zone=entry.get("heading_zone"),

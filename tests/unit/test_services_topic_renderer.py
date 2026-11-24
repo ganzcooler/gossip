@@ -1,5 +1,6 @@
 """Direct, deterministic tests for the orange 1080x1350 topic renderer."""
 
+from copy import deepcopy
 from dataclasses import replace
 from datetime import date
 from types import SimpleNamespace
@@ -73,6 +74,19 @@ def _composition(lengths: tuple[int, ...] = (700, 700)):
     return draft, compose_topic_slides(draft)
 
 
+def _draft_with_first_h2(h2: str) -> TopicDraft:
+    return TopicDraft(
+        title="Was der Rat zum Haushalt in Rosdorf entschieden hat",
+        sections=[
+            {"h2": h2, "paragraphs": [_paragraph(1800)]},
+            {
+                "h2": "Der Radweg wird im Sommer gebaut",
+                "paragraphs": [_paragraph(300)],
+            },
+        ],
+    )
+
+
 def _cover_art() -> Image.Image:
     return Image.new("RGB", TOPIC_SIZE, (35, 55, 75))
 
@@ -94,12 +108,11 @@ def _single_art() -> Image.Image:
     return Image.new("RGB", (360, 1350), SINGLE_COLOR)
 
 
-def _render(lengths: tuple[int, ...] = (700, 700)):
-    draft, composition = _composition(lengths)
+def _render_composition(draft, composition):
     content_count = len(composition.slides) - 1
     pair_count = content_count // 2
     single = _single_art() if content_count % 2 else None
-    frames = render_topic_frames(
+    return render_topic_frames(
         draft,
         composition,
         cover_art=_cover_art(),
@@ -107,7 +120,11 @@ def _render(lengths: tuple[int, ...] = (700, 700)):
         single_art=single,
         organ="Gemeinderat Rosdorf",
     )
-    return draft, composition, frames
+
+
+def _render(lengths: tuple[int, ...] = (700, 700)):
+    draft, composition = _composition(lengths)
+    return draft, composition, _render_composition(draft, composition)
 
 
 def _has_color(image: Image.Image, box, color) -> bool:
@@ -472,6 +489,261 @@ def test_heading_and_continuation_share_one_body_size_and_body_zone():
     assert continuation.heading_lines == ()
     assert composition.slides[1].content_position == 1
     assert composition.slides[2].content_position == 2
+
+
+def test_heading_number_starts_at_74_and_leaves_ten_pixels_above_the_kicker():
+    _, composition, frames = _render()
+    heading_slide = composition.slides[1]
+    frame = frames[1]
+    text_x = (
+        CONTENT_TEXT_X_LEFT
+        if heading_slide.content_position % 2
+        else CONTENT_TEXT_X_RIGHT
+    )
+
+    number = _color_bbox(frame, (text_x, 0, text_x + 300, 235), ORANGE)
+    kicker = _color_bbox(frame, (text_x, 160, text_x + 600, 235), ON_SURFACE)
+
+    assert number is not None
+    assert kicker is not None
+    assert number[1] < 125
+    assert number[3] < kicker[1]
+    assert 8 <= kicker[1] - number[3] <= 12
+    assert frame.getpixel((text_x, 236)) == ORANGE
+
+
+def test_follow_slide_repeats_the_section_kicker_instead_of_chapter_short():
+    _, composition, frames = _render()
+    heading = composition.slides[1]
+    continuation = composition.slides[2]
+    assert continuation.slide_type == "continuation"
+    assert continuation.kicker == heading.kicker == "RAT"
+    assert continuation.chapter_short != heading.kicker
+
+    size = composition.body_size + 2
+    text_x = CONTENT_TEXT_X_RIGHT
+    bbox = _color_bbox(frames[2], (text_x, 74, text_x + 600, 135), ON_SURFACE)
+    assert bbox is not None
+    kicker_font = render_common.font("inter", size, 600)
+    kicker_width = render_common.text_advance(kicker_font, "RAT")
+    ink_width = bbox[2] - bbox[0]
+    assert abs(ink_width - kicker_width) <= 4
+    chapter_width = render_common.text_advance(
+        kicker_font, continuation.chapter_short
+    )
+    assert ink_width < 0.5 * chapter_width
+
+
+def test_long_chapter_short_is_alt_text_only_and_never_limits_the_follow_header():
+    draft, composition = _composition()
+    long_chapter = (
+        "Der Rat hat den Haushalt ausführlich beraten und beschlossen"
+    )
+    assert len(long_chapter) > 28
+    slides = list(composition.slides)
+    slides[2] = replace(slides[2], chapter_short=long_chapter)
+    composition = replace(composition, slides=tuple(slides))
+
+    frames = _render_composition(draft, composition)
+
+    continuation = composition.slides[2]
+    text_x = CONTENT_TEXT_X_RIGHT
+    kicker = _color_bbox(
+        frames[2], (text_x, 74, text_x + 600, 135), ON_SURFACE
+    )
+    assert kicker is not None
+    assert kicker[2] - kicker[0] < 200
+    assert continuation.kicker == "RAT"
+
+
+@pytest.mark.parametrize("body_size", (42, 39, 36))
+def test_follow_header_uses_body_size_plus_two_for_kicker_and_counter(body_size):
+    draft, composition = _composition()
+    slides = tuple(
+        replace(slide, body_size=body_size)
+        if slide.slide_type != "cover"
+        else slide
+        for slide in composition.slides
+    )
+    composition = replace(composition, body_size=body_size, slides=slides)
+    frames = _render_composition(draft, composition)
+
+    continuation = composition.slides[2]
+    content_total = len(composition.slides) - 1
+    counter = f"{continuation.content_position:02d}/{content_total:02d}"
+    assert counter == "02/04"
+    size = body_size + 2
+    counter_font = render_common.font("oswald", size, 600)
+    counter_width = render_common.text_advance(
+        counter_font, counter, tracking=0.04 * size
+    )
+    text_x = CONTENT_TEXT_X_RIGHT
+    expected_left = text_x + 600 - counter_width
+    counter_bbox = _color_bbox(
+        frames[2], (text_x + 400, 74, text_x + 600, 135), ORANGE
+    )
+    assert counter_bbox is not None
+    assert expected_left <= counter_bbox[0] <= expected_left + 6
+    assert counter_bbox[2] >= text_x + 600 - 5
+    counter_font_bbox = counter_font.getbbox(counter, anchor="la")
+    assert 74 + counter_font_bbox[1] - 2 <= counter_bbox[1] <= (
+        74 + counter_font_bbox[1] + 2
+    )
+    assert 74 + counter_font_bbox[3] - 2 <= counter_bbox[3] <= (
+        74 + counter_font_bbox[3] + 2
+    )
+
+    kicker_bbox = _color_bbox(
+        frames[2], (text_x, 74, text_x + 600, 135), ON_SURFACE
+    )
+    assert kicker_bbox is not None
+    kicker_font = render_common.font("inter", size, 600)
+    kicker_font_bbox = kicker_font.getbbox("RAT", anchor="la")
+    assert 74 + kicker_font_bbox[1] - 2 <= kicker_bbox[1] <= (
+        74 + kicker_font_bbox[1] + 2
+    )
+    assert 74 + kicker_font_bbox[3] - 2 <= kicker_bbox[3] <= (
+        74 + kicker_font_bbox[3] + 2
+    )
+    kicker_width = render_common.text_advance(kicker_font, "RAT")
+    assert abs((kicker_bbox[2] - kicker_bbox[0]) - kicker_width) <= 4
+
+
+def test_follow_kicker_and_counter_share_the_header_without_overlapping():
+    draft = _draft_with_first_h2("Windkraftanlagen im Außenbereich")
+    composition = compose_topic_slides(draft)
+    frames = _render_composition(draft, composition)
+
+    first_section = [
+        (slide, frame)
+        for slide, frame in zip(composition.slides[1:], frames[1:])
+        if slide.section_index == 0
+    ]
+    assert len(first_section) > 1
+    continuation_slide, continuation_frame = first_section[1]
+    assert continuation_slide.slide_type == "continuation"
+    text_x = CONTENT_TEXT_X_RIGHT
+    kicker = _color_bbox(
+        continuation_frame, (text_x, 74, text_x + 600, 135), ON_SURFACE
+    )
+    counter = _color_bbox(
+        continuation_frame, (text_x + 400, 74, text_x + 600, 135), ORANGE
+    )
+    assert kicker is not None
+    assert counter is not None
+    # The section keeps its own kicker instead of falling back to THEMA.
+    assert kicker[2] - kicker[0] > 300
+    assert kicker[0] >= text_x
+    assert counter[2] <= text_x + 600
+    assert kicker[2] + 20 <= counter[0]
+
+
+def test_overwide_section_kicker_falls_back_to_thema_on_every_section_slide():
+    draft = _draft_with_first_h2("Verwaltungsausschuss tagt")
+    composition = compose_topic_slides(draft)
+    assert composition.slides[1].kicker == "VERWALTUNGSAUSSCHUSS"
+    frames = _render_composition(draft, composition)
+
+    first_section = [
+        (slide, frame)
+        for slide, frame in zip(composition.slides[1:], frames[1:])
+        if slide.section_index == 0
+    ]
+    assert len(first_section) > 1
+    for slide, frame in first_section:
+        text_x = (
+            CONTENT_TEXT_X_LEFT
+            if slide.content_position % 2
+            else CONTENT_TEXT_X_RIGHT
+        )
+        top = 194 if slide.slide_type == "heading" else 74
+        kicker = _color_bbox(
+            frame, (text_x, top, text_x + 600, 236), ON_SURFACE
+        )
+        assert kicker is not None
+        # THEMA ink is at most ~160px at the follow size; the long section
+        # kicker would be more than three times as wide.
+        assert kicker[2] - kicker[0] <= 180
+
+    second_heading = composition.slides[-1]
+    assert second_heading.section_index == 1
+    assert second_heading.kicker == "RADWEG"
+    second_frame = frames[-1]
+    second_text_x = (
+        CONTENT_TEXT_X_LEFT
+        if second_heading.content_position % 2
+        else CONTENT_TEXT_X_RIGHT
+    )
+    second_kicker = _color_bbox(
+        second_frame, (second_text_x, 194, second_text_x + 600, 236), ON_SURFACE
+    )
+    assert second_kicker is not None
+    assert second_kicker[2] - second_kicker[0] > 90
+
+
+def _stored_slide_rows(composition):
+    return [
+        SimpleNamespace(
+            slide_index=slide.slide_index,
+            slide_type=slide.slide_type,
+            label=slide.label,
+            headline=slide.headline,
+            body=slide.body,
+            alt_text=slide.alt_text,
+        )
+        for slide in composition.slides
+    ]
+
+
+def test_stored_plan_rerender_uses_the_stored_kicker_on_follow_slides():
+    draft, composition, _ = _render()
+    plan = deepcopy(composition.slide_plan)
+    for entry in plan["slides"]:
+        entry["kicker"] = "HAUSHALT"
+
+    restored = topic_composition_from_stored(
+        draft, plan, _stored_slide_rows(composition)
+    )
+    assert [slide.kicker for slide in restored.slides[1:]] == [
+        "HAUSHALT"
+        for _ in range(len(restored.slides) - 1)
+    ]
+    assert restored.slides[1].label == "RAT"
+    assert restored.slides[2].label == composition.slides[2].chapter_short
+
+    frames = _render_composition(draft, restored)
+    text_x = CONTENT_TEXT_X_LEFT
+    heading_kicker = _color_bbox(
+        frames[1], (text_x, 194, text_x + 600, 236), ON_SURFACE
+    )
+    follow_kicker = _color_bbox(
+        frames[2], (CONTENT_TEXT_X_RIGHT, 74, CONTENT_TEXT_X_RIGHT + 600, 135),
+        ON_SURFACE,
+    )
+    assert heading_kicker is not None
+    assert follow_kicker is not None
+    assert heading_kicker[2] - heading_kicker[0] > 100
+    follow_width = render_common.text_advance(
+        render_common.font("inter", composition.body_size + 2, 600),
+        "HAUSHALT",
+    )
+    assert abs((follow_kicker[2] - follow_kicker[0]) - follow_width) <= 5
+
+
+def test_stored_plan_without_a_kicker_falls_back_to_the_heading_label():
+    draft, composition, _ = _render()
+    plan = deepcopy(composition.slide_plan)
+    for entry in plan["slides"]:
+        entry.pop("kicker", None)
+
+    restored = topic_composition_from_stored(
+        draft, plan, _stored_slide_rows(composition)
+    )
+
+    assert [slide.kicker for slide in restored.slides[1:]] == [
+        "RAT"
+        for _ in range(len(restored.slides) - 1)
+    ]
 
 
 def test_counter_systems_render_the_content_number_and_chapter_counter():
