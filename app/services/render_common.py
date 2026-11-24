@@ -2,9 +2,9 @@
 
 This module is the single source of the brand palette and render tokens.
 Everything here is deterministic and side-effect free until a caller writes a
-file. The transparent logo follows ADR 0011: it is cropped to its alpha ink and
-composited directly on the artwork without a plate, padding, radius, shadow or
-glow.
+file. The logo is cropped to its alpha ink and composited unchanged: the current
+asset carries its own white rounded plate and transparent corners, and the
+renderer never adds a plate, padding, radius, shadow or glow (see ADR 0011).
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ FONT_PATHS: dict[str, Path] = {
     "oswald": text_layout.OSWALD_PATH,
     "inter": text_layout.INTER_PATH,
 }
-LOGO_PATH = RESOURCE_DIR / "logo-gossip.png"
+LOGO_PATH = RESOURCE_DIR / "gossip-logo-weiss-bgr.png"
 
 SURFACE_BASE = (30, 30, 33)
 SURFACE_SUNKEN = (23, 23, 26)
@@ -190,7 +190,7 @@ def logo_size(logo_width: int) -> tuple[int, int]:
 def draw_logo(
     canvas: Image.Image, x: int, y: int, logo_width: int
 ) -> tuple[int, int, int, int]:
-    """Composite the transparent logo at its ink anchor and return the box."""
+    """Composite the logo at its ink anchor and return the box."""
     if canvas.mode != "RGB":
         raise RenderError("The logo must be drawn on an RGB canvas")
     logo = _scaled_logo(str(LOGO_PATH), logo_width)

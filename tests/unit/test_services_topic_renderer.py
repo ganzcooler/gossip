@@ -181,7 +181,21 @@ def test_cover_has_orange_rule_badge_kicker_and_bottom_anchored_title():
     assert not _has_color(cover, (0, 1201, 1080, 1350), ON_SURFACE)
 
 
-def test_cover_composites_a_transparent_288px_logo_at_the_top_left_without_a_plate(
+def test_cover_uses_the_real_square_logo_with_its_white_plate():
+    _, _, frames = _render()
+    cover = frames[0]
+
+    assert _color_bbox(cover, (40, 130, 520, 460), WHITE) == (
+        64,
+        150,
+        352,
+        438,
+    )
+    # The plate's transparent rounded corner shows the unscrimmed cover art.
+    assert cover.getpixel((65, 151)) == _cover_art().getpixel((65, 151))
+
+
+def test_cover_composites_a_synthetic_transparent_288px_logo_without_adding_a_plate(
     tmp_path, monkeypatch
 ):
     _use_transparent_logo(monkeypatch, tmp_path)
@@ -403,7 +417,24 @@ def test_unpaired_last_slide_uses_the_standalone_strip_without_a_seam():
     assert last.getpixel((400, 675)) == SURFACE_BASE
 
 
-def test_every_content_slide_has_a_transparent_footer_logo_right_aligned_to_the_column(
+def test_every_content_slide_uses_the_real_square_footer_logo_with_its_white_plate():
+    _, _, frames = _render()
+    for frame_index in (1, 2):
+        frame = frames[frame_index]
+        text_x = CONTENT_TEXT_X_LEFT if frame_index == 1 else CONTENT_TEXT_X_RIGHT
+        assert _color_bbox(
+            frame, (text_x + 400, 1080, text_x + 620, 1240), WHITE
+        ) == (
+            text_x + 496,
+            1110,
+            text_x + 600,
+            1214,
+        )
+        # The plate's transparent rounded corner lets the slide through.
+        assert frame.getpixel((text_x + 497, 1111)) != WHITE
+
+
+def test_every_content_slide_has_a_synthetic_transparent_footer_logo_right_aligned_to_the_column(
     tmp_path, monkeypatch
 ):
     _use_transparent_logo(monkeypatch, tmp_path)
