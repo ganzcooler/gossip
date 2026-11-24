@@ -229,7 +229,21 @@ def test_cover_contrast_failure_is_a_hard_render_error(monkeypatch):
         )
 
 
-def test_cover_composites_a_transparent_240px_logo_at_the_top_left_without_a_plate(
+def test_cover_uses_the_real_square_logo_with_its_white_plate():
+    _, _, frames = _render_frames()
+    cover = frames[0]
+
+    assert _color_bbox(cover, (40, 260, 520, 560), WHITE) == (
+        64,
+        280,
+        304,
+        520,
+    )
+    # The plate's transparent rounded corner lets the artwork through.
+    assert cover.getpixel((65, 281)) != WHITE
+
+
+def test_cover_composites_a_synthetic_transparent_240px_logo_without_adding_a_plate(
     tmp_path, monkeypatch
 ):
     _use_transparent_logo(monkeypatch, tmp_path)
@@ -243,7 +257,8 @@ def test_cover_composites_a_transparent_240px_logo_at_the_top_left_without_a_pla
         304,
         400,
     )
-    # The transparent center shows the artwork instead of a white plate.
+    # The synthetic logo's transparent center shows the artwork; the renderer
+    # adds no plate of its own.
     assert cover.getpixel((184, 340)) not in (WHITE, LOGO_COLOR)
     assert not _has_color(cover, (64, 280, 396, 583), WHITE)
 
@@ -263,7 +278,21 @@ def test_card_has_the_blue_edge_profile_card_rule_number_and_page_label():
     assert _has_color(card, (118, 718, 918, 1000), WHITE)
 
 
-def test_card_composites_a_transparent_112px_logo_at_the_top_left_without_a_plate(
+def test_card_uses_the_real_square_logo_with_its_white_plate():
+    _, _, frames = _render_frames()
+    card = frames[1]
+
+    assert _color_bbox(card, (40, 260, 520, 560), WHITE) == (
+        64,
+        280,
+        176,
+        392,
+    )
+    # The plate's transparent rounded corner lets the card surface through.
+    assert card.getpixel((65, 281)) != WHITE
+
+
+def test_card_composites_a_synthetic_transparent_112px_logo_without_adding_a_plate(
     tmp_path, monkeypatch
 ):
     _use_transparent_logo(monkeypatch, tmp_path)

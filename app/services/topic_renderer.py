@@ -907,7 +907,9 @@ def topic_composition_from_stored(
             ComposedTopicSlide(
                 slide_index=cover_row.slide_index,
                 slide_type="cover",
-                label=cover_row.label or TOPIC_COVER_LABEL,
+                # The cover label is a render-time constant: old stored plans
+                # keep their persisted labels but render the current brand.
+                label=TOPIC_COVER_LABEL,
                 headline=cover_row.headline or draft.title,
                 body=None,
                 alt_text=cover_row.alt_text or "",
