@@ -205,6 +205,44 @@ def test_overlong_section_continues_with_chapter_short_and_same_pair_index():
         assert slide.pair_index == (position + 1) // 2
 
 
+def test_continuations_share_the_section_kicker_and_keep_chapter_short_for_alt_text():
+    first_body = _paragraph(
+        "Der Rat hat den Haushalt einstimmig beschlossen und die Mittel "
+        "für alle Ortsteile freigegeben.",
+        1800,
+    )
+    draft = _draft(
+        sections=[
+            {"h2": H2_ONE, "paragraphs": [first_body]},
+            {
+                "h2": H2_TWO,
+                "paragraphs": [
+                    _paragraph(
+                        "Der Radweg an der Hauptstraße wird im Sommer gebaut "
+                        "und verbindet die Ortsteile besser.",
+                        300,
+                    )
+                ],
+            },
+        ]
+    )
+
+    composition = compose_topic_slides(draft)
+
+    section = _section_slides(composition, 0)
+    assert len(section) > 1
+    kicker = derive_topic_kicker(H2_ONE)
+    chapter_short = derive_chapter_short(H2_ONE)
+    assert all(slide.kicker == kicker for slide in section)
+
+    heading, *continuations = section
+    assert heading.label == kicker
+    for continuation in continuations:
+        assert continuation.label == chapter_short
+        assert chapter_short in continuation.alt_text
+        assert continuation.kicker == heading.kicker
+
+
 def test_paragraph_that_fits_a_full_page_moves_whole_to_the_next_slide():
     intro = _paragraph(
         "Der Rat hat den Haushalt einstimmig beschlossen.", 80

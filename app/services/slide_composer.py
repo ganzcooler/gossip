@@ -400,6 +400,7 @@ class ComposedTopicSlide:
     pair_index: int | None = None
     content_position: int | None = None
     section_index: int | None = None
+    kicker: str | None = None
     chapter_short: str | None = None
     heading_size: int | None = None
     heading_zone: int | None = None
@@ -853,6 +854,7 @@ def compose_topic_slides(draft: TopicDraft) -> TopicComposition:
                 pair_index=pair_index,
                 content_position=content_position,
                 section_index=section_index,
+                kicker=kicker,
                 chapter_short=chapter_short,
                 heading_size=heading_fit.size if part_index == 0 else None,
                 heading_zone=heading_zone if part_index == 0 else None,
