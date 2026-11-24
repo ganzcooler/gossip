@@ -15,7 +15,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 from app.core.post_models import TopicDraft
 from app.services.render_common import (
@@ -26,6 +26,19 @@ from app.services.render_common import (
     OUTLINE,
     RenderError,
     SURFACE_BASE,
+    TOPIC_BODY_BOTTOM,
+    TOPIC_CONTENT_TOP,
+    TOPIC_COVER_BADGE_TOP,
+    TOPIC_COVER_LOGO_TOP,
+    TOPIC_COVER_SAFE_BOTTOM,
+    TOPIC_COVER_SAFE_TOP,
+    TOPIC_COVER_TITLE_BOTTOM,
+    TOPIC_FOLLOW_BODY_TOP,
+    TOPIC_FOOTER_LOGO_TOP,
+    TOPIC_H2_BODY_GAP,
+    TOPIC_H2_TOP,
+    TOPIC_HEADING_KICKER_TOP,
+    TOPIC_HEADING_RULE_TOP,
     apply_cover_scrim,
     draw_kicker_block,
     draw_logo,
@@ -40,8 +53,6 @@ from app.services.render_common import (
     write_caption_file,
 )
 from app.services.slide_composer import (
-    TOPIC_BODY_BOTTOM,
-    TOPIC_CONTINUATION_TOP,
     TOPIC_COVER_INSET_WIDTH,
     TOPIC_COVER_INSET_X,
     TOPIC_COVER_LABEL,
@@ -54,7 +65,6 @@ from app.services.slide_composer import (
     TOPIC_H2_LINE_HEIGHT,
     TOPIC_H2_MAX_LINES,
     TOPIC_H2_SIZES,
-    TOPIC_H2_TOP,
     TOPIC_H2_ZONE,
     TOPIC_MAX_CONTENT_SLIDES,
     TOPIC_MIN_CONTENT_SLIDES,
@@ -77,30 +87,34 @@ CONTENT_TEXT_X_LEFT = 60
 CONTENT_TEXT_X_RIGHT = 420
 CONTENT_TEXT_WIDTH = 600
 EDGE_WIDTH = 10
-CONTENT_TOP = 74
+CONTENT_TOP = TOPIC_CONTENT_TOP
 HEADING_NUMBER_SIZE = 96
-HEADING_NUMBER_Y = 74
-HEADING_KICKER_Y = 194
-HEADING_RULE_Y = 236
+HEADING_NUMBER_Y = TOPIC_CONTENT_TOP
+HEADING_KICKER_Y = TOPIC_HEADING_KICKER_TOP
+HEADING_RULE_Y = TOPIC_HEADING_RULE_TOP
 HEADING_RULE_HEIGHT = 3
-H2_BODY_GAP = 24
+H2_BODY_GAP = TOPIC_H2_BODY_GAP
 BODY_LINE_HEIGHT = 1.4
 FOOTER_LOGO_WIDTH = 104
-FOOTER_LOGO_Y = 1150
+FOOTER_LOGO_Y = TOPIC_FOOTER_LOGO_TOP
 
 COVER_LOGO_WIDTH = 288
-COVER_LOGO_POSITION = (64, 120)
-COVER_BADGE_TOP = 130
-COVER_TITLE_BOTTOM = 1240
+COVER_LOGO_POSITION = (64, TOPIC_COVER_LOGO_TOP)
+COVER_BADGE_TOP = TOPIC_COVER_BADGE_TOP
+COVER_TITLE_BOTTOM = TOPIC_COVER_TITLE_BOTTOM
 COVER_ACCENT_X = 44
 COVER_ACCENT_WIDTH = 10
-COVER_SAFE_TOP = 105
-COVER_SAFE_BOTTOM = 1255
+COVER_SAFE_TOP = TOPIC_COVER_SAFE_TOP
+COVER_SAFE_BOTTOM = TOPIC_COVER_SAFE_BOTTOM
 COVER_TITLE_MAX_LINES_HARD = 4
 COVER_EMERGENCY_LINES = 5
 
 _CONTENT_SLIDE_TYPES = ("heading", "continuation")
 _SLUG_PATTERN = re.compile(r"^[a-z0-9-]+$")
+
+_FOLLOW_HEADER_SIZE_OFFSET = 2
+_FOLLOW_HEADER_GAP = 20
+_FOLLOW_COUNTER_TRACKING_FACTOR = 0.04
 
 
 @dataclass(frozen=True)
@@ -272,6 +286,46 @@ def _follow_counter(slide: ComposedTopicSlide, content_total: int) -> str:
     return f"{slide.content_position:02d}/{content_total:02d}"
 
 
+@dataclass(frozen=True)
+class _FollowHeader:
+    """One measured follow-slide kicker/counter pair at the shared size."""
+
+    size: int
+    kicker_font: ImageFont.FreeTypeFont
+    counter_font: ImageFont.FreeTypeFont
+    counter_tracking: float
+    kicker_width: float
+    counter_width: float
+
+    @property
+    def fits_column(self) -> bool:
+        return (
+            self.kicker_width + _FOLLOW_HEADER_GAP + self.counter_width
+            <= CONTENT_TEXT_WIDTH
+        )
+
+
+def _measure_follow_header(
+    kicker: str,
+    counter: str,
+    *,
+    body_size: int,
+) -> _FollowHeader:
+    """Measure the follow-slide header at ``body_size`` plus the fixed offset."""
+    size = body_size + _FOLLOW_HEADER_SIZE_OFFSET
+    kicker_font = font("inter", size, 600)
+    counter_font = font("oswald", size, 600)
+    counter_tracking = _FOLLOW_COUNTER_TRACKING_FACTOR * size
+    return _FollowHeader(
+        size=size,
+        kicker_font=kicker_font,
+        counter_font=counter_font,
+        counter_tracking=counter_tracking,
+        kicker_width=text_advance(kicker_font, kicker),
+        counter_width=text_advance(counter_font, counter, counter_tracking),
+    )
+
+
 def _visible_kickers(
     content_slides: Sequence[ComposedTopicSlide],
     *,
@@ -284,10 +338,6 @@ def _visible_kickers(
     advance of kicker, gap and follow counter fits the 600px column on every
     slide of the section. Otherwise the whole section shows the neutral THEMA.
     """
-    size = body_size + 2
-    kicker_font = font("inter", size, 600)
-    counter_font = font("oswald", size, 600)
-    counter_tracking = 0.04 * size
     by_section: dict[int, list[ComposedTopicSlide]] = {}
     for slide in content_slides:
         section_index = slide.section_index
@@ -306,16 +356,12 @@ def _visible_kickers(
         candidate = label.strip().upper()
         fits = bool(candidate) and len(candidate.split()) == 1
         if fits:
-            kicker_width = text_advance(kicker_font, candidate)
             fits = all(
-                kicker_width
-                + 20
-                + text_advance(
-                    counter_font,
+                _measure_follow_header(
+                    candidate,
                     _follow_counter(slide, content_total),
-                    counter_tracking,
-                )
-                <= CONTENT_TEXT_WIDTH
+                    body_size=body_size,
+                ).fits_column
                 for slide in slides
             )
         if not fits:
@@ -553,14 +599,9 @@ def _render_continuation_slide(
     )
 
     counter = _follow_counter(slide, content_total)
-    size = body_size + 2
-    kicker_font = font("inter", size, 600)
-    counter_font = font("oswald", size, 600)
-    counter_tracking = 0.04 * size
-    kicker_width = text_advance(kicker_font, kicker)
-    counter_width = text_advance(counter_font, counter, counter_tracking)
+    header = _measure_follow_header(kicker, counter, body_size=body_size)
     _require(
-        kicker_width + 20 + counter_width <= CONTENT_TEXT_WIDTH,
+        header.fits_column,
         "Topic follow kicker and counter do not fit the 600px column",
     )
 
@@ -568,17 +609,17 @@ def _render_continuation_slide(
         draw,
         (text_x, CONTENT_TOP),
         kicker,
-        font=kicker_font,
+        font=header.kicker_font,
         fill=ON_SURFACE,
         anchor="la",
     )
     draw_tracked_text(
         draw,
-        (text_x + CONTENT_TEXT_WIDTH - counter_width, CONTENT_TOP),
+        (text_x + CONTENT_TEXT_WIDTH - header.counter_width, CONTENT_TOP),
         counter,
-        font=counter_font,
+        font=header.counter_font,
         fill=BRAND_ORANGE,
-        tracking=counter_tracking,
+        tracking=header.counter_tracking,
         anchor="la",
     )
     draw.rectangle(
@@ -589,17 +630,17 @@ def _render_continuation_slide(
     _verify_body(slide, body_size)
     paragraphs = _body_paragraphs(slide)
     body_height = _body_block_height(paragraphs, body_size)
-    region_height = TOPIC_BODY_BOTTOM - TOPIC_CONTINUATION_TOP
+    region_height = TOPIC_BODY_BOTTOM - TOPIC_FOLLOW_BODY_TOP
     _require(
         body_height <= region_height + 0.5,
         f"Topic body overflows the continuation region at {body_height:.1f}px",
     )
     body_top = (
-        TOPIC_CONTINUATION_TOP
+        TOPIC_FOLLOW_BODY_TOP
         + (region_height - body_height) / 2
         - round(0.03 * body_height)
     )
-    body_top = max(TOPIC_CONTINUATION_TOP, body_top)
+    body_top = max(TOPIC_FOLLOW_BODY_TOP, body_top)
     _require(
         body_top + body_height <= TOPIC_BODY_BOTTOM + 0.5,
         f"Topic body overflows the slide at {body_top + body_height:.1f}px",
@@ -819,7 +860,16 @@ def render_topic_frames(
             pair_art=pair_art,
             single_art=single_art,
         )
-        kicker = visible_kickers[slide.section_index]
+        section_index = slide.section_index
+        _require(
+            section_index is not None,
+            "Topic content slide has no section index",
+        )
+        _require(
+            section_index in visible_kickers,
+            "Topic content slide has no section kicker",
+        )
+        kicker = visible_kickers[section_index]
         if slide.slide_type == "heading":
             frame = _render_heading_slide(
                 slide,
