@@ -419,7 +419,7 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     assert all(haushalt.alt_text_json)
     haushalt_slides = await _slides(postgres_session, haushalt)
     assert haushalt_slides[0].slide_type == "cover"
-    assert haushalt_slides[0].label == "THEMA IM FOKUS"
+    assert haushalt_slides[0].label == "IM FOKUS"
     assert haushalt_slides[1].slide_type == "heading"
     assert haushalt_slides[1].pair_index == 1
     assert [slide.slide_index for slide in haushalt_slides] == list(
