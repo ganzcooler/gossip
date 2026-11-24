@@ -342,6 +342,50 @@ def test_first_paragraph_is_measured_against_the_heading_capacity():
     assert "\n\n" not in continuation.body
 
 
+def test_body_bottom_1140_keeps_a_seventeen_line_continuation_on_one_slide():
+    intro = _paragraph(
+        "Der Rat hat den Haushalt einstimmig beschlossen.", 80
+    )
+    long_continuation = _paragraph(
+        "Der Rat hat den Haushalt einstimmig beschlossen und die Mittel "
+        "für alle Ortsteile freigegeben.",
+        500,
+    )
+    draft = _draft(
+        sections=[
+            {"h2": H2_ONE, "paragraphs": [intro, long_continuation]},
+            {
+                "h2": H2_TWO,
+                "paragraphs": [
+                    _paragraph(
+                        "Der Radweg an der Hauptstraße wird im Sommer gebaut "
+                        "und verbindet die Ortsteile besser.",
+                        720,
+                    )
+                ],
+            },
+        ]
+    )
+
+    composition = compose_topic_slides(draft)
+
+    assert TOPIC_BODY_BOTTOM == 1140
+    assert composition.body_size == 42
+    section = _section_slides(composition, 0)
+    assert len(section) == 2
+    heading, continuation = section
+    assert heading.slide_type == "heading"
+    assert continuation.slide_type == "continuation"
+    assert len(continuation.body_lines) == 17
+    continuation_capacity = TOPIC_BODY_BOTTOM - TOPIC_CONTINUATION_TOP
+    assert _rendered_body_height(continuation) <= continuation_capacity + 1e-9
+    # The same paragraph had to be split at the previous 1100px body bottom.
+    assert _rendered_body_height(continuation) > 1100 - TOPIC_CONTINUATION_TOP
+    assert normalize_whitespace(
+        heading.body + " " + continuation.body
+    ) == normalize_whitespace(intro + " " + long_continuation)
+
+
 @pytest.mark.parametrize("sentence_count", [3, 4, 5])
 def test_overlong_paragraph_splits_at_sentences_with_substantial_continuation(
     sentence_count,
