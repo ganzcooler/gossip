@@ -65,8 +65,9 @@ has been removed; legacy articles remain readable through the API.
    body size; only when no size can satisfy it does it fall back to a balanced
    word boundary, and in that fallback the last continuation is never a single
    complete sentence. Continuation slides carry the section kicker and the page
-   counter at one post-wide body size, and the article text is never reworded,
-   shortened or hyphenated. A stateless Themen
+   counter at `body_size + 2`, while the body text keeps one post-wide body
+   size. The article text is never reworded, shortened or hyphenated. A
+   stateless Themen
    visual-prompt call writes a cover and `ceil(content_slides / 2)` pair prompts
    from the Themenentwurf only.
    These prompts use the same photorealistic editorial/reportage style and
@@ -168,6 +169,11 @@ palette of its own.
 Both cover families anchor the white title at the lower safe area by the bottom
 of its ink box: y=1720 in the 1080×1920 Summary story and y=1240 in the
 1080×1350 Themenbeitrag. The colored kicker sits directly above it, left-aligned.
+The Summary card spans y=420–1720; its logo and Organ badge start at 240/260,
+and the card number, kicker, rule, H2, body bottom and page label sit at
+460/606/651/678/1640/1670. The Themenbeitrag cover keeps logo, badge, kicker and
+title inside its 1:1 safe band y=105–1255 (logo 120, badge 130); every topic
+content slide ends its body at y=1140 and starts the footer logo at y=1150.
 A single charcoal scrim covers the lower roughly 60% and fades to fully
 transparent above; there is no local gray contrast box and no extra darkening at
 the top edge. Before drawing the title, the renderer validates white-on-scrim

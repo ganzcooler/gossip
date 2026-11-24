@@ -41,12 +41,12 @@ One H2 with its paragraphs inside a Themenbeitrag. A Themenabschnitt starts a ne
 _Avoid_: Section, Kapitel
 
 **Kicker**:
-The one-word uppercase label of a Themenabschnitt, shown on its H2 slide and on every Folgeslide of that section.
+The one-word uppercase label of a Themenabschnitt, shown on its H2 slide and on every Folgeslide of that section; a Summary-Punkt also carries its Kicker on the Summary-Card.
 _Avoid_: chapter_short, section label
 
 **Folgeslide**:
 A content slide of a Themenabschnitt without its own H2. It continues the section body and shows the section's Kicker plus the page counter.
-_Avoid_: Continuation, continuation slide
+_Avoid_: Fortsetzung, Folgeseite
 
 **Artikelkopf**:
 The H1 of a Themenbeitrag; it is also the cover title.
