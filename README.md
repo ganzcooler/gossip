@@ -73,9 +73,10 @@ has been removed; legacy articles remain readable through the API.
    counter at `body_size + 2`, while the body text keeps one post-wide body
    size. A long compound kicker is shortened at common German compound heads;
    if no deterministic candidate fits, a dedicated stateless Kicker-Writer
-   supplies a shorter one-word label. There is no generic visible fallback
-   label. The article text is never reworded, shortened or hyphenated. A
-   stateless Themen
+   supplies a shorter one-word label. A generic THEMA label is never shown;
+   only after two failed Kicker-Writer attempts does the section fall back to
+   the neutral `AKTUELL` guard. The article text is never reworded, shortened
+   or hyphenated. A stateless Themen
    visual-prompt call writes a cover and `ceil(content_slides / 2)` pair prompts
    from the Themenentwurf only.
    These prompts use the same photorealistic editorial/reportage style and
@@ -367,7 +368,8 @@ first slide gets the large orange number, one-word kicker, 3 px rule and fitted
 H2; continuation slides show the same section kicker, the zero-padded `n/N`
 counter and a 1 px hairline, with kicker and counter at `body_size + 2`. The
 composer shortens long compounds; if no deterministic kicker fits, the
-Kicker-Writer generates one, so a generic fallback label never appears. Every
+Kicker-Writer generates one. THEMA never appears; after two failed Kicker-Writer
+attempts the neutral `AKTUELL` guard keeps the layout intact. Every
 content slide carries the square logo with its own white
 plate directly on the image at the bottom-right of the text block, right-aligned
 to the 600 px text column. The caption file is UTF-8, starts with
