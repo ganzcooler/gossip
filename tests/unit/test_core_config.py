@@ -87,7 +87,7 @@ class TestConfig:
         importlib.reload(config)
 
         assert config.OPENROUTER_TEXT_MODEL == "deepseek/deepseek-v4.1-flash-1017"
-        assert config.OPENROUTER_IMAGE_MODEL == "google/gemini-3.1-flash-image"
+        assert config.OPENROUTER_IMAGE_MODEL == "bytedance-seed/seedream-5-0-flash"
         assert config.OPENROUTER_REASONING_EFFORT == "max"
         assert config.OPENROUTER_BASE_URL == "https://openrouter.ai/api/v1"
 

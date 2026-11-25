@@ -46,6 +46,11 @@ has been removed; legacy articles remain readable through the API.
    split-screens and vignettes. Image generation requests a 9:16 image
    through the LLM port, center-fits it to exactly 1080×1920, and substitutes
    the deterministic blue brand fallback if the provider or payload fails. The
+   final normalized cover is also checked for near-white generation artifacts
+   (outer borders, flat blocks or bands, and split-screen seams). One retry uses
+   a stronger full-bleed/no-artifact prompt suffix; a persistent artifact is
+   rejected in favour of the brand fallback and recorded with asset status
+   `fallback` and an explanatory error. The
    renderer writes the cover and two to six cards as
    `summary-<date>-story-<frame>.png` plus exactly one
    `caption-summary-summary.txt` into the protocol folder. Only after the whole
@@ -76,7 +81,12 @@ has been removed; legacy articles remain readable through the API.
    These prompts use the same photorealistic editorial/reportage style and
    deterministic no-frame suffix. Image generation requests 4:5 artwork,
    normalizes the cover to 1080×1350, and center-crops each pair to 720×1350 or
-   a final unpaired strip to 360×1350. The renderer slices pairs into the
+   a final unpaired strip to 360×1350. The artifact check runs on the exact
+   final asset (normalized cover, cropped pair or cropped single strip), so a
+   defect outside the visible crop is ignored. A detected border, flat white
+   block or band, or split-screen seam triggers one stronger full-bleed retry;
+   a persistent artifact becomes the orange brand fallback with asset status
+   `fallback` and an explanatory error. The renderer slices pairs into the
    zigzag layout and writes `topic-<date>-<slide>.png` plus exactly one
    `caption-topic-<slug>.txt` inside the topic's own `topic-<slug>/` subfolder.
    Themenbeitrag image failures produce orange brand fallbacks and the Beitrag
@@ -243,7 +253,7 @@ Configuration is read from `.env` (see `.env.example`):
 | `DATABASE_URL` | Optional full SQLAlchemy URL; overrides the `DB_*` values |
 | `OPENROUTER_API_KEY` | OpenRouter API key |
 | `OPENROUTER_TEXT_MODEL` | Text model (default: `deepseek/deepseek-v4.1-flash-1017`) |
-| `OPENROUTER_IMAGE_MODEL` | Image model (default: `google/gemini-3.1-flash-image`) |
+| `OPENROUTER_IMAGE_MODEL` | Image model (default: `bytedance-seed/seedream-5-0-flash`) |
 | `OPENROUTER_REASONING_EFFORT` | Reasoning effort for text calls (default: `max`) |
 | `SESSIONNET_BASE_URL` | SessionNet base URL |
 | `TRAEFIK_HOST` | Public hostname used by the deployment |
@@ -440,7 +450,7 @@ ordered `slides` and `assets`:
       "path": "output/240115_gemeinderat/topic-haushalt/topic-2024-01-15-01.png",
       "status": "ready",
       "error": null,
-      "model": "google/gemini-3.1-flash-image"
+      "model": "bytedance-seed/seedream-5-0-flash"
     }
   ]
 }
@@ -448,7 +458,9 @@ ordered `slides` and `assets`:
 
 `post_type` is `summary` or `topic`; post status is `draft`, `ready`, or
 `failed`; slide type is `cover`, `heading`, or `continuation`; asset status is
-`pending`, `ready`, `fallback`, or `failed`. Slides are ordered by
+`pending`, `ready`, `fallback`, or `failed`. Persistent image artifacts keep the
+post `ready` but store the asset as `fallback` with an error that names the
+rejected near-white structure. Slides are ordered by
 `slide_index`, assets by `id`. Both `/api/stats` and `/api/pipeline/status`
 always include all three post statuses:
 
