@@ -50,21 +50,27 @@ async def write_topic_visual_prompts(
     pair_count: int,
     llm: LLMClient,
     *,
+    has_single: bool = False,
     role: str = TOPIC_VISUAL_PROMPTS_ROLE,
 ) -> VisualPrompts:
-    """Generate the topic cover and pair artwork prompts from the draft only.
+    """Generate the topic cover, pair and optional single prompts.
 
-    ``pair_count`` is ``ceil(content_slides / 2)``. The returned prompt set must
-    contain exactly that many artwork prompts; a provider that returns a
-    different count is rejected at the step boundary instead of silently
-    stretching the artwork grid.
+    ``pair_count`` is ``content_slides // 2``. The returned prompt set must
+    contain exactly that many artwork prompts and, for an odd content slide
+    count, a dedicated ``single_prompt``. A provider that returns a different
+    shape is rejected at the step boundary.
     """
     if pair_count < 1:
         raise ValueError("pair_count must be at least 1")
 
     feedback: str | None = None
     for attempt in (1, 2):
-        prompt = build_topic_visual_prompt(draft, pair_count, feedback=feedback)
+        prompt = build_topic_visual_prompt(
+            draft,
+            pair_count,
+            has_single=has_single,
+            feedback=feedback,
+        )
         try:
             response = await llm.generate_json(
                 role=role, prompt=prompt, schema=VisualPrompts
@@ -78,13 +84,19 @@ async def write_topic_visual_prompts(
         except (LLMError, ValidationError, TypeError, ValueError) as exc:
             error = VisualPromptError(f"Visual prompt writer failed: {exc}")
         else:
-            if len(result.artwork_prompts) == pair_count:
+            if len(result.artwork_prompts) != pair_count:
+                error = VisualPromptError(
+                    "Visual prompt writer returned "
+                    f"{len(result.artwork_prompts)} artwork prompts, expected "
+                    f"{pair_count}"
+                )
+            elif has_single and not result.single_prompt:
+                error = VisualPromptError(
+                    "Visual prompt writer did not return a single_prompt "
+                    "for the unpaired last slide"
+                )
+            else:
                 return result
-            error = VisualPromptError(
-                "Visual prompt writer returned "
-                f"{len(result.artwork_prompts)} artwork prompts, expected "
-                f"{pair_count}"
-            )
 
         if attempt == 1:
             feedback = str(error)

@@ -267,11 +267,13 @@ class VisualPrompts(PipelineModel):
     """The Visual-Prompt-Writer's cover plus optional artwork prompts.
 
     The Summary-Beitrag uses only the cover prompt; its cards reuse the cover
-    art. Themenbeiträge use one artwork prompt per pair.
+    art. Themenbeiträge use one artwork prompt per pair plus an optional
+    dedicated prompt for an unpaired last strip.
     """
 
     cover_prompt: str
     artwork_prompts: list[str] = Field(default_factory=list)
+    single_prompt: str | None = None
 
     @field_validator("cover_prompt")
     @classmethod
@@ -288,3 +290,13 @@ class VisualPrompts(PipelineModel):
         if any(not prompt for prompt in cleaned):
             raise ValueError("artwork_prompts must contain non-empty prompts")
         return cleaned
+
+    @field_validator("single_prompt")
+    @classmethod
+    def _require_single_prompt(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("single_prompt must not be empty when provided")
+        return value

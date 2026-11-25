@@ -203,15 +203,19 @@ def _script_topic_visuals(
         composition = compose_topic_slides(draft)
         content_count = len(composition.slides) - 1
         pair_count = content_count // 2
-        artwork_count = pair_count + (1 if content_count % 2 else 0)
         fake.script_json(
             "topic_visual_prompts",
             VisualPrompts(
                 cover_prompt=f"Cover für {draft.title}",
                 artwork_prompts=[
                     f"Paar {index} für {draft.title}"
-                    for index in range(1, artwork_count + 1)
+                    for index in range(1, pair_count + 1)
                 ],
+                single_prompt=(
+                    f"Single strip für {draft.title}"
+                    if content_count % 2
+                    else None
+                ),
             ),
         )
         fake.script_image("topic_cover", _cover_png_bytes())

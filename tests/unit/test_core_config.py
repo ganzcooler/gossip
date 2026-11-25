@@ -112,7 +112,8 @@ class TestConfig:
             "IMAGE_ARTIFACT_BLANK_BAND_OR_STRIP_THRESHOLD",
             "IMAGE_ARTIFACT_FLAT_BLANK_BLOCK_THRESHOLD",
             "IMAGE_ARTIFACT_MULTI_PANEL_OR_SEAM_THRESHOLD",
-            "IMAGE_ARTIFACT_UNINTENDED_TEXT_OR_WATERMARK_THRESHOLD",
+            "IMAGE_ARTIFACT_WATERMARK_OR_UI_ELEMENT_THRESHOLD",
+            "IMAGE_ARTIFACT_ROTATION_THRESHOLD",
             "IMAGE_ARTIFACT_GENERATION_GLITCH_THRESHOLD",
         ):
             monkeypatch.delenv(name, raising=False)
@@ -126,8 +127,9 @@ class TestConfig:
             "blank_band_or_strip": 0.5,
             "flat_blank_block": 0.5,
             "multi_panel_or_seam": 0.5,
-            "unintended_text_or_watermark": 0.4,
-            "generation_glitch": 0.6,
+            "watermark_or_ui_element": 0.8,
+            "rotation": 0.6,
+            "generation_glitch": 0.8,
         }
 
     def test_image_artifact_thresholds_can_be_overridden(self, monkeypatch):

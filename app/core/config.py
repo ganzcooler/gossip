@@ -74,11 +74,14 @@ IMAGE_ARTIFACT_THRESHOLDS = {
     "multi_panel_or_seam": _artifact_threshold(
         "IMAGE_ARTIFACT_MULTI_PANEL_OR_SEAM_THRESHOLD", "0.5"
     ),
-    "unintended_text_or_watermark": _artifact_threshold(
-        "IMAGE_ARTIFACT_UNINTENDED_TEXT_OR_WATERMARK_THRESHOLD", "0.4"
+    "watermark_or_ui_element": _artifact_threshold(
+        "IMAGE_ARTIFACT_WATERMARK_OR_UI_ELEMENT_THRESHOLD", "0.8"
+    ),
+    "rotation": _artifact_threshold(
+        "IMAGE_ARTIFACT_ROTATION_THRESHOLD", "0.6"
     ),
     "generation_glitch": _artifact_threshold(
-        "IMAGE_ARTIFACT_GENERATION_GLITCH_THRESHOLD", "0.6"
+        "IMAGE_ARTIFACT_GENERATION_GLITCH_THRESHOLD", "0.8"
     ),
 }
 OPENROUTER_REASONING_EFFORT = os.getenv("OPENROUTER_REASONING_EFFORT", "max")

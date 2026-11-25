@@ -124,6 +124,7 @@ def _write_smoke_report(
         "run_dir": str(run_dir),
         "protocol_id": protocol_id,
         "result": result,
+        "result_posts": (result or {}).get("posts", []),
         "posts": [
             {
                 "id": post.get("id"),
@@ -543,8 +544,12 @@ def test_real_openrouter_pipeline_end_to_end():
         assert result["protocol_id"] == protocol_id
         assert result["plan_status"] == "ready", result
         assert result["processed"] is True, result
-        assert result["post_counts"]["failed"] == 0, result
-        assert result["post_counts"]["draft"] == 0, result
+        assert result["post_counts"]["failed"] == 0, json.dumps(
+            result, indent=2, ensure_ascii=False
+        )
+        assert result["post_counts"]["draft"] == 0, json.dumps(
+            result, indent=2, ensure_ascii=False
+        )
 
         posts_response = client.get(
             f"/api/protocols/{protocol_id}/posts"

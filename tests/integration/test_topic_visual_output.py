@@ -732,7 +732,8 @@ async def test_odd_content_count_records_a_single_last_asset_and_strip(
         "topic_visual_prompts",
         VisualPrompts(
             cover_prompt="Cover haushalt",
-            artwork_prompts=["Pair 1", "Pair 2", "Single"],
+            artwork_prompts=["Pair 1", "Pair 2"],
+            single_prompt="Single",
         ),
     )
     fake.script_image("topic_cover", _png_bytes())
@@ -761,12 +762,14 @@ async def test_odd_content_count_records_a_single_last_asset_and_strip(
         "ready",
     ]
     assert all(asset.prompt.endswith(IMAGE_STYLE_SUFFIX) for asset in assets)
+    assert assets[-1].prompt.startswith("Single")
     assert assets[-1].path.endswith(
         "topic-haushalt/topic-2024-01-15-06.png"
     )
 
     visual_call = fake.calls_for("topic_visual_prompts")[0]
-    assert "genau 3 Prompts" in visual_call.prompt
+    assert "genau 2 Prompts" in visual_call.prompt
+    assert "single_prompt" in visual_call.prompt
     folder = tmp_path / "240115_gemeinderat" / "topic-haushalt"
     with Image.open(folder / "topic-2024-01-15-06.png") as last:
         assert last.getpixel((800, 675)) == (10, 200, 30)

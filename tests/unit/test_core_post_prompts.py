@@ -397,6 +397,24 @@ def test_topic_visual_prompt_contains_only_the_draft_and_pair_count():
     assert "Themenbrief" not in prompt
 
 
+def test_topic_visual_prompt_requests_a_dedicated_single_prompt():
+    prompt = build_topic_visual_prompt(TOPIC_DRAFT, 2, has_single=True)
+
+    assert "single_prompt" in prompt
+    assert "mittlere 360×1350-Spalte" in prompt
+    assert "zentralen Drittel" in prompt
+    assert "linke und rechte Drittel" in prompt
+    assert "keine ruhige, leere" in prompt
+    assert "single_prompt-Werte" in prompt
+
+
+def test_topic_visual_prompt_without_single_does_not_request_one():
+    prompt = build_topic_visual_prompt(TOPIC_DRAFT, 2)
+
+    assert "single_prompt" not in prompt
+    assert "mittlere 360×1350-Spalte" not in prompt
+
+
 def test_topic_visual_prompt_is_deterministic_and_requires_pairs():
     first = build_topic_visual_prompt(TOPIC_DRAFT, 2)
     second = build_topic_visual_prompt(TOPIC_DRAFT, 2)

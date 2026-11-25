@@ -27,6 +27,16 @@ def test_smoke_report_records_assets_prompts_and_rejected_files(tmp_path):
         "plan_status": "ready",
         "processed": True,
         "post_counts": {"draft": 0, "ready": 1, "failed": 0},
+        "posts": [
+            {
+                "post_id": 1,
+                "post_type": "summary",
+                "slug": "summary",
+                "status": "ready",
+                "failed_step": None,
+                "error": None,
+            }
+        ],
     }
     posts = [
         {
@@ -62,6 +72,7 @@ def test_smoke_report_records_assets_prompts_and_rejected_files(tmp_path):
 
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["result"] == result
+    assert report["result_posts"] == result["posts"]
     assert report["posts"][0]["slug"] == "summary"
     assert report["assets"][0]["prompt"] == "English image prompt"
     assert report["asset_status_counts"] == {

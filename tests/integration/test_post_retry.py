@@ -265,7 +265,6 @@ def _script_full_success(fake: FakeLLMClient, plan: EditorialPlan) -> None:
         composition = compose_topic_slides(draft)
         content_count = len(composition.slides) - 1
         pair_count = content_count // 2
-        artwork_count = pair_count + (1 if content_count % 2 else 0)
         fake.script_json("topic_writer", draft)
         fake.script_json("topic_fact_check", FactCheckResult(issues=[]))
         fake.script_json(
@@ -277,8 +276,13 @@ def _script_full_success(fake: FakeLLMClient, plan: EditorialPlan) -> None:
                 cover_prompt=f"Cover für {brief.slug}",
                 artwork_prompts=[
                     f"Paar {number} für {brief.slug}"
-                    for number in range(1, artwork_count + 1)
+                    for number in range(1, pair_count + 1)
                 ],
+                single_prompt=(
+                    f"Single strip für {brief.slug}"
+                    if content_count % 2
+                    else None
+                ),
             ),
         )
         fake.script_image("topic_cover", _cover_png_bytes())
@@ -349,7 +353,6 @@ def _script_topic_retry(
     composition = compose_topic_slides(draft)
     content_count = len(composition.slides) - 1
     pair_count = content_count // 2
-    artwork_count = pair_count + (1 if content_count % 2 else 0)
     if stage == "writer":
         fake.script_json("topic_writer", draft)
     if stage in {"writer", "slide_composer", "fact_check"}:
@@ -377,8 +380,11 @@ def _script_topic_retry(
                 cover_prompt="Neues Cover",
                 artwork_prompts=[
                     f"Neues Paar {index}"
-                    for index in range(1, artwork_count + 1)
+                    for index in range(1, pair_count + 1)
                 ],
+                single_prompt=(
+                    "Neuer Single-Strip" if content_count % 2 else None
+                ),
             ),
         )
     fake.script_image("topic_cover", _cover_png_bytes())

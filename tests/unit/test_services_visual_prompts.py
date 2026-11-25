@@ -131,6 +131,80 @@ async def test_topic_visual_prompt_writer_gets_only_its_draft_and_pair_count():
     assert "Themenbrief" not in call.prompt
 
 
+async def test_topic_visual_prompt_writer_requests_a_dedicated_single_prompt():
+    fake = FakeLLMClient(
+        json_responses={
+            TOPIC_VISUAL_PROMPTS_ROLE: [
+                VisualPrompts(
+                    cover_prompt="Cover",
+                    artwork_prompts=["Paar eins", "Paar zwei"],
+                    single_prompt="Central 360 strip scene",
+                )
+            ]
+        }
+    )
+
+    result = await write_topic_visual_prompts(
+        _topic_draft(), 2, fake, has_single=True
+    )
+
+    assert result.single_prompt == "Central 360 strip scene"
+    assert "single_prompt" in fake.calls[0].prompt
+    assert "mittlere 360×1350-Spalte" in fake.calls[0].prompt
+    assert "zentralen Drittel" in fake.calls[0].prompt
+
+
+async def test_topic_visual_prompt_writer_retries_a_missing_single_prompt():
+    fake = FakeLLMClient(
+        json_responses={
+            TOPIC_VISUAL_PROMPTS_ROLE: [
+                VisualPrompts(
+                    cover_prompt="Cover",
+                    artwork_prompts=["Paar eins", "Paar zwei"],
+                ),
+                VisualPrompts(
+                    cover_prompt="Neues Cover",
+                    artwork_prompts=["Paar eins", "Paar zwei"],
+                    single_prompt="Central 360 strip scene",
+                ),
+            ]
+        }
+    )
+
+    result = await write_topic_visual_prompts(
+        _topic_draft(), 2, fake, has_single=True
+    )
+
+    assert result.single_prompt == "Central 360 strip scene"
+    assert len(fake.calls) == 2
+    assert "single_prompt" in fake.calls[1].prompt
+    assert "did not return a single_prompt" in fake.calls[1].prompt
+
+
+async def test_topic_visual_prompt_writer_rejects_a_missing_single_prompt_after_retry():
+    fake = FakeLLMClient(
+        json_responses={
+            TOPIC_VISUAL_PROMPTS_ROLE: [
+                VisualPrompts(
+                    cover_prompt="Cover",
+                    artwork_prompts=["Paar eins", "Paar zwei"],
+                ),
+                VisualPrompts(
+                    cover_prompt="Cover",
+                    artwork_prompts=["Paar eins", "Paar zwei"],
+                ),
+            ]
+        }
+    )
+
+    with pytest.raises(VisualPromptError, match="single_prompt"):
+        await write_topic_visual_prompts(
+            _topic_draft(), 2, fake, has_single=True
+        )
+
+    assert len(fake.calls) == 2
+
+
 async def test_topic_visual_prompt_writer_retries_the_wrong_artwork_count():
     fake = FakeLLMClient(
         json_responses={

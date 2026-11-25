@@ -438,19 +438,25 @@ def build_topic_visual_prompt(
     draft: TopicDraft,
     pair_count: int,
     *,
+    has_single: bool = False,
     feedback: str | None = None,
 ) -> str:
     """Build the Themen visual-prompt prompt from the topic draft only.
 
     The writer gets the immutable article draft and the number of artwork
-    prompts needed for the pair grid. It never sees the protocol, excerpts,
-    the Summary draft, other topic drafts, or any conversation history.
+    prompts needed for the pair grid. If the content slide count is odd, it
+    also writes exactly one prompt for the central 360x1350 single strip.
     """
     if pair_count < 1:
         raise ValueError("pair_count must be at least 1")
 
     feedback_block = ""
     if feedback:
+        single_feedback = (
+            " und ein nicht-leerer single_prompt"
+            if has_single
+            else ""
+        )
         feedback_block = f"""
 ## Korrekturhinweis
 
@@ -458,8 +464,29 @@ Dein vorheriger Versuch wurde abgelehnt:
 {feedback}
 
 Liefere vollständig neue, gültige Bildprompts. artwork_prompts muss genau \
-{pair_count} Einträge enthalten.
+{pair_count} Einträge enthalten{single_feedback}.
 """
+
+    single_task = ""
+    single_guardrail = ""
+    prompt_values = "cover_prompt- und artwork_prompts-Werte"
+    if has_single:
+        prompt_values = (
+            "cover_prompt-, artwork_prompts- und single_prompt-Werte"
+        )
+        single_task = (
+            "\n- single_prompt: ein ausschließlich englischer Prompt für die "
+            "letzte, ungerade Folie. Das Bild ist 4:5, aber es wird nur die "
+            "mittlere 360×1350-Spalte verwendet. Alle wichtigen Motive müssen "
+            "in diesem zentralen Drittel liegen; das linke und rechte Drittel "
+            "werden abgeschnitten und dürfen keine kritischen Inhalte enthalten."
+        )
+        single_guardrail = (
+            "\n- Der single_prompt muss eine durchgehende Szene beschreiben, "
+            "deren Mitte vollständig und detailreich ist; keine ruhige, leere "
+            "oder absichtlich freigehaltene Mitte und kein sichtbares "
+            "Mittelpanel."
+        )
 
     return f"""Du bist der Visual-Prompt-Writer von Gossip Rosdorf. Du schreibst \
 Bildprompts für das Cover und die Bildpaare eines Themenbeitrags.
@@ -476,9 +503,8 @@ Bildprompts für das Cover und die Bildpaare eines Themenbeitrags.
 4:5-Feed-Format. Das Cover trägt später Titel, Logo, Organ-Badge und Kicker.
 - artwork_prompts: genau {pair_count} Prompts, einer pro 720×1350-Bildpaar. \
 Die Paare werden später in zwei 360×1350-Hälften geteilt; die linke Hälfte \
-erscheint auf einer Folie, die rechte auf der nächsten.
-- Alle cover_prompt- und artwork_prompts-Werte müssen ausschließlich auf \
-Englisch sein.
+erscheint auf einer Folie, die rechte auf der nächsten.{single_task}
+- Alle {prompt_values} müssen ausschließlich auf Englisch sein.
 
 ## Design-Guardrails
 
@@ -496,7 +522,7 @@ durchgehend echte Szenenstruktur (Boden, Straße, Landschaft) für den späteren
 Titel; keine kritischen Inhalte am Rand.
 - Die Bildpaare werden in der Mitte geteilt. Wichtige Inhalte liegen \
 mindestens 40 px vom Paar-Seam entfernt; keine harte Kante und kein Motiv, \
-das über die Naht hinweg zerschnitten wirkt.
+das über die Naht hinweg zerschnitten wirkt.{single_guardrail}
 - Kein Text, keine Buchstaben, keine Zahlen, keine Logos, keine Wappen und \
 keine Parteisymbole im Bild.
 - Keine erkennbaren Minderjährigen und keine fotorealistischen, namentlich \

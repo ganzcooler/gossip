@@ -50,7 +50,8 @@ has been removed; legacy articles remain readable through the API.
    the deterministic blue brand fallback if the provider or payload fails. The
    final normalized cover is inspected by `typesafe/jev-1.14` through the
    OpenRouter Decisions API for unintended borders, blank bands or blocks,
-   seams, text/watermarks and obvious generation defects. Jev receives a
+   seams, added watermarks/UI overlays, rotation and obvious generation
+   defects. Ordinary text and numbers inside the scene are allowed. Jev receives a
    proportional downscale capped at 1568 px per side; the stored asset keeps
    the full publication size. A defect probability above the question-specific
    threshold triggers one retry with a stronger
@@ -93,8 +94,10 @@ has been removed; legacy articles remain readable through the API.
    a final unpaired strip to 360×1350. The decision-model artifact check runs
    on the exact final asset (normalized cover, cropped pair or cropped single
    strip), so a defect outside the visible crop is ignored. A flagged border,
-   blank band or block, seam, text/watermark or generation defect triggers one
-   stronger full-bleed retry with the rejected classes. A persistent defect or
+   blank band or block, seam, watermark/UI overlay, rotation or generation
+   defect triggers one stronger full-bleed retry with the rejected classes.
+   The unpaired single strip has its own English image prompt so the central
+   360×1350 column is composed deliberately. A persistent defect or
    an unavailable verdict becomes the orange brand fallback with asset status
    `fallback` and an explanatory error. The renderer slices pairs into the
    zigzag layout and writes `topic-<date>-<slide>.png` plus exactly one
@@ -272,8 +275,9 @@ Configuration is read from `.env` (see `.env.example`):
 | `IMAGE_ARTIFACT_BLANK_BAND_OR_STRIP_THRESHOLD` | Jev threshold for blank bands/strips (default: `0.5`) |
 | `IMAGE_ARTIFACT_FLAT_BLANK_BLOCK_THRESHOLD` | Jev threshold for flat blank blocks (default: `0.5`) |
 | `IMAGE_ARTIFACT_MULTI_PANEL_OR_SEAM_THRESHOLD` | Jev threshold for panels/seams (default: `0.5`) |
-| `IMAGE_ARTIFACT_UNINTENDED_TEXT_OR_WATERMARK_THRESHOLD` | Jev threshold for text/watermarks (default: `0.4`) |
-| `IMAGE_ARTIFACT_GENERATION_GLITCH_THRESHOLD` | Jev threshold for generation glitches (default: `0.6`) |
+| `IMAGE_ARTIFACT_WATERMARK_OR_UI_ELEMENT_THRESHOLD` | Jev threshold for added watermarks/UI overlays (default: `0.8`) |
+| `IMAGE_ARTIFACT_ROTATION_THRESHOLD` | Jev threshold for rotated/sideways images (default: `0.6`) |
+| `IMAGE_ARTIFACT_GENERATION_GLITCH_THRESHOLD` | Jev threshold for generation glitches (default: `0.8`) |
 | `OPENROUTER_REASONING_EFFORT` | Reasoning effort for text calls (default: `max`) |
 | `SESSIONNET_BASE_URL` | SessionNet base URL |
 | `TRAEFIK_HOST` | Public hostname used by the deployment |
@@ -382,8 +386,9 @@ subfolder.
 A Themenbeitrag carousel has five to eight images (cover plus four to seven
 content slides). Content slides alternate text-left/image-right and
 image-left/text-right; each 720×1350 pair artwork is split into the left and
-right 360×1350 strips, and an unpaired final slide uses a standalone strip. The
-first slide gets the large orange number, one-word kicker, 3 px rule and fitted
+right 360×1350 strips, and an unpaired final slide uses a standalone strip with
+its own dedicated image prompt. The first slide gets the large orange number,
+one-word kicker, 3 px rule and fitted
 H2; continuation slides show the same section kicker, the zero-padded `n/N`
 counter and a 1 px hairline, with kicker and counter at `body_size + 2`. The
 composer shortens long compounds; if no deterministic kicker fits, the

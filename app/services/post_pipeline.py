@@ -1529,7 +1529,6 @@ class PostPipeline:
         content_slides = len(composition.slides) - 1
         pair_count = content_slides // 2
         has_single = content_slides % 2 == 1
-        artwork_count = pair_count + (1 if has_single else 0)
 
         role_names = ["cover"]
         role_names.extend(f"pair_{index}" for index in range(1, pair_count + 1))
@@ -1558,7 +1557,10 @@ class PostPipeline:
         else:
             try:
                 visual_prompts = await write_topic_visual_prompts(
-                    draft, artwork_count, self.llm_client
+                    draft,
+                    pair_count,
+                    self.llm_client,
+                    has_single=has_single,
                 )
             except LLMAuthenticationError:
                 raise
@@ -1572,7 +1574,18 @@ class PostPipeline:
                     visual_prompts.artwork_prompts[index - 1]
                 )
             if has_single:
-                prompts["single_last"] = visual_prompts.artwork_prompts[-1]
+                if not visual_prompts.single_prompt:
+                    await self._fail_post(
+                        db,
+                        post,
+                        "visual_prompts",
+                        RuntimeError(
+                            "Visual prompt writer returned no single_prompt "
+                            "for the unpaired last slide"
+                        ),
+                    )
+                    return
+                prompts["single_last"] = visual_prompts.single_prompt
 
         # Persist the exact prompts the provider will see; the generators
         # reapply the idempotent suffix as a hard guard for direct callers.

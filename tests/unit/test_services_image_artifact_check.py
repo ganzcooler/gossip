@@ -38,7 +38,8 @@ def test_question_set_covers_every_planned_defect_class():
         "blank_band_or_strip",
         "flat_blank_block",
         "multi_panel_or_seam",
-        "unintended_text_or_watermark",
+        "watermark_or_ui_element",
+        "rotation",
         "generation_glitch",
     ]
     for question in ARTIFACT_DEFECT_QUESTIONS.values():
@@ -88,7 +89,7 @@ async def test_clean_verdict_requires_every_probability_below_the_threshold():
 async def test_any_probability_above_the_threshold_is_reported():
     fake = FakeLLMClient(
         decision_responses={
-            "image_artifact_check": [{"border_or_frame": 0.9, "generation_glitch": 0.7}]
+            "image_artifact_check": [{"border_or_frame": 0.9, "generation_glitch": 0.9}]
         }
     )
 
@@ -98,10 +99,10 @@ async def test_any_probability_above_the_threshold_is_reported():
     assert verdict.error is None
     assert [(finding.question, finding.probability) for finding in verdict.findings] == [
         ("border_or_frame", 0.9),
-        ("generation_glitch", 0.7),
+        ("generation_glitch", 0.9),
     ]
     assert "border_or_frame=90%" in verdict.summary()
-    assert "generation_glitch=70%" in verdict.summary()
+    assert "generation_glitch=90%" in verdict.summary()
 
 
 async def test_thresholds_are_calibrated_per_question():
@@ -110,10 +111,12 @@ async def test_thresholds_are_calibrated_per_question():
             "image_artifact_check": [
                 {"border_or_frame": 0.4},
                 {"border_or_frame": 0.6},
-                {"generation_glitch": 0.5},
                 {"generation_glitch": 0.7},
-                {"unintended_text_or_watermark": 0.3},
-                {"unintended_text_or_watermark": 0.5},
+                {"generation_glitch": 0.9},
+                {"watermark_or_ui_element": 0.7},
+                {"watermark_or_ui_element": 0.9},
+                {"rotation": 0.5},
+                {"rotation": 0.7},
             ]
         }
     )
@@ -123,15 +126,45 @@ async def test_thresholds_are_calibrated_per_question():
     border_defect = await check_image_artifacts(fake, image)
     glitch_clean = await check_image_artifacts(fake, image)
     glitch_defect = await check_image_artifacts(fake, image)
-    text_clean = await check_image_artifacts(fake, image)
-    text_defect = await check_image_artifacts(fake, image)
+    watermark_clean = await check_image_artifacts(fake, image)
+    watermark_defect = await check_image_artifacts(fake, image)
+    rotation_clean = await check_image_artifacts(fake, image)
+    rotation_defect = await check_image_artifacts(fake, image)
 
     assert border_clean.clean is True
     assert border_defect.findings[0].question == "border_or_frame"
     assert glitch_clean.clean is True
     assert glitch_defect.findings[0].question == "generation_glitch"
-    assert text_clean.clean is True
-    assert text_defect.findings[0].question == "unintended_text_or_watermark"
+    assert watermark_clean.clean is True
+    assert watermark_defect.findings[0].question == "watermark_or_ui_element"
+    assert rotation_clean.clean is True
+    assert rotation_defect.findings[0].question == "rotation"
+
+
+def test_watermark_question_allows_text_and_numbers_in_the_scene():
+    question = ARTIFACT_DEFECT_QUESTIONS["watermark_or_ui_element"]
+    assert question.criteria is not None
+    combined = " ".join(
+        (
+            question.instructions,
+            question.criteria.true,
+            question.criteria.false,
+        )
+    ).lower()
+
+    assert "ordinary text, letters, numbers" in combined
+    assert "are allowed" in combined
+    assert "watermark" in combined
+    assert "interface overlay" in combined
+
+
+def test_rotation_question_is_upright_specific():
+    question = ARTIFACT_DEFECT_QUESTIONS["rotation"]
+    assert question.criteria is not None
+
+    assert "90, 180 or 270 degrees" in question.instructions
+    assert "sideways or upside down" in question.criteria.true
+    assert "the scene is upright" in question.criteria.false.lower()
 
 
 async def test_thresholds_are_read_from_config_per_call(monkeypatch):

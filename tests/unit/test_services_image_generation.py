@@ -379,7 +379,7 @@ async def test_rejected_attempts_are_persisted_with_prompt_and_verdict(tmp_path)
         decision_responses={
             "topic_cover_artifact_check": [
                 {"border_or_frame": 0.9},
-                {"generation_glitch": 0.7},
+                {"generation_glitch": 0.9},
             ]
         },
     )
@@ -406,7 +406,7 @@ async def test_rejected_attempts_are_persisted_with_prompt_and_verdict(tmp_path)
     assert first_meta["prompt"].startswith("Prompt\n\n")
     assert first_meta["findings"][0]["question"] == "border_or_frame"
     assert first_meta["findings"][0]["probability"] == 0.9
-    assert first_meta["thresholds"]["generation_glitch"] == 0.6
+    assert first_meta["thresholds"]["generation_glitch"] == 0.8
     second_meta = json.loads(
         (tmp_path / "cover-attempt-2-rejected.json").read_text(encoding="utf-8")
     )

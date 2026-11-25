@@ -390,9 +390,11 @@ def test_visual_prompts_accept_artwork_prompts_and_strip_them():
     prompts = VisualPrompts(
         cover_prompt="Cover",
         artwork_prompts=["  Paar 1  ", "Paar 2"],
+        single_prompt="  Central 360 strip  ",
     )
 
     assert prompts.artwork_prompts == ["Paar 1", "Paar 2"]
+    assert prompts.single_prompt == "Central 360 strip"
 
 
 @pytest.mark.parametrize("value", ["", "   "])
@@ -401,6 +403,8 @@ def test_visual_prompts_reject_empty_prompts(value):
         VisualPrompts(cover_prompt=value)
     with pytest.raises(ValidationError):
         VisualPrompts(cover_prompt="Cover", artwork_prompts=[value])
+    with pytest.raises(ValidationError):
+        VisualPrompts(cover_prompt="Cover", single_prompt=value)
 
 
 def test_visual_prompts_forbid_unknown_fields():
