@@ -45,6 +45,42 @@ OPENROUTER_TEXT_MODEL = os.getenv(
 OPENROUTER_IMAGE_MODEL = os.getenv(
     "OPENROUTER_IMAGE_MODEL", "bytedance-seed/seedream-5-0-flash"
 )
+OPENROUTER_DECISION_MODEL = os.getenv(
+    "OPENROUTER_DECISION_MODEL", "typesafe/jev-1.14"
+)
+OPENROUTER_DECISIONS_URL = os.getenv(
+    "OPENROUTER_DECISIONS_URL",
+    "https://openrouter.ai/api/alpha/decisions",
+)
+
+
+def _artifact_threshold(name: str, default: str) -> float:
+    value = float(os.getenv(name, default))
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(f"{name} must be between 0.0 and 1.0")
+    return value
+
+
+IMAGE_ARTIFACT_THRESHOLDS = {
+    "border_or_frame": _artifact_threshold(
+        "IMAGE_ARTIFACT_BORDER_OR_FRAME_THRESHOLD", "0.5"
+    ),
+    "blank_band_or_strip": _artifact_threshold(
+        "IMAGE_ARTIFACT_BLANK_BAND_OR_STRIP_THRESHOLD", "0.5"
+    ),
+    "flat_blank_block": _artifact_threshold(
+        "IMAGE_ARTIFACT_FLAT_BLANK_BLOCK_THRESHOLD", "0.5"
+    ),
+    "multi_panel_or_seam": _artifact_threshold(
+        "IMAGE_ARTIFACT_MULTI_PANEL_OR_SEAM_THRESHOLD", "0.5"
+    ),
+    "unintended_text_or_watermark": _artifact_threshold(
+        "IMAGE_ARTIFACT_UNINTENDED_TEXT_OR_WATERMARK_THRESHOLD", "0.4"
+    ),
+    "generation_glitch": _artifact_threshold(
+        "IMAGE_ARTIFACT_GENERATION_GLITCH_THRESHOLD", "0.6"
+    ),
+}
 OPENROUTER_REASONING_EFFORT = os.getenv("OPENROUTER_REASONING_EFFORT", "max")
 OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL", "https://gossip.dano1.de")
 OPENROUTER_APP_NAME = os.getenv("OPENROUTER_APP_NAME", "Gossip")

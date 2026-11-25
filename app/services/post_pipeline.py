@@ -126,10 +126,12 @@ class PostPipeline:
         llm_client: LLMClient,
         output_dir: Path | str = ARTICLES_DIR,
         generator_version: str = GENERATOR_VERSION,
+        rejected_dir: Path | str | None = None,
     ):
         self.llm_client = llm_client
         self.output_dir = Path(output_dir)
         self.generator_version = generator_version
+        self.rejected_dir = Path(rejected_dir) if rejected_dir is not None else None
 
     async def run(self, protocol: Protocol, db: AsyncSession) -> PostPipelineResult:
         plan_row = await self._load_plan_row(db, protocol.id)
@@ -1140,7 +1142,10 @@ class PostPipeline:
 
         try:
             generated = await generate_summary_cover(
-                self.llm_client, cover_prompt
+                self.llm_client,
+                cover_prompt,
+                rejected_dir=self._post_rejected_dir(post),
+                rejected_name="cover",
             )
         except LLMAuthenticationError:
             raise
@@ -1216,6 +1221,17 @@ class PostPipeline:
             getattr(self.llm_client, "image_model", None)
             or config.OPENROUTER_IMAGE_MODEL
         )
+
+    def _post_rejected_dir(self, post: Post) -> Path | None:
+        """Manual-test diagnostics only; production leaves this unset."""
+        if self.rejected_dir is None:
+            return None
+        folder = (
+            "summary"
+            if post.post_type == "summary"
+            else f"topic-{post.slug}"
+        )
+        return self.rejected_dir / folder
 
     async def _fail_post(
         self,
@@ -1570,7 +1586,10 @@ class PostPipeline:
 
         try:
             generated_cover = await generate_topic_cover(
-                self.llm_client, prompts["cover"]
+                self.llm_client,
+                prompts["cover"],
+                rejected_dir=self._post_rejected_dir(post),
+                rejected_name="cover",
             )
         except LLMAuthenticationError:
             raise
@@ -1582,7 +1601,10 @@ class PostPipeline:
         for index in range(1, pair_count + 1):
             try:
                 generated = await generate_topic_pair_art(
-                    self.llm_client, prompts[f"pair_{index}"]
+                    self.llm_client,
+                    prompts[f"pair_{index}"],
+                    rejected_dir=self._post_rejected_dir(post),
+                    rejected_name=f"pair_{index}",
                 )
             except LLMAuthenticationError:
                 raise
@@ -1597,7 +1619,10 @@ class PostPipeline:
         if has_single:
             try:
                 generated_single = await generate_topic_single_art(
-                    self.llm_client, prompts["single_last"]
+                    self.llm_client,
+                    prompts["single_last"],
+                    rejected_dir=self._post_rejected_dir(post),
+                    rejected_name="single_last",
                 )
             except LLMAuthenticationError:
                 raise

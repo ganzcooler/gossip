@@ -16,14 +16,15 @@ contains no real personal data.
 Each run writes its PNGs and captions to its own retained folder under
 ``tests/manual/output/<YYYYMMDD-HHMMSS>-<run-id>/``. Successful and failed runs
 keep their output; only the throwaway PostgreSQL schema and fixture rows are
-cleaned up. Set ``SMOKE_OUTPUT_DIR`` to use another base output root: the
-timestamped run folder is still created underneath it, so runs never overwrite
-each other. The default ``tests/manual/output/`` folder is gitignored.
+cleaned up. Every run also keeps the artwork Jev rejected under ``rejected/``
+and a ``smoke-report.json`` with post, asset, prompt and verdict metadata. The
+``tests/manual/output/`` folder is gitignored.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import uuid
@@ -81,16 +82,71 @@ MANUAL_OUTPUT_ROOT = Path(__file__).resolve().parent / "output"
 
 
 def _smoke_run_dir() -> Path:
-    """Create and return this run's retained, timestamped output folder.
-
-    ``SMOKE_OUTPUT_DIR`` is a base output root: the timestamped run folder is
-    always created underneath it.
-    """
-    root = Path(os.getenv("SMOKE_OUTPUT_DIR") or MANUAL_OUTPUT_ROOT).expanduser()
+    """Create and return this run's retained, timestamped output folder."""
     run_id = f"{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:8]}"
-    run_dir = root / run_id
+    run_dir = MANUAL_OUTPUT_ROOT / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
     return run_dir
+
+
+def _write_smoke_report(
+    run_dir: Path,
+    *,
+    protocol_id: int | None,
+    result: dict | None,
+    posts: list[dict],
+    details: dict[int, dict],
+) -> Path:
+    """Write a diagnostic report even when the run fails before all checks."""
+    rejected_dir = run_dir / "rejected"
+    rejected_files = (
+        sorted(
+            str(path.relative_to(run_dir))
+            for path in rejected_dir.rglob("*")
+            if path.is_file()
+        )
+        if rejected_dir.is_dir()
+        else []
+    )
+    assets = [
+        {
+            "post_id": post_id,
+            "role": asset.get("role"),
+            "status": asset.get("status"),
+            "error": asset.get("error"),
+            "prompt": asset.get("prompt"),
+            "path": asset.get("path"),
+        }
+        for post_id, detail in details.items()
+        for asset in detail.get("assets", [])
+    ]
+    report = {
+        "run_dir": str(run_dir),
+        "protocol_id": protocol_id,
+        "result": result,
+        "posts": [
+            {
+                "id": post.get("id"),
+                "post_type": post.get("post_type"),
+                "slug": post.get("slug"),
+                "status": post.get("status"),
+                "failed_step": post.get("failed_step"),
+                "error": post.get("error"),
+            }
+            for post in posts
+        ],
+        "assets": assets,
+        "asset_status_counts": {
+            status: sum(asset["status"] == status for asset in assets)
+            for status in ("ready", "fallback", "failed")
+        },
+        "rejected_files": rejected_files,
+    }
+    report_path = run_dir / "smoke-report.json"
+    report_path.write_text(
+        json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    return report_path
 
 
 def _quote_identifier(identifier: str) -> str:
@@ -457,11 +513,15 @@ def test_real_openrouter_pipeline_end_to_end():
     schema = f"e2e_smoke_{uuid.uuid4().hex}"
     run_dir = _smoke_run_dir()
     print(f"Smoke output: {run_dir}")
+    print(f"Rejected art: {run_dir / 'rejected'}")
     protocol_folder = protocol_folder_path(
         run_dir, FIXTURE_SESSION_DATE, FIXTURE_TITLE
     )
     protocol_id: int | None = None
     client = None
+    result: dict | None = None
+    posts: list[dict] = []
+    detail_by_id: dict[int, dict] = {}
 
     try:
         protocol_id = asyncio.run(_create_schema_and_protocol(test_url, schema))
@@ -469,7 +529,9 @@ def test_real_openrouter_pipeline_end_to_end():
         # A deliberate dependency override: no app lifespan, no scheduler.
         app.dependency_overrides[get_db] = _session_override(test_url, schema)
         app.dependency_overrides[get_post_pipeline] = lambda: PostPipeline(
-            OpenRouterLLMClient(), output_dir=run_dir
+            OpenRouterLLMClient(),
+            output_dir=run_dir,
+            rejected_dir=run_dir / "rejected",
         )
         client = TestClient(app)
 
@@ -525,7 +587,6 @@ def test_real_openrouter_pipeline_end_to_end():
         )
         assert protocol_response.json()["processed"] is True
 
-        detail_by_id = {}
         for post in posts:
             detail_response = client.get(
                 f"/api/posts/{post['id']}"
@@ -536,6 +597,18 @@ def test_real_openrouter_pipeline_end_to_end():
             detail = detail_response.json()
             detail_by_id[post["id"]] = detail
             _assert_post_detail(detail, output_folder=protocol_folder)
+
+        ready_assets = [
+            asset
+            for detail in detail_by_id.values()
+            for asset in detail["assets"]
+            if asset["status"] == "ready"
+        ]
+        assert ready_assets, (
+            "Every generated asset fell back to brand art. Inspect "
+            f"{run_dir / 'rejected'} and smoke-report.json before accepting "
+            "this run."
+        )
 
         # The output folder must contain only Summary files and topic folders.
         assert protocol_folder.is_dir(), f"missing output folder {protocol_folder}"
@@ -628,4 +701,15 @@ def test_real_openrouter_pipeline_end_to_end():
         app.dependency_overrides.clear()
         if client is not None:
             client.close()
+        try:
+            report_path = _write_smoke_report(
+                run_dir,
+                protocol_id=protocol_id,
+                result=result,
+                posts=posts,
+                details=detail_by_id,
+            )
+            print(f"Smoke report: {report_path}")
+        except Exception as exc:  # pragma: no cover - diagnostics only
+            print(f"Could not write smoke report: {exc}")
         asyncio.run(_cleanup_database(test_url, schema, protocol_id))

@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.core import config
 from app.services import llm_client as llm_client_module
+from app.services.decision_models import ImagePart, ImageURL, NoulQuestion
 from app.services.llm_client import (
     LLMAuthenticationError,
     LLMClient,
@@ -63,9 +64,11 @@ async def test_generate_json_requests_strict_schema_and_sends_only_the_prompt(tr
 def test_llm_client_interface_has_no_history_parameters():
     json_parameters = set(inspect.signature(LLMClient.generate_json).parameters)
     image_parameters = set(inspect.signature(LLMClient.generate_image).parameters)
+    decision_parameters = set(inspect.signature(LLMClient.decide).parameters)
 
     assert json_parameters == {"self", "role", "prompt", "schema"}
     assert image_parameters == {"self", "role", "prompt", "aspect_ratio"}
+    assert decision_parameters == {"self", "role", "state", "questions"}
 
 
 async def test_invalid_json_is_retried_three_times(transport):
@@ -204,3 +207,120 @@ async def test_generate_image_transport_errors_stop_after_three_attempts(transpo
         )
 
     assert transport.generate_image.call_count == 3
+
+
+QUESTION = NoulQuestion(instructions="Is there an unintended border?")
+IMAGE_STATE = [
+    "Inspect this image",
+    ImagePart(image_url=ImageURL(url="data:image/png;base64,AAAA")),
+]
+
+
+async def test_decide_serializes_typed_questions_and_validates_the_response(
+    transport,
+):
+    transport.submit_decisions.return_value = {
+        "model": "typesafe/jev-1.14",
+        "answers": {
+            "border_or_frame": {"type": "noul", "noul": 0.25}
+        },
+    }
+
+    result = await _client(decision_model="custom/decision-model").decide(
+        role="artifact_check",
+        state=IMAGE_STATE,
+        questions={"border_or_frame": QUESTION},
+    )
+
+    assert result.answers["border_or_frame"].noul == 0.25
+    transport.submit_decisions.assert_called_once_with(
+        model="custom/decision-model",
+        state=[
+            "Inspect this image",
+            {
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64,AAAA"},
+            },
+        ],
+        questions={
+            "border_or_frame": {
+                "type": "noul",
+                "instructions": "Is there an unintended border?",
+            }
+        },
+    )
+
+
+async def test_decide_uses_the_configured_model_by_default(transport):
+    transport.submit_decisions.return_value = {
+        "answers": {"border_or_frame": {"type": "noul", "noul": 0.0}}
+    }
+
+    await _client().decide(
+        role="artifact_check",
+        state="state",
+        questions={"border_or_frame": QUESTION},
+    )
+
+    kwargs = transport.submit_decisions.call_args.kwargs
+    assert kwargs["model"] == config.OPENROUTER_DECISION_MODEL
+
+
+async def test_decide_retries_schema_failures_then_succeeds(transport):
+    transport.submit_decisions.side_effect = [
+        {"answers": {"border_or_frame": {"type": "noul", "noul": 2.0}}},
+        {"answers": {"border_or_frame": {"type": "noul", "noul": 0.1}}},
+    ]
+
+    result = await _client().decide(
+        role="artifact_check",
+        state="state",
+        questions={"border_or_frame": QUESTION},
+    )
+
+    assert result.answers["border_or_frame"].noul == 0.1
+    assert transport.submit_decisions.call_count == 2
+
+
+async def test_decide_retries_transport_errors_then_succeeds(transport):
+    transport.submit_decisions.side_effect = [
+        OpenRouterError("temporary"),
+        {"answers": {"border_or_frame": {"type": "noul", "noul": 0.1}}},
+    ]
+
+    result = await _client().decide(
+        role="artifact_check",
+        state="state",
+        questions={"border_or_frame": QUESTION},
+    )
+
+    assert result.answers["border_or_frame"].noul == 0.1
+    assert transport.submit_decisions.call_count == 2
+
+
+async def test_decide_schema_errors_stop_after_three_attempts(transport):
+    transport.submit_decisions.return_value = {"answers": {"border_or_frame": {}}}
+
+    with pytest.raises(LLMSchemaError, match="decision schema"):
+        await _client().decide(
+            role="artifact_check",
+            state="state",
+            questions={"border_or_frame": QUESTION},
+        )
+
+    assert transport.submit_decisions.call_count == 3
+
+
+async def test_decide_auth_error_fails_immediately(transport):
+    transport.submit_decisions.side_effect = OpenRouterError(
+        "Insufficient credits", status_code=402
+    )
+
+    with pytest.raises(LLMAuthenticationError):
+        await _client().decide(
+            role="artifact_check",
+            state="state",
+            questions={"border_or_frame": QUESTION},
+        )
+
+    assert transport.submit_decisions.call_count == 1

@@ -38,18 +38,25 @@ has been removed; legacy articles remain readable through the API.
    deterministically at one post-wide body size. The Summary-Beitrag also gets
    a composed caption and deterministic Alt-Texte.
 6. **Visualise the Summary** — a stateless visual-prompt call writes the cover
-   prompt from the Summary draft only. Prompts request photorealistic editorial
-   and reportage photography with natural light, real materials and a believable
-   scene. A fixed deterministic suffix is appended before every image-provider
-   call and forbids illustration, comic, drawing, watercolour, 3D render,
+   prompt from the Summary draft only. The image prompt itself is English and
+   requests photorealistic editorial and reportage photography with natural
+   light, real materials and a believable scene. The guardrails keep the logo
+   and title zones textured rather than empty, and a fixed deterministic suffix
+   is appended before every image-provider call; it requires continuous scene
+   detail and forbids illustration, comic, drawing, watercolour, 3D render,
    frames, borders, passepartouts, polaroid edges, picture-in-picture, collages,
    split-screens and vignettes. Image generation requests a 9:16 image
    through the LLM port, center-fits it to exactly 1080×1920, and substitutes
    the deterministic blue brand fallback if the provider or payload fails. The
-   final normalized cover is also checked for near-white generation artifacts
-   (outer borders, flat blocks or bands, and split-screen seams). One retry uses
-   a stronger full-bleed/no-artifact prompt suffix; a persistent artifact is
-   rejected in favour of the brand fallback and recorded with asset status
+   final normalized cover is inspected by `typesafe/jev-1.14` through the
+   OpenRouter Decisions API for unintended borders, blank bands or blocks,
+   seams, text/watermarks and obvious generation defects. Jev receives a
+   proportional downscale capped at 1568 px per side; the stored asset keeps
+   the full publication size. A defect probability above the question-specific
+   threshold triggers one retry with a stronger
+   full-bleed/no-artifact prompt suffix and the rejected defect classes. A
+   persistent defect, a refusal or an unavailable verdict is fail-closed: the
+   cover uses the brand fallback and the asset is recorded with status
    `fallback` and an explanatory error. The
    renderer writes the cover and two to six cards as
    `summary-<date>-story-<frame>.png` plus exactly one
@@ -79,14 +86,16 @@ has been removed; legacy articles remain readable through the API.
    or hyphenated. A stateless Themen
    visual-prompt call writes a cover and `ceil(content_slides / 2)` pair prompts
    from the Themenentwurf only.
-   These prompts use the same photorealistic editorial/reportage style and
-   deterministic no-frame suffix. Image generation requests 4:5 artwork,
+   These English prompts use the same photorealistic editorial/reportage style
+   and textured logo/title zones, plus the deterministic no-frame suffix.
+   Image generation requests 4:5 artwork,
    normalizes the cover to 1080×1350, and center-crops each pair to 720×1350 or
-   a final unpaired strip to 360×1350. The artifact check runs on the exact
-   final asset (normalized cover, cropped pair or cropped single strip), so a
-   defect outside the visible crop is ignored. A detected border, flat white
-   block or band, or split-screen seam triggers one stronger full-bleed retry;
-   a persistent artifact becomes the orange brand fallback with asset status
+   a final unpaired strip to 360×1350. The decision-model artifact check runs
+   on the exact final asset (normalized cover, cropped pair or cropped single
+   strip), so a defect outside the visible crop is ignored. A flagged border,
+   blank band or block, seam, text/watermark or generation defect triggers one
+   stronger full-bleed retry with the rejected classes. A persistent defect or
+   an unavailable verdict becomes the orange brand fallback with asset status
    `fallback` and an explanatory error. The renderer slices pairs into the
    zigzag layout and writes `topic-<date>-<slide>.png` plus exactly one
    `caption-topic-<slug>.txt` inside the topic's own `topic-<slug>/` subfolder.
@@ -139,6 +148,7 @@ app/
 │   ├── duplicate_detector.py  Protocol similarity check
 │   ├── openrouter_client.py   Synchronous OpenRouter transport
 │   ├── llm_client.py          Stateless LLM port and OpenRouter adapter
+│   ├── decision_models.py     Typed OpenRouter Decisions request/response models
 │   ├── editorial_planner.py   Redaktionsplaner role
 │   ├── summary_writer.py      Summary-Writer role with one validation retry
 │   ├── topic_writer.py        Themen-Writer role with one validation retry
@@ -148,6 +158,7 @@ app/
 │   ├── topic_kicker_writer.py Stateless Kicker-Writer fallback for too-wide labels
 │   ├── caption_writer.py      Caption body role and deterministic composition
 │   ├── visual_prompts.py      Stateless visual-prompt role for covers/artwork
+│   ├── image_artifact_check.py Decision-model artifact gate for generated art
 │   ├── image_generation.py    Image decode, realism suffix, fit, brand fallbacks
 │   ├── post_renderer.py       Deterministic Summary story renderer
 │   ├── topic_renderer.py      Deterministic topic carousel renderer
@@ -255,6 +266,14 @@ Configuration is read from `.env` (see `.env.example`):
 | `OPENROUTER_API_KEY` | OpenRouter API key |
 | `OPENROUTER_TEXT_MODEL` | Text model (default: `deepseek/deepseek-v4.1-flash-1017`) |
 | `OPENROUTER_IMAGE_MODEL` | Image model (default: `bytedance-seed/seedream-5-0-flash`) |
+| `OPENROUTER_DECISION_MODEL` | Artifact-check decision model (default: `typesafe/jev-1.14`) |
+| `OPENROUTER_DECISIONS_URL` | Decisions API endpoint (default: `https://openrouter.ai/api/alpha/decisions`) |
+| `IMAGE_ARTIFACT_BORDER_OR_FRAME_THRESHOLD` | Jev threshold for borders/frames (default: `0.5`) |
+| `IMAGE_ARTIFACT_BLANK_BAND_OR_STRIP_THRESHOLD` | Jev threshold for blank bands/strips (default: `0.5`) |
+| `IMAGE_ARTIFACT_FLAT_BLANK_BLOCK_THRESHOLD` | Jev threshold for flat blank blocks (default: `0.5`) |
+| `IMAGE_ARTIFACT_MULTI_PANEL_OR_SEAM_THRESHOLD` | Jev threshold for panels/seams (default: `0.5`) |
+| `IMAGE_ARTIFACT_UNINTENDED_TEXT_OR_WATERMARK_THRESHOLD` | Jev threshold for text/watermarks (default: `0.4`) |
+| `IMAGE_ARTIFACT_GENERATION_GLITCH_THRESHOLD` | Jev threshold for generation glitches (default: `0.6`) |
 | `OPENROUTER_REASONING_EFFORT` | Reasoning effort for text calls (default: `max`) |
 | `SESSIONNET_BASE_URL` | SessionNet base URL |
 | `TRAEFIK_HOST` | Public hostname used by the deployment |
@@ -460,9 +479,10 @@ ordered `slides` and `assets`:
 
 `post_type` is `summary` or `topic`; post status is `draft`, `ready`, or
 `failed`; slide type is `cover`, `heading`, or `continuation`; asset status is
-`pending`, `ready`, `fallback`, or `failed`. Persistent image artifacts keep the
-post `ready` but store the asset as `fallback` with an error that names the
-rejected near-white structure. Slides are ordered by
+`pending`, `ready`, `fallback`, or `failed`. Persistent image artifacts and
+unavailable decision-model verdicts keep the post `ready` but store the asset
+as `fallback` with an error that names the verifier model and the rejected
+defect classes. Slides are ordered by
 `slide_index`, assets by `id`. Both `/api/stats` and `/api/pipeline/status`
 always include all three post statuses:
 
@@ -579,8 +599,10 @@ Requirements:
   `DATABASE_URL`.
 - `OPENROUTER_API_KEY`: a funded key. The run makes **paid** text and image
   requests and therefore needs network access and real API credit.
-- The configured text and image models must be available; see
-  `OPENROUTER_TEXT_MODEL` and `OPENROUTER_IMAGE_MODEL`.
+- The configured text, image and decision models must be available; see
+  `OPENROUTER_TEXT_MODEL`, `OPENROUTER_IMAGE_MODEL` and
+  `OPENROUTER_DECISION_MODEL`. The run calls the paid Decisions API for every
+  generated image.
 
 ```bash
 TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/gossip_test \
@@ -593,15 +615,17 @@ real personal data), starts the pipeline with
 `POST /api/protocols/{id}/reprocess`, and asserts the Summary-Beitrag and
 Themenbeiträge, slides, assets, Alt-Texte, image dimensions and names, captions,
 and the clean output folder. Every run writes its PNGs and captions to its own
-folder under `tests/manual/output/<YYYYMMDD-HHMMSS>-<run-id>/`. Successful and
-failed runs keep that folder; there is no automatic `rmtree`. The default
+fixed folder under `tests/manual/output/<YYYYMMDD-HHMMSS>-<run-id>/`. Successful
+and failed runs keep that folder; there is no automatic `rmtree`. The
 `tests/manual/output/` folder is gitignored, so generated files never enter the
-repository. Set `SMOKE_OUTPUT_DIR` to use another base output root: the
-timestamped run folder is still created underneath it, so repeated runs never
-overwrite each other. In a `finally` block the test deletes the fixture rows and
-drops the throwaway schema; only the files remain. It skips cleanly when
-`OPENROUTER_API_KEY` or `TEST_DATABASE_URL` is missing, and it is never part of
-the default suite.
+repository. Jev-rejected candidates are retained under `<run>/rejected/` as PNG
+plus JSON metadata (final prompt, thresholds, findings). `<run>/smoke-report.json`
+records post and asset statuses, asset prompts and the rejected attempts, so a
+green run also proves whether real artwork or only brand fallbacks were used;
+the test fails if no asset reached `ready`. In a `finally` block the test deletes
+the fixture rows and drops the throwaway schema; only the files remain. It skips
+cleanly when `OPENROUTER_API_KEY` or `TEST_DATABASE_URL` is missing, and it is
+never part of the default suite.
 
 Pipeline tests use `tests/support/fake_llm.py` at the injected LLM port. The
 fake scripts responses per role, records every role/prompt/schema/aspect-ratio

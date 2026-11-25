@@ -1,22 +1,30 @@
-"""Deterministic image generation for the post renderers.
+"""Decision-checked image generation for the post renderers.
 
 The injected LLM port returns raw image bytes. This module decodes them,
 normalizes the result with a deterministic center fit, and substitutes the
 family-pure brand fallback when the provider or the payload fails. Generated
-artwork is also checked for near-white generation artifacts (borders, flat
-blocks, edge bands and split-screen seams) before it is accepted. An
-authentication/account failure is never swallowed: it stops the job.
+artwork is inspected by a decision model for unintended borders, blank bands
+and blocks, seams, text and obvious generation defects before it is accepted.
+An authentication/account failure is never swallowed: it stops the job.
 """
 
 from __future__ import annotations
 
 import io
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageOps
 
+from app.core import config
+from app.services.image_artifact_check import (
+    ArtifactFinding,
+    ArtifactVerdict,
+    check_image_artifacts,
+)
 from app.services.llm_client import LLMAuthenticationError, LLMClient
 from app.services.render_common import (
     BRAND_BLUE,
@@ -48,9 +56,10 @@ ASSET_STATUS_FALLBACK = "fallback"
 
 IMAGE_STYLE_SUFFIX = (
     "Photorealistic editorial reportage photography with natural light, real "
-    "materials and a believable scene. No illustration, cartoon, comic, drawing, "
-    "watercolour or 3D render. No frame, border, passepartout, polaroid edge, "
-    "picture-in-picture, collage, split screen or vignette."
+    "materials and a believable scene. Continuous scene detail across the full "
+    "frame; no empty margins or flat blank areas. No illustration, cartoon, "
+    "comic, drawing, watercolour or 3D render. No frame, border, passepartout, "
+    "polaroid edge, picture-in-picture, collage, split screen or vignette."
 )
 
 ARTIFACT_RETRY_SUFFIX = (
@@ -59,30 +68,6 @@ ARTIFACT_RETRY_SUFFIX = (
     "border, frame, blank band, white block, split-screen seam or empty margin."
 )
 MAX_IMAGE_ATTEMPTS = 2
-
-# Near-white artifact detection. The thresholds are deliberately conservative:
-# normal flat-colour or photographic artwork stays clean, while the flat white
-# bands, blocks, frames and split-screen seams seen from the provider do not.
-ARTIFACT_NEAR_WHITE_LUMINANCE = 240
-ARTIFACT_BORDER_WIDTHS = (2, 3, 4)
-ARTIFACT_BORDER_MIN_WHITE_RATIO = 0.90
-ARTIFACT_BLOCK_SIZE = 45
-ARTIFACT_BLOCK_MIN_WHITE = 250
-ARTIFACT_FLAT_LUMINANCE_RANGE = 12
-ARTIFACT_MIN_FLAT_AREA_RATIO = 0.04
-ARTIFACT_EDGE_BAND_RATIO = 0.03
-ARTIFACT_EDGE_BAND_MIN_WHITE = 242
-ARTIFACT_EDGE_BAND_MIN_MEAN = 245
-ARTIFACT_SEAM_MAX_WIDTH = 12
-ARTIFACT_SEAM_MIN_WHITE = 230
-ARTIFACT_SEAM_MIN_MEAN = 220
-ARTIFACT_SEAM_CONTEXT = 4
-ARTIFACT_SEAM_MIN_CONTRAST = 50
-ARTIFACT_SEAM_MAX_CONTEXT_MEAN = 210
-
-_NEAR_WHITE_LUT = [0] * ARTIFACT_NEAR_WHITE_LUMINANCE + [255] * (
-    256 - ARTIFACT_NEAR_WHITE_LUMINANCE
-)
 
 
 class ImageGenerationError(Exception):
@@ -134,181 +119,61 @@ def with_artifact_retry_suffix(prompt: str) -> str:
     return f"{prompt}\n\n{ARTIFACT_RETRY_SUFFIX}"
 
 
-def _near_white_mask(gray: Image.Image) -> Image.Image:
-    return gray.point(_NEAR_WHITE_LUT)
-
-
-def _border_artifact(mask: Image.Image) -> str | None:
-    """Reject a mostly near-white ring around the outer image edge."""
-    width, height = mask.size
-    for ring in ARTIFACT_BORDER_WIDTHS:
-        if width <= 2 * ring or height <= 2 * ring:
-            continue
-        strips = (
-            mask.crop((0, 0, width, ring)),
-            mask.crop((0, height - ring, width, height)),
-            mask.crop((0, ring, ring, height - ring)),
-            mask.crop((width - ring, ring, width, height - ring)),
+def _retry_prompt(prompt: str, findings: tuple[ArtifactFinding, ...]) -> str:
+    attempt_prompt = with_artifact_retry_suffix(prompt)
+    if findings:
+        labels = ", ".join(finding.question for finding in findings)
+        attempt_prompt = (
+            f"{attempt_prompt}\n\nThe previous image failed the artifact check "
+            f"for: {labels}. Avoid those defects in the new image."
         )
-        white = sum(strip.histogram()[255] for strip in strips)
-        total = sum(strip.width * strip.height for strip in strips)
-        if total and white / total >= ARTIFACT_BORDER_MIN_WHITE_RATIO:
-            return f"near-white border/frame {ring}px wide around the outer edge"
-    return None
+    return attempt_prompt
 
 
-def _edge_band_artifact(
-    white: list[int], mean: list[int], length: int, edge: str
-) -> str | None:
-    """Reject a contiguous flat near-white band at one image edge."""
-    minimum = max(6, int(length * ARTIFACT_EDGE_BAND_RATIO))
-    indices = range(length) if edge in {"top", "left"} else range(length - 1, -1, -1)
-    run = 0
-    for index in indices:
-        if (
-            white[index] >= ARTIFACT_EDGE_BAND_MIN_WHITE
-            and mean[index] >= ARTIFACT_EDGE_BAND_MIN_MEAN
-        ):
-            run += 1
-            if run >= minimum:
-                return f"near-white edge band at the {edge}"
-        else:
-            break
-    return None
+def _save_rejected_attempt(
+    rejected_dir: Path | None,
+    *,
+    name: str,
+    role: str,
+    attempt: int,
+    prompt: str,
+    image: Image.Image,
+    verdict: ArtifactVerdict,
+) -> None:
+    """Persist a rejected candidate and its verdict for manual diagnosis."""
+    if rejected_dir is None:
+        return
 
-
-def _flat_area_artifact(mask: Image.Image, gray: Image.Image) -> str | None:
-    """Reject a substantial area of flat near-white blocks."""
-    width, height = mask.size
-    block = ARTIFACT_BLOCK_SIZE
-    grid_width = (width + block - 1) // block
-    grid_height = (height + block - 1) // block
-    sampled = mask.resize((grid_width, grid_height), Image.Resampling.BOX)
-    flat_pixels = 0
-
-    for grid_y in range(grid_height):
-        y0 = grid_y * block
-        y1 = min(height, y0 + block)
-        for grid_x in range(grid_width):
-            if sampled.getpixel((grid_x, grid_y)) < ARTIFACT_BLOCK_MIN_WHITE:
-                continue
-            x0 = grid_x * block
-            x1 = min(width, x0 + block)
-            low, high = gray.crop((x0, y0, x1, y1)).getextrema()
-            if high - low <= ARTIFACT_FLAT_LUMINANCE_RANGE:
-                flat_pixels += (x1 - x0) * (y1 - y0)
-
-    ratio = flat_pixels / (width * height)
-    if ratio >= ARTIFACT_MIN_FLAT_AREA_RATIO:
-        return f"large flat near-white region ({ratio:.0%} of the image)"
-    return None
-
-
-def _context_mean(
-    profile: list[int], start: int, step: int, length: int
-) -> float | None:
-    values = []
-    index = start
-    for _ in range(ARTIFACT_SEAM_CONTEXT):
-        if 0 <= index < length:
-            values.append(profile[index])
-        index += step
-    return sum(values) / len(values) if values else None
-
-
-def _profile_seam(
-    white: list[int], mean: list[int], length: int
-) -> tuple[int, int] | None:
-    """Find a narrow near-white seam over a low-contrast neighbourhood."""
-    index = 0
-    while index < length:
-        if (
-            white[index] < ARTIFACT_SEAM_MIN_WHITE
-            or mean[index] < ARTIFACT_SEAM_MIN_MEAN
-        ):
-            index += 1
-            continue
-
-        start = index
-        while index < length and (
-            white[index] >= ARTIFACT_SEAM_MIN_WHITE
-            and mean[index] >= ARTIFACT_SEAM_MIN_MEAN
-        ):
-            index += 1
-        width = index - start
-
-        if width > ARTIFACT_SEAM_MAX_WIDTH or start == 0 or index >= length:
-            continue
-
-        left = _context_mean(mean, start - 2, -1, length)
-        right = _context_mean(mean, index + 1, 1, length)
-        if left is None or right is None:
-            continue
-        seam_mean = min(mean[start:index])
-        if (
-            left <= ARTIFACT_SEAM_MAX_CONTEXT_MEAN
-            and right <= ARTIFACT_SEAM_MAX_CONTEXT_MEAN
-            and seam_mean - left >= ARTIFACT_SEAM_MIN_CONTRAST
-            and seam_mean - right >= ARTIFACT_SEAM_MIN_CONTRAST
-        ):
-            return start, width
-    return None
-
-
-def detect_image_artifact(image: Image.Image) -> str | None:
-    """Return a description of a near-white generation artifact, if any.
-
-    The check runs on the exact final asset: the normalized Summary cover, the
-    normalized topic cover, or the cropped pair/single strip. Only near-white,
-    low-variance structures are rejected; ordinary flat-colour artwork passes.
-    """
-    rgb = image.convert("RGB")
-    gray = rgb.convert("L")
-    mask = _near_white_mask(gray)
-    width, height = rgb.size
-
-    border = _border_artifact(mask)
-    if border is not None:
-        return border
-
-    column_white = list(
-        mask.resize((width, 1), Image.Resampling.BOX).get_flattened_data()
-    )
-    column_mean = list(
-        gray.resize((width, 1), Image.Resampling.BOX).get_flattened_data()
-    )
-    row_white = list(
-        mask.resize((1, height), Image.Resampling.BOX).get_flattened_data()
-    )
-    row_mean = list(
-        gray.resize((1, height), Image.Resampling.BOX).get_flattened_data()
-    )
-
-    for edge, white, mean, length in (
-        ("top", row_white, row_mean, height),
-        ("bottom", row_white, row_mean, height),
-        ("left", column_white, column_mean, width),
-        ("right", column_white, column_mean, width),
-    ):
-        band = _edge_band_artifact(white, mean, length, edge)
-        if band is not None:
-            return band
-
-    flat = _flat_area_artifact(mask, gray)
-    if flat is not None:
-        return flat
-
-    vertical = _profile_seam(column_white, column_mean, width)
-    if vertical is not None:
-        start, seam_width = vertical
-        return f"near-white vertical seam at x={start} ({seam_width}px wide)"
-
-    horizontal = _profile_seam(row_white, row_mean, height)
-    if horizontal is not None:
-        start, seam_width = horizontal
-        return f"near-white horizontal seam at y={start} ({seam_width}px wide)"
-
-    return None
+    status = "verifier-error" if verdict.error else "rejected"
+    stem = f"{name}-attempt-{attempt}-{status}"
+    try:
+        rejected_dir.mkdir(parents=True, exist_ok=True)
+        image.convert("RGB").save(rejected_dir / f"{stem}.png", format="PNG")
+        metadata = {
+            "name": name,
+            "role": role,
+            "attempt": attempt,
+            "prompt": prompt,
+            "image_size": list(image.size),
+            "verifier_model": verdict.model,
+            "thresholds": config.IMAGE_ARTIFACT_THRESHOLDS,
+            "findings": [
+                {
+                    "question": finding.question,
+                    "probability": finding.probability,
+                    "confidence": finding.confidence,
+                }
+                for finding in verdict.findings
+            ],
+            "error": verdict.error,
+        }
+        (rejected_dir / f"{stem}.json").write_text(
+            json.dumps(metadata, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        logger.info("Saved rejected image attempt: %s", rejected_dir / f"{stem}.png")
+    except Exception as exc:  # pragma: no cover - diagnostics must not break the run
+        logger.warning("Could not save rejected image attempt %s: %s", stem, exc)
 
 
 def summary_fallback_art() -> Image.Image:
@@ -358,13 +223,9 @@ def _fallback_result(
     try:
         image = factory()
     except Exception as exc:  # pragma: no cover - Pillow drawing is deterministic
-        raise ImageGenerationError(
-            f"Could not build the {label} brand fallback: {exc}"
-        ) from exc
+        raise ImageGenerationError(f"Could not build the {label} brand fallback: {exc}") from exc
     if image.size != size:
-        raise ImageGenerationError(
-            f"{label} brand fallback has size {image.size}, expected {size}"
-        )
+        raise ImageGenerationError(f"{label} brand fallback has size {image.size}, expected {size}")
     message = str(error) or error.__class__.__name__
     logger.warning("%s generation failed; using brand fallback: %s", label, message)
     return GeneratedImage(image=image, status=ASSET_STATUS_FALLBACK, error=message)
@@ -380,17 +241,17 @@ async def _generate_guarded_art(
     size: tuple[int, int],
     finalize: Callable[[Image.Image], Image.Image],
     fallback: Callable[[], Image.Image],
+    rejected_dir: Path | None = None,
+    rejected_name: str | None = None,
 ) -> GeneratedImage:
-    """Generate one final asset, retrying once when artifacts are detected."""
+    """Generate one final asset, retrying once when the decision model objects."""
     style_prompt = with_image_style_suffix(prompt)
-    artifact: str | None = None
+    findings: tuple[ArtifactFinding, ...] = ()
+    rejections: list[str] = []
+    verdict = None
 
     for attempt in range(1, MAX_IMAGE_ATTEMPTS + 1):
-        attempt_prompt = (
-            style_prompt
-            if attempt == 1
-            else with_artifact_retry_suffix(style_prompt)
-        )
+        attempt_prompt = style_prompt if attempt == 1 else _retry_prompt(style_prompt, findings)
         try:
             payload = await llm.generate_image(
                 role=role,
@@ -398,6 +259,11 @@ async def _generate_guarded_art(
                 aspect_ratio=aspect_ratio,
             )
             image = finalize(decode_image_bytes(payload))
+            verdict = await check_image_artifacts(
+                llm,
+                image,
+                role=f"{role}_artifact_check",
+            )
         except LLMAuthenticationError:
             raise
         except Exception as exc:
@@ -408,23 +274,43 @@ async def _generate_guarded_art(
                 size=size,
             )
 
-        artifact = detect_image_artifact(image)
-        if artifact is None:
-            return GeneratedImage(
-                image=image, status=ASSET_STATUS_READY, error=None
+        if verdict.clean:
+            return GeneratedImage(image=image, status=ASSET_STATUS_READY, error=None)
+
+        _save_rejected_attempt(
+            rejected_dir,
+            name=rejected_name or role,
+            role=role,
+            attempt=attempt,
+            prompt=attempt_prompt,
+            image=image,
+            verdict=verdict,
+        )
+
+        if verdict.error:
+            return _fallback_result(
+                ImageGenerationError(f"{label} artifact check failed: {verdict.error}"),
+                factory=fallback,
+                label=label,
+                size=size,
             )
+
+        findings = verdict.findings
+        rejections.append(f"attempt {attempt}: {verdict.summary()}")
         logger.warning(
-            "%s generation attempt %s/%s rejected: %s",
+            "%s generation attempt %s/%s rejected by the %s artifact check: %s",
             label,
             attempt,
             MAX_IMAGE_ATTEMPTS,
-            artifact,
+            verdict.model,
+            verdict.summary(),
         )
 
+    assert verdict is not None
     return _fallback_result(
         ImageGenerationError(
-            f"{label} artwork still contained a near-white artifact after "
-            f"{MAX_IMAGE_ATTEMPTS} attempts: {artifact}"
+            f"{label} artwork failed the {verdict.model} artifact check after "
+            f"{MAX_IMAGE_ATTEMPTS} attempts: {'; '.join(rejections)}"
         ),
         factory=fallback,
         label=label,
@@ -432,7 +318,13 @@ async def _generate_guarded_art(
     )
 
 
-async def generate_summary_cover(llm: LLMClient, prompt: str) -> GeneratedImage:
+async def generate_summary_cover(
+    llm: LLMClient,
+    prompt: str,
+    *,
+    rejected_dir: Path | None = None,
+    rejected_name: str | None = None,
+) -> GeneratedImage:
     """Generate and normalize the Summary cover art, or its brand fallback."""
     return await _generate_guarded_art(
         llm,
@@ -443,6 +335,8 @@ async def generate_summary_cover(llm: LLMClient, prompt: str) -> GeneratedImage:
         size=SUMMARY_IMAGE_SIZE,
         finalize=lambda image: normalize_image(image, SUMMARY_IMAGE_SIZE),
         fallback=summary_fallback_art,
+        rejected_dir=rejected_dir,
+        rejected_name=rejected_name,
     )
 
 
@@ -450,7 +344,13 @@ def _normalized_topic_art(image: Image.Image) -> Image.Image:
     return normalize_image(image, TOPIC_IMAGE_SIZE)
 
 
-async def generate_topic_cover(llm: LLMClient, prompt: str) -> GeneratedImage:
+async def generate_topic_cover(
+    llm: LLMClient,
+    prompt: str,
+    *,
+    rejected_dir: Path | None = None,
+    rejected_name: str | None = None,
+) -> GeneratedImage:
     """Generate and normalize the 1080x1350 topic cover art or its fallback."""
     return await _generate_guarded_art(
         llm,
@@ -461,10 +361,18 @@ async def generate_topic_cover(llm: LLMClient, prompt: str) -> GeneratedImage:
         size=TOPIC_IMAGE_SIZE,
         finalize=_normalized_topic_art,
         fallback=topic_cover_fallback_art,
+        rejected_dir=rejected_dir,
+        rejected_name=rejected_name,
     )
 
 
-async def generate_topic_pair_art(llm: LLMClient, prompt: str) -> GeneratedImage:
+async def generate_topic_pair_art(
+    llm: LLMClient,
+    prompt: str,
+    *,
+    rejected_dir: Path | None = None,
+    rejected_name: str | None = None,
+) -> GeneratedImage:
     """Generate one 4:5 artwork and center-crop it to a 720x1350 pair."""
     return await _generate_guarded_art(
         llm,
@@ -473,14 +381,20 @@ async def generate_topic_pair_art(llm: LLMClient, prompt: str) -> GeneratedImage
         aspect_ratio=TOPIC_ASPECT_RATIO,
         label="Topic pair artwork",
         size=TOPIC_PAIR_SIZE,
-        finalize=lambda image: _normalized_topic_art(image).crop(
-            TOPIC_PAIR_CROP
-        ),
+        finalize=lambda image: _normalized_topic_art(image).crop(TOPIC_PAIR_CROP),
         fallback=topic_pair_fallback_art,
+        rejected_dir=rejected_dir,
+        rejected_name=rejected_name,
     )
 
 
-async def generate_topic_single_art(llm: LLMClient, prompt: str) -> GeneratedImage:
+async def generate_topic_single_art(
+    llm: LLMClient,
+    prompt: str,
+    *,
+    rejected_dir: Path | None = None,
+    rejected_name: str | None = None,
+) -> GeneratedImage:
     """Generate one 4:5 artwork and center-crop it to a 360x1350 strip."""
     return await _generate_guarded_art(
         llm,
@@ -489,10 +403,10 @@ async def generate_topic_single_art(llm: LLMClient, prompt: str) -> GeneratedIma
         aspect_ratio=TOPIC_ASPECT_RATIO,
         label="Topic single artwork",
         size=TOPIC_SINGLE_SIZE,
-        finalize=lambda image: _normalized_topic_art(image).crop(
-            TOPIC_SINGLE_CROP
-        ),
+        finalize=lambda image: _normalized_topic_art(image).crop(TOPIC_SINGLE_CROP),
         fallback=topic_single_fallback_art,
+        rejected_dir=rejected_dir,
+        rejected_name=rejected_name,
     )
 
 
@@ -517,7 +431,6 @@ __all__ = [
     "TOPIC_SINGLE_ROLE",
     "TOPIC_SINGLE_SIZE",
     "decode_image_bytes",
-    "detect_image_artifact",
     "generate_summary_cover",
     "generate_topic_cover",
     "generate_topic_pair_art",

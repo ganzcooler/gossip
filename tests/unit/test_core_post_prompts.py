@@ -293,12 +293,15 @@ def test_summary_visual_prompt_contains_only_the_draft_and_design_guardrails():
     assert "keine Collage" in prompt
     assert "kein Split-Screen" in prompt
     assert "keine Vignette" in prompt
-    assert "breite, ruhige" in prompt
+    assert "breite, zivile" in prompt
     assert "durchgehenden Horizont" in prompt
     assert "Kein zentrales Motiv" in prompt
     assert "oberen und mittleren Bildhälfte" in prompt
-    assert "untere Bildzone bleibt ruhig" in prompt
-    assert "obere Logo-Zone bleibt ruhig und hell" in prompt
+    assert "untere Bildzone bleibt kontrastarm und detailarm" in prompt
+    assert "obere Logo-Zone bleibt kontrastarm" in prompt
+    assert "ausschließlich englischer Prompt" in prompt
+    assert "ausschließlich auf Englisch" in prompt
+    assert "Durchgehende Szenendetails" in prompt
     assert "Kein Text" in prompt
     assert "Logos" in prompt
     assert "Parteisymbole" in prompt
@@ -369,8 +372,11 @@ def test_topic_visual_prompt_contains_only_the_draft_and_pair_count():
     assert "durchgehend fortlaufender Horizont" in prompt
     assert "Kein zentrales Motiv" in prompt
     assert "oberen und mittleren Bildhälfte" in prompt
-    assert "untere Bildzone bleibt ruhig" in prompt
-    assert "obere Logo-Zone bleibt ruhig und hell" in prompt
+    assert "untere Bildzone bleibt kontrastarm und detailarm" in prompt
+    assert "obere Logo-Zone bleibt kontrastarm" in prompt
+    assert "ausschließlich englischer Prompt" in prompt
+    assert "ausschließlich auf Englisch" in prompt
+    assert "Durchgehende Szenendetails" in prompt
     assert "40 px vom Paar-Seam" in prompt
     assert "Kein Text" in prompt
     assert "Logos" in prompt

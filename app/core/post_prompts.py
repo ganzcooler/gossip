@@ -56,6 +56,8 @@ def _brief_block(briefs: Sequence[SummaryBrief]) -> str:
 # cannot drift between the two families.
 _PHOTOREALISM_GUARDRAILS = """- Fotorealistische Editorial- und Reportagefotografie mit natürlichem Licht, \
 echten Materialien und einer glaubwürdigen Szene.
+- Durchgehende Szenendetails bis in alle Ecken; keine leeren, einfarbigen oder \
+weißen Flächen.
 - Keine Illustration, kein Comic, keine Zeichnung, kein Aquarell und kein \
 3D-Render. Keine gefälschte Beweisfotografie.
 - Kein Rahmen, keine Umrandung, kein Passepartout, kein Polaroid-Rand, keine \
@@ -470,23 +472,28 @@ Bildprompts für das Cover und die Bildpaare eines Themenbeitrags.
 
 ## Aufgabe
 
-- cover_prompt: ein englischer oder deutscher Prompt für das Cover im \
+- cover_prompt: ein ausschließlich englischer Prompt für das Cover im \
 4:5-Feed-Format. Das Cover trägt später Titel, Logo, Organ-Badge und Kicker.
 - artwork_prompts: genau {pair_count} Prompts, einer pro 720×1350-Bildpaar. \
 Die Paare werden später in zwei 360×1350-Hälften geteilt; die linke Hälfte \
 erscheint auf einer Folie, die rechte auf der nächsten.
+- Alle cover_prompt- und artwork_prompts-Werte müssen ausschließlich auf \
+Englisch sein.
 
 ## Design-Guardrails
 
 {_PHOTOREALISM_GUARDRAILS}
-- Ein weiter, ruhiger, durchgehend fortlaufender Horizont ohne zentrales \
-Motiv; die Szene passt zu einer kommunalpolitischen Sitzung in Rosdorf.
+- Ein weiter, durchgehend fortlaufender Horizont mit natürlicher Textur und \
+Szenendetails ohne zentrales Motiv; die Szene passt zu einer \
+kommunalpolitischen Sitzung in Rosdorf.
 - Kein zentrales Motiv und keine Personen im Vordergrund.
-- Die obere Logo-Zone bleibt ruhig und hell, damit das transparente Logo \
-ohne Platte lesbar bleibt; der Platz für Titel und Badge bleibt ebenfalls ruhig.
+- Die obere Logo-Zone bleibt kontrastarm, aber texturiert und detailreich, \
+damit das transparente Logo ohne Platte lesbar bleibt; der Platz für Titel \
+und Badge bleibt ebenfalls kontrastarm, aber nie leer.
 - 4:5-feed-sichere Komposition: wichtige Motive in der oberen und mittleren \
-Bildhälfte, die untere Bildzone bleibt ruhig für den späteren Titel; keine \
-kritischen Inhalte am Rand.
+Bildhälfte, die untere Bildzone bleibt kontrastarm und detailarm, zeigt aber \
+durchgehend echte Szenenstruktur (Boden, Straße, Landschaft) für den späteren \
+Titel; keine kritischen Inhalte am Rand.
 - Die Bildpaare werden in der Mitte geteilt. Wichtige Inhalte liegen \
 mindestens 40 px vom Paar-Seam entfernt; keine harte Kante und kein Motiv, \
 das über die Naht hinweg zerschnitten wirkt.
@@ -517,22 +524,25 @@ genau einen Bildprompt für das Cover des Summary-Beitrags.
 
 ## Aufgabe
 
-- cover_prompt: ein englischer oder deutscher Prompt für eine fotorealistische \
+- cover_prompt: ein ausschließlich englischer Prompt für eine fotorealistische \
 Editorial- und Reportagefotografie im 9:16-Story-Format.
 - artwork_prompts: für den Summary-Beitrag immer eine leere Liste. Die \
 Summary-Cards nutzen dasselbe Cover-Bild.
+- Der cover_prompt muss ausschließlich auf Englisch sein.
 
 ## Design-Guardrails
 
 {_PHOTOREALISM_GUARDRAILS}
-- Eine breite, ruhige, zivile Szene mit einem durchgehenden Horizont, passend \
-zu einer kommunalpolitischen Sitzung in Rosdorf.
+- Eine breite, zivile Szene mit einem durchgehenden Horizont und natürlicher \
+Textur, passend zu einer kommunalpolitischen Sitzung in Rosdorf.
 - Kein zentrales Motiv und keine Personen im Vordergrund.
-- Die obere Logo-Zone bleibt ruhig und hell, damit das transparente Logo \
-ohne Platte lesbar bleibt; der Platz für Titel und Badge bleibt ebenfalls ruhig.
+- Die obere Logo-Zone bleibt kontrastarm, aber texturiert und detailreich, \
+damit das transparente Logo ohne Platte lesbar bleibt; der Platz für Titel \
+und Badge bleibt ebenfalls kontrastarm, aber nie leer.
 - 9:16-Story-sichere Komposition: wichtige Motive in der oberen und mittleren \
-Bildhälfte, die untere Bildzone bleibt ruhig für den späteren Titel; keine \
-kritischen Inhalte am Rand.
+Bildhälfte, die untere Bildzone bleibt kontrastarm und detailarm, zeigt aber \
+durchgehend echte Szenenstruktur (Boden, Straße, Landschaft) für den späteren \
+Titel; keine kritischen Inhalte am Rand.
 - Kein Text, keine Buchstaben, keine Zahlen, keine Logos und keine Parteisymbole \
 im Bild.
 - Keine erkennbaren Minderjährigen und keine fotorealistischen, namentlich \

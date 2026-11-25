@@ -105,6 +105,56 @@ class TestConfig:
         assert config.OPENROUTER_IMAGE_MODEL == "custom/image-model"
         assert config.OPENROUTER_REASONING_EFFORT == "high"
 
+    def test_image_artifact_threshold_defaults(self, monkeypatch):
+        """Test the calibrated per-question artifact thresholds."""
+        for name in (
+            "IMAGE_ARTIFACT_BORDER_OR_FRAME_THRESHOLD",
+            "IMAGE_ARTIFACT_BLANK_BAND_OR_STRIP_THRESHOLD",
+            "IMAGE_ARTIFACT_FLAT_BLANK_BLOCK_THRESHOLD",
+            "IMAGE_ARTIFACT_MULTI_PANEL_OR_SEAM_THRESHOLD",
+            "IMAGE_ARTIFACT_UNINTENDED_TEXT_OR_WATERMARK_THRESHOLD",
+            "IMAGE_ARTIFACT_GENERATION_GLITCH_THRESHOLD",
+        ):
+            monkeypatch.delenv(name, raising=False)
+
+        from app.core import config
+
+        importlib.reload(config)
+
+        assert config.IMAGE_ARTIFACT_THRESHOLDS == {
+            "border_or_frame": 0.5,
+            "blank_band_or_strip": 0.5,
+            "flat_blank_block": 0.5,
+            "multi_panel_or_seam": 0.5,
+            "unintended_text_or_watermark": 0.4,
+            "generation_glitch": 0.6,
+        }
+
+    def test_image_artifact_thresholds_can_be_overridden(self, monkeypatch):
+        """Test every artifact threshold can be raised or lowered by ENV."""
+        monkeypatch.setenv("IMAGE_ARTIFACT_BORDER_OR_FRAME_THRESHOLD", "0.7")
+        monkeypatch.setenv("IMAGE_ARTIFACT_GENERATION_GLITCH_THRESHOLD", "0.8")
+
+        from app.core import config
+
+        importlib.reload(config)
+
+        assert config.IMAGE_ARTIFACT_THRESHOLDS["border_or_frame"] == 0.7
+        assert config.IMAGE_ARTIFACT_THRESHOLDS["generation_glitch"] == 0.8
+        assert config.IMAGE_ARTIFACT_THRESHOLDS["blank_band_or_strip"] == 0.5
+
+    def test_image_artifact_threshold_must_be_a_probability(self, monkeypatch):
+        """Test invalid thresholds fail at configuration load time."""
+        monkeypatch.setenv("IMAGE_ARTIFACT_BORDER_OR_FRAME_THRESHOLD", "1.5")
+
+        from app.core import config
+
+        with pytest.raises(ValueError, match="between 0.0 and 1.0"):
+            importlib.reload(config)
+
+        monkeypatch.delenv("IMAGE_ARTIFACT_BORDER_OR_FRAME_THRESHOLD")
+        importlib.reload(config)
+
     def test_api_call_delay_configured(self, mock_env_vars):
         """Test API call delay is configured."""
         from app.core import config

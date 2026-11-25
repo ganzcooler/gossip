@@ -7,10 +7,12 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from app.core import config
 from app.services.openrouter_client import (
     OpenRouterError,
     chat_completion,
     generate_image,
+    submit_decisions,
 )
 
 
@@ -156,3 +158,78 @@ class TestGenerateImage:
 
         with pytest.raises(OpenRouterError, match="invalid base64"):
             generate_image(model="model", prompt="prompt")
+
+
+class TestSubmitDecisions:
+    """Tests for the Decisions API helper."""
+
+    @patch("app.services.openrouter_client.httpx.post")
+    def test_successful_decision_request(self, mock_post):
+        mock_post.return_value = _response(
+            200,
+            {
+                "model": "typesafe/jev-1.14",
+                "answers": {
+                    "border_or_frame": {"type": "noul", "noul": 0.1}
+                },
+            },
+        )
+        state = [
+            "Inspect this image",
+            {
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64,AAAA"},
+            },
+        ]
+        questions = {
+            "border_or_frame": {
+                "type": "noul",
+                "instructions": "Is there a frame?",
+            }
+        }
+
+        result = submit_decisions(
+            model="typesafe/jev-1.14",
+            state=state,
+            questions=questions,
+        )
+
+        assert result["answers"]["border_or_frame"]["noul"] == 0.1
+        args, kwargs = mock_post.call_args
+        assert args[0] == config.OPENROUTER_DECISIONS_URL
+        assert kwargs["json"] == {
+            "model": "typesafe/jev-1.14",
+            "state": state,
+            "questions": questions,
+        }
+        assert kwargs["headers"]["Authorization"].startswith("Bearer ")
+
+    @patch("app.services.openrouter_client.httpx.post")
+    def test_http_error_raises_openrouter_error(self, mock_post):
+        mock_post.return_value = _response(
+            429,
+            {"error": {"message": "Rate limit exceeded"}},
+        )
+
+        with pytest.raises(OpenRouterError) as exc_info:
+            submit_decisions(
+                model="typesafe/jev-1.14",
+                state="state",
+                questions={},
+            )
+
+        assert exc_info.value.status_code == 429
+        assert "Rate limit exceeded" in str(exc_info.value)
+
+    @patch("app.services.openrouter_client.httpx.post")
+    def test_unexpected_response_shape_raises_openrouter_error(self, mock_post):
+        mock_post.return_value = _response(200, {"answers": "not-a-map"})
+
+        with pytest.raises(
+            OpenRouterError, match="Unexpected OpenRouter decisions response"
+        ):
+            submit_decisions(
+                model="typesafe/jev-1.14",
+                state="state",
+                questions={},
+            )

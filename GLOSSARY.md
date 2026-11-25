@@ -72,6 +72,10 @@ _Avoid_: Anker, Zitat, Referenz
 The gate that compares a draft against the retrieved source excerpts from the Protokoll and reports unsupported, wrong, or inadmissible claims.
 _Avoid_: Fact Check, QA
 
+**Artefaktprüfung**:
+The decision-model gate that inspects each final generated image for unintended borders, blank bands or blocks, seams, text/watermarks and obvious generation defects. It runs on the exact asset that will be published; a flagged image is regenerated once, then replaced by the brand fallback.
+_Avoid_: Bildprüfung, Vision-Check
+
 **Caption**:
 The Instagram caption of a Beitrag. It carries source, date, and the first-line label `Bild: KI-generiert.`
 _Avoid_: Beschreibung, Text

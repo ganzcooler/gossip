@@ -53,8 +53,7 @@ def _error_message(response: httpx.Response) -> str:
     return response.text or f"HTTP {response.status_code}"
 
 
-def _post(path: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
-    url = f"{config.OPENROUTER_BASE_URL.rstrip('/')}{path}"
+def _post_url(url: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
     try:
         response = httpx.post(url, headers=_headers(), json=payload, timeout=timeout)
     except httpx.HTTPError as exc:
@@ -74,6 +73,30 @@ def _post(path: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise OpenRouterError(f"Unexpected OpenRouter response: {payload!r}")
     return payload
+
+
+def _post(path: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+    url = f"{config.OPENROUTER_BASE_URL.rstrip('/')}{path}"
+    return _post_url(url, payload, timeout)
+
+
+def submit_decisions(
+    *,
+    model: str,
+    state: str | list[Any],
+    questions: dict[str, Any],
+    timeout: float = 120.0,
+) -> dict[str, Any]:
+    """Submit typed questions to the OpenRouter Decisions API."""
+    payload = {
+        "model": model,
+        "state": state,
+        "questions": questions,
+    }
+    data = _post_url(config.OPENROUTER_DECISIONS_URL, payload, timeout)
+    if not isinstance(data.get("answers"), dict):
+        raise OpenRouterError(f"Unexpected OpenRouter decisions response: {data!r}")
+    return data
 
 
 def chat_completion(
