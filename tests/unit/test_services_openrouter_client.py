@@ -116,7 +116,7 @@ class TestGenerateImage:
         )
 
         result = generate_image(
-            model="google/gemini-3.1-flash-image",
+            model="bytedance-seed/seedream-5-0-flash",
             prompt="A test image",
             aspect_ratio="9:16",
         )
@@ -125,7 +125,7 @@ class TestGenerateImage:
         args, kwargs = mock_post.call_args
         assert args[0].endswith("/images")
         assert kwargs["json"] == {
-            "model": "google/gemini-3.1-flash-image",
+            "model": "bytedance-seed/seedream-5-0-flash",
             "prompt": "A test image",
             "aspect_ratio": "9:16",
             "n": 1,

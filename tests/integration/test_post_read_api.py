@@ -66,7 +66,7 @@ async def _add_post_tree(session):
                 role="cover",
                 status="ready",
                 path="output/topic-2024-01-15-01.png",
-                model="google/gemini-3.1-flash-image",
+                model="bytedance-seed/seedream-5-0-flash",
             ),
         ]
     )

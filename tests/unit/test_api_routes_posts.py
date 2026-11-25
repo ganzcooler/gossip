@@ -143,7 +143,7 @@ def test_get_post_returns_slides_and_assets():
         path="output/topic-2024-01-15-01.png",
         status="ready",
         error=None,
-        model="google/gemini-3.1-flash-image",
+        model="bytedance-seed/seedream-5-0-flash",
     )
     post = _post(
         id=2,
@@ -227,7 +227,7 @@ def test_get_post_returns_slides_and_assets():
                 "path": "output/topic-2024-01-15-01.png",
                 "status": "ready",
                 "error": None,
-                "model": "google/gemini-3.1-flash-image",
+                "model": "bytedance-seed/seedream-5-0-flash",
             }
         ],
     }

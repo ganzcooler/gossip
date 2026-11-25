@@ -43,7 +43,7 @@ OPENROUTER_TEXT_MODEL = os.getenv(
     "OPENROUTER_TEXT_MODEL", "deepseek/deepseek-v4.1-flash-1017"
 )
 OPENROUTER_IMAGE_MODEL = os.getenv(
-    "OPENROUTER_IMAGE_MODEL", "google/gemini-3.1-flash-image"
+    "OPENROUTER_IMAGE_MODEL", "bytedance-seed/seedream-5-0-flash"
 )
 OPENROUTER_REASONING_EFFORT = os.getenv("OPENROUTER_REASONING_EFFORT", "max")
 OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL", "https://gossip.dano1.de")
