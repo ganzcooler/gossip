@@ -213,6 +213,24 @@ class TopicDraft(PipelineModel):
         return self
 
 
+class TopicKicker(PipelineModel):
+    """The Kicker-Writer's one-word label for a Themenabschnitt."""
+
+    kicker: str
+
+    @field_validator("kicker")
+    @classmethod
+    def _one_word(cls, value: str) -> str:
+        value = value.strip()
+        if len(value.split()) != 1:
+            raise ValueError("kicker must be exactly one word")
+        if not any(character.isalpha() for character in value):
+            raise ValueError("kicker must contain letters")
+        if len(value) > 40:
+            raise ValueError("kicker must not exceed 40 characters")
+        return value
+
+
 class FactCheckResult(PipelineModel):
     """The Faktenprüfung result; an empty issue list means the draft passes."""
 

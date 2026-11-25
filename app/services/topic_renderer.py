@@ -15,7 +15,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 from app.core.post_models import TopicDraft
 from app.services.render_common import (
@@ -60,7 +60,6 @@ from app.services.slide_composer import (
     TOPIC_COVER_TITLE_SIZES,
     TOPIC_COVER_TITLE_WIDTH,
     TOPIC_COVER_TITLE_X,
-    TOPIC_FALLBACK_LABEL,
     TOPIC_H2_EXPANDED_ZONE,
     TOPIC_H2_LINE_HEIGHT,
     TOPIC_H2_MAX_LINES,
@@ -76,6 +75,13 @@ from app.services.slide_composer import (
 from app.services.text_layout import (
     fit_lines,
     normalize_whitespace,
+)
+from app.services.topic_kickers import (
+    TOPIC_KICKER_COUNTER_TRACKING,
+    format_follow_counter,
+    kicker_fits,
+    kicker_fonts,
+    normalize_topic_kicker,
 )
 
 logger = logging.getLogger(__name__)
@@ -98,7 +104,7 @@ BODY_LINE_HEIGHT = 1.4
 FOOTER_LOGO_WIDTH = 104
 FOOTER_LOGO_Y = TOPIC_FOOTER_LOGO_TOP
 
-COVER_LOGO_WIDTH = 288
+COVER_LOGO_WIDTH = 240
 COVER_LOGO_POSITION = (64, TOPIC_COVER_LOGO_TOP)
 COVER_BADGE_TOP = TOPIC_COVER_BADGE_TOP
 COVER_TITLE_BOTTOM = TOPIC_COVER_TITLE_BOTTOM
@@ -111,11 +117,6 @@ COVER_EMERGENCY_LINES = 5
 
 _CONTENT_SLIDE_TYPES = ("heading", "continuation")
 _SLUG_PATTERN = re.compile(r"^[a-z0-9-]+$")
-
-_FOLLOW_HEADER_SIZE_OFFSET = 2
-_FOLLOW_HEADER_GAP = 20
-_FOLLOW_COUNTER_TRACKING_FACTOR = 0.04
-
 
 @dataclass(frozen=True)
 class TopicOutput:
@@ -282,62 +283,13 @@ def _verify_cover(
     return size, lines, x, width
 
 
-def _follow_counter(slide: ComposedTopicSlide, content_total: int) -> str:
-    return f"{slide.content_position:02d}/{content_total:02d}"
-
-
-@dataclass(frozen=True)
-class _FollowHeader:
-    """One measured follow-slide kicker/counter pair at the shared size."""
-
-    size: int
-    kicker_font: ImageFont.FreeTypeFont
-    counter_font: ImageFont.FreeTypeFont
-    counter_tracking: float
-    kicker_width: float
-    counter_width: float
-
-    @property
-    def fits_column(self) -> bool:
-        return (
-            self.kicker_width + _FOLLOW_HEADER_GAP + self.counter_width
-            <= CONTENT_TEXT_WIDTH
-        )
-
-
-def _measure_follow_header(
-    kicker: str,
-    counter: str,
-    *,
-    body_size: int,
-) -> _FollowHeader:
-    """Measure the follow-slide header at ``body_size`` plus the fixed offset."""
-    size = body_size + _FOLLOW_HEADER_SIZE_OFFSET
-    kicker_font = font("inter", size, 600)
-    counter_font = font("oswald", size, 600)
-    counter_tracking = _FOLLOW_COUNTER_TRACKING_FACTOR * size
-    return _FollowHeader(
-        size=size,
-        kicker_font=kicker_font,
-        counter_font=counter_font,
-        counter_tracking=counter_tracking,
-        kicker_width=text_advance(kicker_font, kicker),
-        counter_width=text_advance(counter_font, counter, counter_tracking),
-    )
-
-
 def _visible_kickers(
     content_slides: Sequence[ComposedTopicSlide],
     *,
     body_size: int,
     content_total: int,
 ) -> dict[int, str]:
-    """Resolve one visible kicker per section for the heading and follow slides.
-
-    The section keeps its own kicker only when it is one word and the combined
-    advance of kicker, gap and follow counter fits the 600px column on every
-    slide of the section. Otherwise the whole section shows the neutral THEMA.
-    """
+    """Validate one resolved kicker per section for heading and follow slides."""
     by_section: dict[int, list[ComposedTopicSlide]] = {}
     for slide in content_slides:
         section_index = slide.section_index
@@ -349,30 +301,36 @@ def _visible_kickers(
 
     visible: dict[int, str] = {}
     for section_index, slides in by_section.items():
-        heading = next(
-            (slide for slide in slides if slide.slide_type == "heading"), None
+        candidates = {
+            normalize_topic_kicker(slide.kicker or slide.label or "")
+            for slide in slides
+        }
+        candidates.discard("")
+        _require(
+            len(candidates) == 1,
+            f"Topic section {section_index} slides disagree on the kicker",
         )
-        label = ((heading.kicker or heading.label) if heading else "") or ""
-        candidate = label.strip().upper()
-        fits = bool(candidate) and len(candidate.split()) == 1
-        if fits:
-            fits = all(
-                _measure_follow_header(
-                    candidate,
-                    _follow_counter(slide, content_total),
-                    body_size=body_size,
-                ).fits_column
-                for slide in slides
-            )
-        if not fits:
-            logger.warning(
-                "Topic section %s has a kicker that does not fit the follow-slide "
-                "header; using THEMA",
-                section_index,
-            )
-            visible[section_index] = TOPIC_FALLBACK_LABEL
-        else:
-            visible[section_index] = candidate
+        candidate = next(iter(candidates))
+        _require(
+            candidate != "THEMA",
+            f"Topic section {section_index} still has the legacy THEMA kicker",
+        )
+        counters = tuple(
+            format_follow_counter(int(slide.content_position), content_total)
+            for slide in slides
+            if slide.content_position is not None
+        )
+        _require(
+            bool(counters)
+            and kicker_fits(
+                candidate,
+                body_size=body_size,
+                counters=counters,
+            ),
+            f"Topic section {section_index} kicker {candidate!r} does not fit "
+            "the 600px follow-slide header",
+        )
+        visible[section_index] = candidate
     return visible
 
 
@@ -598,28 +556,34 @@ def _render_continuation_slide(
         fill=BRAND_ORANGE_DEEP,
     )
 
-    counter = _follow_counter(slide, content_total)
-    header = _measure_follow_header(kicker, counter, body_size=body_size)
+    counter = format_follow_counter(content_position, content_total)
     _require(
-        header.fits_column,
+        kicker_fits(
+            kicker,
+            body_size=body_size,
+            counters=(counter,),
+        ),
         "Topic follow kicker and counter do not fit the 600px column",
     )
+    kicker_font, counter_font, size = kicker_fonts(body_size)
+    counter_tracking = TOPIC_KICKER_COUNTER_TRACKING * size
+    counter_width = text_advance(counter_font, counter, counter_tracking)
 
     draw_tracked_text(
         draw,
         (text_x, CONTENT_TOP),
         kicker,
-        font=header.kicker_font,
+        font=kicker_font,
         fill=ON_SURFACE,
         anchor="la",
     )
     draw_tracked_text(
         draw,
-        (text_x + CONTENT_TEXT_WIDTH - header.counter_width, CONTENT_TOP),
+        (text_x + CONTENT_TEXT_WIDTH - counter_width, CONTENT_TOP),
         counter,
-        font=header.counter_font,
+        font=counter_font,
         fill=BRAND_ORANGE,
-        tracking=header.counter_tracking,
+        tracking=counter_tracking,
         anchor="la",
     )
     draw.rectangle(
@@ -934,10 +898,14 @@ def topic_composition_from_stored(
         body_size = int(slide_plan["body_size"])
         cover_plan = slide_plan["cover"]
         cover_title_size = int(cover_plan["title_size"])
-        _require(
-            cover_title_size in TOPIC_COVER_TITLE_SIZES,
-            "Stored topic cover title size is invalid",
-        )
+        if cover_title_size not in TOPIC_COVER_TITLE_SIZES:
+            # Older plans may store the former 80–96 px title scale. The
+            # renderer re-fits the draft title with the current scale.
+            logger.warning(
+                "Stored topic cover title size %s is legacy; re-fitting",
+                cover_title_size,
+            )
+            cover_title_size = TOPIC_COVER_TITLE_SIZES[-1]
         cover_title_lines = tuple(cover_plan["title_lines"])
         _require(
             " ".join(cover_title_lines) == normalize_whitespace(draft.title),

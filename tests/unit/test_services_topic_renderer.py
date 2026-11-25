@@ -186,7 +186,7 @@ def test_cover_has_orange_rule_badge_kicker_and_bottom_anchored_title():
 
     assert cover.getpixel((540, 2)) == ORANGE
     assert cover.getpixel((1000, 180)) == ORANGE_DEEP
-    assert _has_color(cover, (64, 500, 700, 900), ORANGE_DEEP)
+    assert _has_color(cover, (64, 950, 700, 1100), ORANGE_DEEP)
     assert _has_color(cover, (44, 700, 54, 1250), ORANGE_DEEP)
     assert _has_color(cover, (64, 1190, 1014, 1241), ON_SURFACE)
 
@@ -203,7 +203,7 @@ def test_cover_uses_the_105_to_1255_safe_band_with_its_bottom_anchored_title():
     cover = frames[0]
 
     logo = _color_bbox(cover, (0, 0, 540, 520), WHITE)
-    assert logo == (64, 120, 352, 408)
+    assert logo == (64, 120, 304, 360)
     badge = _color_bbox(cover, (700, 0, 1080, 240), ORANGE_DEEP)
     assert badge is not None
     assert badge[1] == 130
@@ -223,14 +223,14 @@ def test_cover_uses_the_real_square_logo_with_its_white_plate():
     assert _color_bbox(cover, (40, 100, 520, 460), WHITE) == (
         64,
         120,
-        352,
-        408,
+        304,
+        360,
     )
     # The plate's transparent rounded corner shows the unscrimmed cover art.
     assert cover.getpixel((65, 121)) == _cover_art().getpixel((65, 121))
 
 
-def test_cover_composites_a_synthetic_transparent_288px_logo_without_adding_a_plate(
+def test_cover_composites_a_synthetic_transparent_240px_logo_without_adding_a_plate(
     tmp_path, monkeypatch
 ):
     _use_transparent_logo(monkeypatch, tmp_path)
@@ -241,11 +241,11 @@ def test_cover_composites_a_synthetic_transparent_288px_logo_without_adding_a_pl
     assert _color_bbox(cover, (40, 100, 520, 440), LOGO_COLOR) == (
         64,
         120,
-        352,
-        264,
+        304,
+        240,
     )
-    assert cover.getpixel((208, 192)) not in (WHITE, LOGO_COLOR)
-    assert not _has_color(cover, (64, 120, 456, 477), WHITE)
+    assert cover.getpixel((184, 180)) not in (WHITE, LOGO_COLOR)
+    assert not _has_color(cover, (64, 120, 408, 429), WHITE)
 
 
 def test_cover_badge_kicker_and_accent_bar_have_rounded_corners():
@@ -367,7 +367,7 @@ def test_cover_has_a_single_bottom_up_scrim_with_a_transparent_top():
 
     luminances = [
         sum(cover.getpixel((1050, y)))
-        for y in range(int(0.42 * (height - 1)), height)
+        for y in range(int(0.52 * (height - 1)), height)
     ]
     assert luminances[0] < 765
     assert all(
@@ -652,26 +652,50 @@ def test_follow_kicker_and_counter_share_the_header_without_overlapping():
     )
     assert kicker is not None
     assert counter is not None
-    # The section keeps its own kicker instead of falling back to THEMA.
+    # The section keeps its own resolved kicker.
     assert kicker[2] - kicker[0] > 300
     assert kicker[0] >= text_x
     assert counter[2] <= text_x + 600
     assert kicker[2] + 20 <= counter[0]
 
 
-def test_overwide_section_kicker_falls_back_to_thema_on_every_section_slide():
-    draft = _draft_with_first_h2("Verwaltungsausschuss tagt")
+def test_compound_section_kicker_is_shortened_before_rendering():
+    draft = TopicDraft(
+        title="Was der Rat zum Haushalt in Rosdorf entschieden hat",
+        sections=[
+            {
+                "h2": "Dringlichkeitsliste bis September",
+                "paragraphs": [_paragraph(700)],
+            },
+            {
+                "h2": "Der Radweg wird im Sommer gebaut",
+                "paragraphs": [_paragraph(700)],
+            },
+        ],
+    )
     composition = compose_topic_slides(draft)
-    assert composition.slides[1].kicker == "VERWALTUNGSAUSSCHUSS"
-    frames = _render_composition(draft, composition)
+    assert composition.body_size == 42
 
     first_section = [
-        (slide, frame)
-        for slide, frame in zip(composition.slides[1:], frames[1:])
+        slide
+        for slide in composition.slides[1:]
         if slide.section_index == 0
     ]
-    assert len(first_section) > 1
-    for slide, frame in first_section:
+    assert first_section
+    assert {slide.kicker for slide in first_section} == {"DRINGLICHKEIT"}
+    plan_kickers = {
+        entry["kicker"]
+        for entry in composition.slide_plan["slides"]
+        if entry["section_index"] == 0
+    }
+    assert plan_kickers == {"DRINGLICHKEIT"}
+
+    frames = _render_composition(draft, composition)
+    for slide, frame in zip(
+        composition.slides[1:], frames[1:]
+    ):
+        if slide.section_index != 0:
+            continue
         text_x = (
             CONTENT_TEXT_X_LEFT
             if slide.content_position % 2
@@ -682,24 +706,39 @@ def test_overwide_section_kicker_falls_back_to_thema_on_every_section_slide():
             frame, (text_x, top, text_x + 600, 236), ON_SURFACE
         )
         assert kicker is not None
-        # THEMA ink is at most ~160px at the follow size; the long section
-        # kicker would be more than three times as wide.
-        assert kicker[2] - kicker[0] <= 180
 
-    second_heading = composition.slides[-1]
-    assert second_heading.section_index == 1
-    assert second_heading.kicker == "RADWEG"
-    second_frame = frames[-1]
-    second_text_x = (
-        CONTENT_TEXT_X_LEFT
-        if second_heading.content_position % 2
-        else CONTENT_TEXT_X_RIGHT
+
+def test_unresolved_overwide_section_kicker_is_a_render_error():
+    draft = _draft_with_first_h2("Verwaltungsausschuss tagt")
+    composition = compose_topic_slides(draft)
+    unresolved = replace(
+        composition,
+        slides=tuple(
+            replace(slide, kicker="VERWALTUNGSAUSSCHUSS")
+            if slide.section_index == 0
+            else slide
+            for slide in composition.slides
+        ),
     )
-    second_kicker = _color_bbox(
-        second_frame, (second_text_x, 194, second_text_x + 600, 236), ON_SURFACE
+
+    with pytest.raises(RenderError, match="kicker"):
+        _render_composition(draft, unresolved)
+
+
+def test_legacy_thema_section_kicker_is_a_render_error():
+    draft, composition = _composition()
+    legacy = replace(
+        composition,
+        slides=tuple(
+            replace(slide, kicker="THEMA")
+            if slide.section_index == 0
+            else slide
+            for slide in composition.slides
+        ),
     )
-    assert second_kicker is not None
-    assert second_kicker[2] - second_kicker[0] > 90
+
+    with pytest.raises(RenderError, match="THEMA"):
+        _render_composition(draft, legacy)
 
 
 def _stored_slide_rows(composition):
@@ -854,6 +893,34 @@ def test_stored_plan_with_the_old_cover_label_renders_the_runtime_label():
     )
 
     assert restored.slides[0].label == "IM FOKUS"
+    assert rerendered[0].tobytes() == frames[0].tobytes()
+
+
+def test_stored_plan_with_a_legacy_cover_title_size_is_refit_to_current_scale():
+    draft, composition, frames = _render()
+    old_plan = {
+        **composition.slide_plan,
+        "cover": {
+            **composition.slide_plan["cover"],
+            "title_size": 96,
+        },
+    }
+
+    restored = topic_composition_from_stored(
+        draft, old_plan, _stored_slide_rows(composition)
+    )
+    assert restored.cover_title_size == 64
+
+    content_count = len(restored.slides) - 1
+    rerendered = render_topic_frames(
+        draft,
+        restored,
+        cover_art=_cover_art(),
+        pair_art=_pair_art(content_count // 2),
+        single_art=_single_art() if content_count % 2 else None,
+        organ="Gemeinderat Rosdorf",
+    )
+
     assert rerendered[0].tobytes() == frames[0].tobytes()
 
 

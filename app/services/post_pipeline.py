@@ -85,6 +85,7 @@ from app.services.topic_renderer import (
     topic_composition_from_stored,
     write_topic_output,
 )
+from app.services.topic_kicker_writer import resolve_topic_kickers
 from app.services.topic_writer import TopicWriterError, write_topic
 from app.services.visual_prompts import (
     write_summary_visual_prompts,
@@ -1498,6 +1499,17 @@ class PostPipeline:
     ) -> None:
         """Visual prompts → assets → in-memory frames → caption file → ready."""
         self._sync_post_title(post, draft)
+        try:
+            composition = await resolve_topic_kickers(
+                draft, composition, self.llm_client
+            )
+        except LLMAuthenticationError:
+            raise
+        except Exception as exc:
+            await self._fail_post(db, post, "writer", exc)
+            return
+        post.slide_plan_json = composition.slide_plan
+        await db.flush()
         content_slides = len(composition.slides) - 1
         pair_count = content_slides // 2
         has_single = content_slides % 2 == 1

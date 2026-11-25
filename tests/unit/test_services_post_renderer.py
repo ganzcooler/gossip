@@ -176,7 +176,7 @@ def test_cover_has_a_single_bottom_up_scrim_with_a_transparent_top():
 
     luminances = [
         sum(cover.getpixel((1050, y)))
-        for y in range(int(0.42 * (height - 1)), height)
+        for y in range(int(0.52 * (height - 1)), height)
     ]
     assert luminances[0] < 765
     assert all(

@@ -268,6 +268,48 @@ des JSON.
 """
 
 
+def build_topic_kicker_prompt(
+    *,
+    title: str,
+    section_h2: str,
+    max_chars: int,
+    feedback: str | None = None,
+) -> str:
+    """Build the Kicker-Writer prompt for one Themenabschnitt."""
+    feedback_block = ""
+    if feedback:
+        feedback_block = f"""
+## Korrekturhinweis
+
+Dein vorheriger Kicker wurde abgelehnt:
+{feedback}
+
+Liefere einen anderen, kürzeren Kicker.
+"""
+    return f"""Du bist der Kicker-Redakteur von Gossip Rosdorf. Du erfindest keine \
+Inhalte; du benennst einen vorhandenen Themenabschnitt mit genau einem Wort.
+
+## Kontext
+
+Themenbeitrag: {title}
+Themenabschnitt: {section_h2}
+
+## Aufgabe
+
+- Genau ein deutsches Substantiv in Großbuchstaben.
+- Höchstens {max_chars} Zeichen.
+- Keine Satzzeichen, keine Zahlen, keine Leerzeichen, keine Erklärung.
+- Das Wort muss den Abschnitt prägnant benennen und darf kein generisches Füllwort sein.
+- Bevorzuge den inhaltstragenden Kern des Abschnitts.
+{feedback_block}
+## Ausgabeformat
+
+Antworte ausschließlich mit einem einzigen JSON-Objekt, das dem vorgegebenen \
+Schema entspricht. Kein Markdown, keine Erklärungen und kein Text außerhalb \
+des JSON.
+"""
+
+
 def build_fact_check_prompt(
     *, draft: BaseModel, excerpts: Sequence[SourceExcerpt]
 ) -> str:

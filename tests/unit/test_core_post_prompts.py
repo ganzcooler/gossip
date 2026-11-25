@@ -20,6 +20,7 @@ from app.core.post_prompts import (
     build_repair_prompt,
     build_summary_visual_prompt,
     build_summary_writer_prompt,
+    build_topic_kicker_prompt,
     build_topic_visual_prompt,
     build_topic_writer_prompt,
 )
@@ -201,6 +202,32 @@ def test_topic_writer_prompt_is_a_pure_deterministic_string_builder():
     assert build_topic_writer_prompt(**arguments) == build_topic_writer_prompt(
         **arguments
     )
+
+
+def test_topic_kicker_prompt_names_the_section_and_character_budget():
+    prompt = build_topic_kicker_prompt(
+        title="Haushalt und Radweg in Rosdorf",
+        section_h2="Dringlichkeitsliste bis September",
+        max_chars=16,
+    )
+
+    assert "Haushalt und Radweg in Rosdorf" in prompt
+    assert "Dringlichkeitsliste bis September" in prompt
+    assert "Höchstens 16 Zeichen" in prompt
+    assert "Füllwort" in prompt
+
+
+def test_topic_kicker_prompt_includes_retry_feedback():
+    prompt = build_topic_kicker_prompt(
+        title="Haushalt und Radweg in Rosdorf",
+        section_h2="Dringlichkeitsliste bis September",
+        max_chars=14,
+        feedback="Das Wort ist zu breit.",
+    )
+
+    assert "Korrekturhinweis" in prompt
+    assert "Das Wort ist zu breit." in prompt
+    assert "Höchstens 14 Zeichen" in prompt
 
 
 def test_fact_check_prompt_contains_the_draft_and_excerpts_only():

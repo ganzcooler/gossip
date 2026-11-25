@@ -335,10 +335,10 @@ def _kicker_text(slide: ComposedSummarySlide) -> str:
     label = (slide.label or "").strip()
     if not label or len(label.split()) != 1:
         logger.warning(
-            "Summary card %s has a missing or invalid kicker; using THEMA",
+            "Summary card %s has a missing or invalid kicker; using AKTUELL",
             slide.slide_index,
         )
-        return "THEMA"
+        return "AKTUELL"
     return label.upper()
 
 

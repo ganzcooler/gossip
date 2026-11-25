@@ -66,7 +66,10 @@ has been removed; legacy articles remain readable through the API.
    word boundary, and in that fallback the last continuation is never a single
    complete sentence. Continuation slides carry the section kicker and the page
    counter at `body_size + 2`, while the body text keeps one post-wide body
-   size. The article text is never reworded, shortened or hyphenated. A
+   size. A long compound kicker is shortened at common German compound heads;
+   if no deterministic candidate fits, a dedicated stateless Kicker-Writer
+   supplies a shorter one-word label. There is no generic visible fallback
+   label. The article text is never reworded, shortened or hyphenated. A
    stateless Themen
    visual-prompt call writes a cover and `ceil(content_slides / 2)` pair prompts
    from the Themenentwurf only.
@@ -130,6 +133,8 @@ app/
 │   ├── topic_writer.py        Themen-Writer role with one validation retry
 │   ├── fact_checker.py        Shared fact-check + one-repair hard gate
 │   ├── slide_composer.py      Deterministic Summary cards and topic slides
+│   ├── topic_kickers.py       Kicker derivation, compound shortening and width fit
+│   ├── topic_kicker_writer.py Stateless Kicker-Writer fallback for too-wide labels
 │   ├── caption_writer.py      Caption body role and deterministic composition
 │   ├── visual_prompts.py      Stateless visual-prompt role for covers/artwork
 │   ├── image_generation.py    Image decode, realism suffix, fit, brand fallbacks
@@ -168,16 +173,18 @@ palette of its own.
 
 Both cover families anchor the white title at the lower safe area by the bottom
 of its ink box: y=1720 in the 1080×1920 Summary story and y=1240 in the
-1080×1350 Themenbeitrag. The colored kicker sits directly above it, left-aligned.
+1080×1350 Themenbeitrag. Both use the same title sizes (76/72/68/64 px) and
+line height. The colored kicker sits directly above the title, left-aligned.
 The Summary card spans y=420–1720; its logo and Organ badge start at 240/260,
 and the card number, kicker, rule, H2, body bottom and page label sit at
-460/606/651/678/1640/1670. The Themenbeitrag cover keeps logo, badge, kicker and
-title inside its 1:1 safe band y=105–1255 (logo 120, badge 130); every topic
-content slide ends its body at y=1140 and starts the footer logo at y=1150.
-A single charcoal scrim covers the lower roughly 60% and fades to fully
-transparent above; there is no local gray contrast box and no extra darkening at
-the top edge. Before drawing the title, the renderer validates white-on-scrim
-contrast against a worst-case white image and fails the render below 4.5:1.
+460/606/651/678/1640/1670. The Themenbeitrag cover keeps a 240 px logo, badge,
+kicker and title inside its 1:1 safe band y=105–1255 (logo 120, badge 130);
+every topic content slide ends its body at y=1140 and starts the footer logo
+at y=1150. A single charcoal scrim starts at the lower half of the image and
+fades to fully transparent above; there is no local gray contrast box and no
+extra darkening at the top edge. Before drawing the title, the renderer
+validates white-on-scrim contrast against a worst-case white image and fails the
+render below 4.5:1.
 
 `src/`, `alembic/`, and a root `main.py` no longer exist. Database tables are
 created with SQLAlchemy `create_all()` on startup; migrations have not been
@@ -348,7 +355,9 @@ image-left/text-right; each 720×1350 pair artwork is split into the left and
 right 360×1350 strips, and an unpaired final slide uses a standalone strip. The
 first slide gets the large orange number, one-word kicker, 3 px rule and fitted
 H2; continuation slides show the same section kicker, the zero-padded `n/N`
-counter and a 1 px hairline, with kicker and counter at `body_size + 2`. Every
+counter and a 1 px hairline, with kicker and counter at `body_size + 2`. The
+composer shortens long compounds; if no deterministic kicker fits, the
+Kicker-Writer generates one, so a generic fallback label never appears. Every
 content slide carries the square logo with its own white
 plate directly on the image at the bottom-right of the text block, right-aligned
 to the 600 px text column. The caption file is UTF-8, starts with

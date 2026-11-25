@@ -6,7 +6,11 @@ import pytest
 
 from app.core.post_models import TopicDraft
 from app.services.slide_composer import (
+    COVER_TITLE_LINE_HEIGHT,
+    COVER_TITLE_SIZES,
     TOPIC_BODY_BOTTOM,
+    TOPIC_COVER_TITLE_LINE_HEIGHT,
+    TOPIC_COVER_TITLE_SIZES,
     TOPIC_BODY_LINE_HEIGHT,
     TOPIC_CONTINUATION_TOP,
     TOPIC_H2_BODY_GAP,
@@ -119,6 +123,11 @@ def _rendered_heading_capacity(slide) -> float:
 
 def _rendered_body_height(slide) -> float:
     return len(slide.body_lines) * slide.body_size * TOPIC_BODY_LINE_HEIGHT
+
+
+def test_topic_cover_typography_matches_the_summary_cover():
+    assert TOPIC_COVER_TITLE_SIZES == COVER_TITLE_SIZES == (76, 72, 68, 64)
+    assert TOPIC_COVER_TITLE_LINE_HEIGHT == COVER_TITLE_LINE_HEIGHT == 1.04
 
 
 def test_cover_and_every_h2_start_a_new_slide():
@@ -783,13 +792,13 @@ def test_pair_index_follows_the_content_position_and_rounds_up():
 def test_kicker_and_chapter_short_derivation_is_deterministic():
     assert derive_topic_kicker("Der Rat hat den Haushalt beschlossen") == "RAT"
     assert derive_topic_kicker("Die Gemeinde baut den Radweg") == "GEMEINDE"
-    assert derive_topic_kicker("Der die das und was auch") == "THEMA"
+    assert derive_topic_kicker("Der die das und was auch") == "AKTUELL"
 
     chapter = derive_chapter_short("Der Rat hat den Haushalt beschlossen")
     assert chapter == "Der Rat hat den Haushalt"
     assert len(chapter) <= 28
     assert "…" not in chapter
-    assert derive_chapter_short("Donaudampfschifffahrtsgesellschaft") == "THEMA"
+    assert derive_chapter_short("Donaudampfschifffahrtsgesellschaft") == "AKTUELL"
 
 
 def test_alt_texts_are_deterministic_and_match_the_slides():

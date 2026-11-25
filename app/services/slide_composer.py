@@ -8,6 +8,7 @@ renderers exact line boxes and deterministic Alt-Texte.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,6 +20,13 @@ from app.services.render_common import (
     TOPIC_FOLLOW_BODY_TOP,
     TOPIC_H2_BODY_GAP,
     TOPIC_H2_TOP,
+)
+from app.services.topic_kickers import (
+    DEFAULT_TOPIC_KICKER,
+    derive_topic_kicker,
+    fit_topic_kicker,
+    format_follow_counter,
+    normalize_topic_kicker,
 )
 from app.services.text_layout import (
     FitResult,
@@ -311,7 +319,9 @@ def render_summary_markdown(draft: SummaryDraft) -> str:
 # ---------------------------------------------------------------------------
 
 TOPIC_BODY_SIZES = (42, 39, 36)
-TOPIC_COVER_TITLE_SIZES = (96, 92, 88, 84, 80, 76, 72, 68, 64)
+# The Topic cover uses the same title sizes and line height as the Summary
+# cover so both cover families share one typographic scale.
+TOPIC_COVER_TITLE_SIZES = COVER_TITLE_SIZES
 TOPIC_H2_SIZES = (72, 68, 64)
 
 TOPIC_COVER_TITLE_WIDTH = 930
@@ -319,7 +329,7 @@ TOPIC_COVER_TITLE_X = 64
 TOPIC_COVER_INSET_X = 48
 TOPIC_COVER_INSET_WIDTH = 984
 TOPIC_COVER_TITLE_MAX_LINES = 4
-TOPIC_COVER_TITLE_LINE_HEIGHT = 1.0
+TOPIC_COVER_TITLE_LINE_HEIGHT = COVER_TITLE_LINE_HEIGHT
 
 TOPIC_TEXT_WIDTH = 600
 TOPIC_H2_LINE_HEIGHT = 1.06
@@ -331,61 +341,9 @@ TOPIC_BODY_LINE_HEIGHT = 1.4
 TOPIC_PARAGRAPH_GAP_FACTOR = 0.72
 
 TOPIC_COVER_LABEL = "IM FOKUS"
-TOPIC_FALLBACK_LABEL = "THEMA"
 TOPIC_MAX_CHAPTER_SHORT = 28
 TOPIC_MIN_CONTENT_SLIDES = 4
 TOPIC_MAX_CONTENT_SLIDES = 7
-
-_LABEL_PUNCTUATION = ".,;:!?()[]{}\"'„“”‚‘’–—…"
-_KICKER_STOPWORDS = frozenset(
-    {
-        "der",
-        "die",
-        "das",
-        "den",
-        "dem",
-        "des",
-        "ein",
-        "eine",
-        "einen",
-        "einem",
-        "eines",
-        "einer",
-        "und",
-        "oder",
-        "aber",
-        "im",
-        "in",
-        "am",
-        "an",
-        "auf",
-        "aus",
-        "bei",
-        "für",
-        "mit",
-        "von",
-        "vor",
-        "zu",
-        "zur",
-        "zum",
-        "über",
-        "unter",
-        "um",
-        "was",
-        "wie",
-        "warum",
-        "wann",
-        "wo",
-        "wer",
-        "auch",
-        "nicht",
-        "mehr",
-        "neue",
-        "neuer",
-        "neues",
-        "neuen",
-    }
-)
 
 
 class TopicCompositionError(Exception):
@@ -433,28 +391,11 @@ class _TopicBodyChunk:
     lines: tuple[TextLine, ...]
 
 
-def derive_topic_kicker(h2: str) -> str:
-    """Derive the one-word uppercase kicker from an H2.
-
-    Leading articles and other filler words are skipped so the label stays
-    meaningful. When every word is filler (or punctuation), the neutral
-    ``THEMA`` label is used.
-    """
-    for raw_word in normalize_whitespace(h2).split(" "):
-        word = raw_word.strip(_LABEL_PUNCTUATION)
-        if len(word) < 2 or not any(character.isalpha() for character in word):
-            continue
-        if word.casefold() in _KICKER_STOPWORDS:
-            continue
-        return word.upper()
-    return TOPIC_FALLBACK_LABEL
-
-
 def derive_chapter_short(h2: str) -> str:
     """Derive the continuation label as a word-boundary prefix of the H2.
 
     The result is at most 28 characters and never gains an ellipsis. If the
-    first word alone exceeds the limit, the neutral ``THEMA`` label is used;
+    first word alone exceeds the limit, the neutral ``AKTUELL`` label is used;
     the article text itself is never changed.
     """
     words: list[str] = []
@@ -466,7 +407,7 @@ def derive_chapter_short(h2: str) -> str:
         words.append(word)
         length = candidate
     if not words:
-        return TOPIC_FALLBACK_LABEL
+        return DEFAULT_TOPIC_KICKER
     return " ".join(words)
 
 
@@ -720,12 +661,18 @@ def _topic_content_alt_text(
     return f"{prefix} {body}"
 
 
-def compose_topic_slides(draft: TopicDraft) -> TopicComposition:
+def compose_topic_slides(
+    draft: TopicDraft,
+    kickers: Mapping[int, str] | None = None,
+) -> TopicComposition:
     """Compose the cover and 4–7 content slides for a topic ``draft``.
 
-    Raises :class:`TopicCompositionError` when the draft cannot be laid out
-    within the approved limits. The composer never shortens, rewords or
-    truncates article text; overflow continues on separate slides.
+    ``kickers`` may provide already resolved section labels, keyed by section
+    index. Without an override the composer derives a kicker and applies the
+    deterministic compound-shortening heuristic. Raises
+    :class:`TopicCompositionError` when the draft cannot be laid out within the
+    approved limits. The composer never shortens, rewords or truncates article
+    text; overflow continues on separate slides.
     """
     cover_fit, cover_x, cover_width = _fit_topic_cover_title(draft.title)
     section_fits = [
@@ -805,6 +752,12 @@ def compose_topic_slides(draft: TopicDraft) -> TopicComposition:
             position += 1
             content_plans.append((section_index, part_index, position, chunks))
 
+    section_counters: dict[int, list[str]] = {}
+    for section_index, _, content_position, _ in content_plans:
+        section_counters.setdefault(section_index, []).append(
+            format_follow_counter(content_position, content_count)
+        )
+
     slides: list[ComposedTopicSlide] = [
         ComposedTopicSlide(
             slide_index=1,
@@ -820,7 +773,20 @@ def compose_topic_slides(draft: TopicDraft) -> TopicComposition:
     for section_index, part_index, content_position, chunks in content_plans:
         section = draft.sections[section_index]
         heading_fit, heading_zone = section_fits[section_index]
-        kicker = derive_topic_kicker(section.h2)
+        override = (
+            normalize_topic_kicker(kickers[section_index])
+            if kickers and section_index in kickers
+            else ""
+        )
+        kicker = (
+            override
+            or fit_topic_kicker(
+                section.h2,
+                body_size=body_size,
+                counters=section_counters.get(section_index, ()),
+            )
+            or derive_topic_kicker(section.h2)
+        )
         chapter_short = derive_chapter_short(section.h2)
         body = _topic_body_text(chunks)
         body_lines = _topic_body_lines(chunks)
