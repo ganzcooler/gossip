@@ -1,6 +1,7 @@
 """Tests for the injectable OpenRouter LLM port."""
 
 import inspect
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -249,6 +250,53 @@ async def test_decide_serializes_typed_questions_and_validates_the_response(
             }
         },
     )
+
+
+async def test_decide_logs_every_result_at_info(transport, caplog):
+    transport.submit_decisions.return_value = {
+        "model": "typesafe/jev-1.14",
+        "answers": {"border_or_frame": {"type": "noul", "noul": 0.25}},
+    }
+
+    with caplog.at_level(logging.INFO, logger=llm_client_module.__name__):
+        await _client().decide(
+            role="artifact_check",
+            state="state",
+            questions={"border_or_frame": QUESTION},
+        )
+
+    results = [
+        record.getMessage()
+        for record in caplog.records
+        if "Jev decision result" in record.getMessage()
+    ]
+    assert len(results) == 1
+    assert "role=artifact_check" in results[0]
+    assert "model=typesafe/jev-1.14" in results[0]
+    assert '"noul": 0.25' in results[0]
+
+
+async def test_decide_logs_an_invalid_result_before_retrying(transport, caplog):
+    transport.submit_decisions.side_effect = [
+        {"answers": {"border_or_frame": {"type": "noul", "noul": 2.0}}},
+        {"answers": {"border_or_frame": {"type": "noul", "noul": 0.1}}},
+    ]
+
+    with caplog.at_level(logging.INFO, logger=llm_client_module.__name__):
+        await _client().decide(
+            role="artifact_check",
+            state="state",
+            questions={"border_or_frame": QUESTION},
+        )
+
+    results = [
+        record.getMessage()
+        for record in caplog.records
+        if "Jev decision result" in record.getMessage()
+    ]
+    assert len(results) == 2
+    assert '"noul": 2.0' in results[0]
+    assert '"noul": 0.1' in results[1]
 
 
 async def test_decide_uses_the_configured_model_by_default(transport):

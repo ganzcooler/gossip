@@ -281,7 +281,7 @@ Configuration is read from `.env` (see `.env.example`):
 | `OPENROUTER_REASONING_EFFORT` | Reasoning effort for text calls (default: `max`) |
 | `SESSIONNET_BASE_URL` | SessionNet base URL |
 | `TRAEFIK_HOST` | Public hostname used by the deployment |
-| `LOG_LEVEL` | Python log level (`INFO` by default) |
+| `LOG_LEVEL` | Python log level (`INFO` by default); `INFO` includes every warning/error and every Jev decision result |
 | `GOSSIP_DATA_DIR` | Host directory for generated images and logs (Compose only; default `./data`) |
 | `ARTICLES_DIR` | Output directory for generated images (container path) |
 | `LOGS_DIR` | Log output directory (container path) |
@@ -646,6 +646,10 @@ been removed. Manual tests are excluded from the default run and from hooks.
 - The application prepares `ARTICLES_DIR` for generated images and writes
   monthly logs to `LOGS_DIR`. Both live under `GOSSIP_DATA_DIR` and are
   bind-mounted in `docker-compose.yaml`.
+- Application logs, Python `warnings`, and Uvicorn warnings/errors go through
+  the same root handlers: stdout and the monthly file receive identical
+  records. With `LOG_LEVEL=INFO`, every warning/error and every Jev decision
+  result is logged to both sinks.
 - Force retry and reprocess remove only generated output: Summary
   `summary-*` images plus `caption-summary-*` files, and the affected
   `topic-<slug>/` subfolders. Unrelated files and other Themenbeiträge are left

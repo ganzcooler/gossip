@@ -10,6 +10,7 @@ retry budget while stopping immediately on authentication or account errors.
 import asyncio
 import json
 import logging
+import time
 from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ValidationError
@@ -92,6 +93,11 @@ def _is_account_error(error: OpenRouterError) -> bool:
         return True
     message = str(error).casefold()
     return any(keyword in message for keyword in _ACCOUNT_ERROR_KEYWORDS)
+
+
+def _decision_result_for_log(payload: object) -> str:
+    """Serialize a raw Jev response into one stable, single-line log value."""
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
 
 
 class OpenRouterLLMClient:
@@ -248,6 +254,7 @@ class OpenRouterLLMClient:
         last_error: LLMError | None = None
 
         for attempt in range(1, self._max_attempts + 1):
+            started_at = time.perf_counter()
             try:
                 payload = await asyncio.to_thread(
                     openrouter_client.submit_decisions,
@@ -261,6 +268,16 @@ class OpenRouterLLMClient:
                     raise error from exc
                 last_error = error
             else:
+                logger.info(
+                    "Jev decision result role=%s model=%s attempt=%s/%s "
+                    "duration_ms=%.0f result=%s",
+                    role,
+                    self.decision_model,
+                    attempt,
+                    self._max_attempts,
+                    (time.perf_counter() - started_at) * 1000,
+                    _decision_result_for_log(payload),
+                )
                 try:
                     return DecisionResponse.model_validate(payload)
                 except ValidationError as exc:

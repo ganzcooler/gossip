@@ -245,15 +245,6 @@ async def check_image_artifacts(
                 )
             )
 
-    logger.info(
-        "Image artifact check (%s): %s",
-        model,
-        "; ".join(
-            f"{question}={(answer.noul if isinstance(answer, NoulAnswer) else answer.type)}"
-            for question, answer in response.answers.items()
-        ),
-    )
-
     if problems:
         error = "artifact check did not return a usable verdict: " + "; ".join(problems)
         logger.warning(error)

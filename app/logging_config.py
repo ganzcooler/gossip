@@ -1,6 +1,8 @@
 import logging
+import sys
 from datetime import datetime
 from pathlib import Path
+
 from app.core.config import LOGS_DIR, LOG_LEVEL
 
 
@@ -47,28 +49,56 @@ class MonthlyFileHandler(logging.Handler):
         super().close()
 
 
+LOG_FORMAT = '%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s'
+LOG_DATE_FORMAT = '%Y-%m-%dT%H:%M:%S'
+
+
 def setup_logging():
-    """Configure logging to stdout and monthly log files."""
+    """Configure identical logging to stdout and the monthly log file.
+
+    Both handlers have no level of their own, so they always receive the same
+    records. ``LOG_LEVEL=INFO`` therefore writes every warning and error plus
+    the result of every Jev decision call to the console and to the file.
+    """
     log_dir = Path(LOGS_DIR)
-    log_dir.mkdir(exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
 
     # Get log level
-    level = getattr(logging, LOG_LEVEL.upper(), logging.DEBUG)
+    level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
+    formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
 
-    logging.basicConfig(
-        level=level,
-        format='%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s',
-        datefmt='%Y-%m-%dT%H:%M:%S',
-        handlers=[
-            logging.StreamHandler(),
-            MonthlyFileHandler(log_dir)
-        ]
-    )
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+        handler.close()
+
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(formatter)
+    stream_handler.setLevel(logging.NOTSET)
+
+    file_handler = MonthlyFileHandler(log_dir)
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.NOTSET)
+
+    root.setLevel(level)
+    root.addHandler(stream_handler)
+    root.addHandler(file_handler)
+
+    # Route warnings.warn() through logging as well, so it also reaches the file.
+    logging.captureWarnings(True)
+
+    # Uvicorn installs non-propagating handlers before importing the app.
+    # Route its warning/error logger through the root handlers so startup and
+    # server errors are also written to the monthly file.
+    for logger_name in ("uvicorn", "uvicorn.error"):
+        uvicorn_logger = logging.getLogger(logger_name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.propagate = True
+        uvicorn_logger.setLevel(logging.NOTSET)
 
     # Liste der nervigen Bibliotheken auf WARNING oder ERROR setzen
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("PIL").setLevel(logging.INFO)
 
     return logging.getLogger(__name__)
