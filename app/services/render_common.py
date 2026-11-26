@@ -4,7 +4,7 @@ This module is the single source of the brand palette and render tokens.
 Everything here is deterministic and side-effect free until a caller writes a
 file. The logo is cropped to its alpha ink and composited unchanged: the current
 asset carries its own white rounded plate and transparent corners, and the
-renderer never adds a plate, padding, radius, shadow or glow (see ADR 0011).
+renderer never adds a plate, padding, radius, shadow or glow.
 """
 
 from __future__ import annotations

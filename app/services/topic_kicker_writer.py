@@ -1,11 +1,14 @@
 """Jev-assisted topic kickers with a deterministic word-order fallback.
 
-The complete H2 is sent to the Decisions API as the state. A single ``choice``
-question offers every distinct word from the heading; Jev ranks them by how well
-they work as a one-word heading. The highest-ranked candidate that fits the
-follow-slide header wins. If the decision call fails or none of its candidates
-fits, the heading words are tried in their original order. ``AKTUELL`` remains
-the final guard when no heading word fits at all.
+The complete H2 is sent to the Decisions API as the state. When the heading has
+at least two distinct words, a single ``choice`` question offers the heading
+words plus deterministic compound shortenings; Jev ranks them by how well they
+work as a one-word heading. The ranked candidates are tried in order and the
+first that fits the follow-slide header wins. If the decision call fails or none
+of its candidates fits, the deterministic candidate chain (full word, then
+shortened compounds) is tried before the heading's content words (function
+words are skipped unless every word is a function word). ``AKTUELL`` remains
+the final guard when no heading word fits.
 """
 
 from __future__ import annotations
@@ -23,7 +26,9 @@ from app.services.topic_kickers import (
     DEFAULT_TOPIC_KICKER,
     _KICKER_STOPWORDS,
     _LABEL_PUNCTUATION,
+    fit_topic_kicker,
     format_follow_counter,
+    kicker_candidates,
     kicker_char_budget,
     kicker_fits,
     normalize_topic_kicker,
@@ -47,6 +52,18 @@ def kicker_word_candidates(h2: str) -> tuple[str, ...]:
             continue
         seen.add(key)
         candidates.append(word)
+    return tuple(candidates)
+
+
+def kicker_choice_candidates(h2: str) -> tuple[str, ...]:
+    """Return heading words plus deterministic compound shortenings."""
+    candidates = list(kicker_word_candidates(h2))
+    seen = {word.casefold() for word in candidates}
+    for candidate in kicker_candidates(h2):
+        key = candidate.casefold()
+        if key not in seen:
+            seen.add(key)
+            candidates.append(candidate)
     return tuple(candidates)
 
 
@@ -110,23 +127,25 @@ async def choose_topic_kicker(
     llm: LLMClient,
     role: str = TOPIC_KICKER_ROLE,
 ) -> str | None:
-    """Ask Jev for the best heading word, falling back to heading order."""
-    candidates = kicker_word_candidates(h2)
-    if not candidates:
+    """Ask Jev for the best label, falling back to deterministic candidates."""
+    words = kicker_word_candidates(h2)
+    if not words:
         return None
 
     ranked: list[str] = []
-    if len(candidates) >= 2:
+    if len(words) >= 2:
+        candidates = kicker_choice_candidates(h2)
         question = ChoiceQuestion(
             instructions=(
-                "Which single word from this section heading works best as a "
-                "one-word heading? Prefer a German noun that names the section; "
-                "otherwise choose the word that best names it. Ignore articles, "
-                "prepositions, conjunctions and numbers. Prefer a word that is "
-                f"clear out of context and at most {max_chars} characters."
+                "Which one-word label from this section heading, including "
+                "shortened compounds, works best as the heading? Prefer a "
+                "German noun that names the section; otherwise choose the "
+                "label that best names it. Ignore articles, prepositions, "
+                "conjunctions and numbers. Prefer a label that is clear out of "
+                f"context and at most {max_chars} characters."
             ),
             criteria={
-                word: f"Candidate word: {word}" for word in candidates
+                word: f"Candidate label: {word}" for word in candidates
             },
         )
         try:
@@ -139,7 +158,7 @@ async def choose_topic_kicker(
             raise
         except LLMError as exc:
             logger.warning(
-                "Kicker decision failed for %r; using heading order: %s",
+                "Kicker decision failed for %r; using deterministic fallback: %s",
                 h2,
                 exc,
             )
@@ -149,14 +168,22 @@ async def choose_topic_kicker(
                 ranked = _ranked_candidates(answer, candidates)
             else:
                 logger.warning(
-                    "Kicker decision returned no choice for %r; using heading "
-                    "order",
+                    "Kicker decision returned no choice for %r; using "
+                    "deterministic fallback",
                     h2,
                 )
 
     for candidate in ranked:
         if _fits(candidate, body_size=body_size, counters=counters):
             return normalize_topic_kicker(candidate)
+
+    deterministic = fit_topic_kicker(
+        h2,
+        body_size=body_size,
+        counters=counters,
+    )
+    if deterministic is not None:
+        return normalize_topic_kicker(deterministic)
 
     for candidate in _fallback_candidates(h2):
         if _fits(candidate, body_size=body_size, counters=counters):
@@ -205,7 +232,7 @@ async def resolve_topic_kickers(
     composition: TopicComposition,
     llm: LLMClient,
 ) -> TopicComposition:
-    """Resolve every visible section kicker through Jev and its fallbacks."""
+    """Resolve missing or invalid section kickers, reusing stored ones."""
     content_slides = [
         slide for slide in composition.slides if slide.slide_type != "cover"
     ]
@@ -213,6 +240,9 @@ async def resolve_topic_kickers(
     if not content_total:
         return composition
 
+    # Persisted plans carry this marker so re-renders keep their visible
+    # kickers instead of paying for another Jev decision.
+    reuse_stored = bool(composition.slide_plan.get("kickers_resolved"))
     resolved: dict[int, str] = {}
     for section_index, section in enumerate(draft.sections):
         slides = [
@@ -229,6 +259,22 @@ async def resolve_topic_kickers(
         )
         if not counters:
             continue
+
+        if reuse_stored:
+            stored = {
+                normalize_topic_kicker(slide.kicker or "")
+                for slide in slides
+            }
+            stored.discard("")
+            if len(stored) == 1:
+                stored_kicker = next(iter(stored))
+                if stored_kicker != "THEMA" and kicker_fits(
+                    stored_kicker,
+                    body_size=composition.body_size,
+                    counters=counters,
+                ):
+                    resolved[section_index] = stored_kicker
+                    continue
 
         max_chars = kicker_char_budget(
             body_size=composition.body_size, counters=counters
@@ -249,13 +295,19 @@ async def resolve_topic_kickers(
             candidate = DEFAULT_TOPIC_KICKER
         resolved[section_index] = candidate
 
-    return apply_topic_kickers(composition, resolved)
+    resolved_composition = apply_topic_kickers(composition, resolved)
+    slide_plan = {
+        **resolved_composition.slide_plan,
+        "kickers_resolved": True,
+    }
+    return replace(resolved_composition, slide_plan=slide_plan)
 
 
 __all__ = [
     "TOPIC_KICKER_ROLE",
     "apply_topic_kickers",
     "choose_topic_kicker",
+    "kicker_choice_candidates",
     "kicker_word_candidates",
     "resolve_topic_kickers",
 ]

@@ -80,16 +80,22 @@ has been removed; legacy articles remain readable through the API.
    word boundary, and in that fallback the last continuation is never a single
    complete sentence. Continuation slides carry the section kicker and the page
    counter at `body_size + 2`, while the body text keeps one post-wide body
-   size. Kickers are resolved by a Jev `choice` question over every distinct
-   word of the H2; the highest-ranked word that fits the follow header wins,
-   then the heading words in their original order, and only `AKTUELL` as the
-   final guard. The article text is never reworded, shortened or hyphenated. A
+   size. When an H2 has at least two distinct candidate words, Kickers are
+   resolved by a Jev `choice` question over the heading words and deterministic
+   compound shortenings; the ranked candidates are tried in order and the first
+   that fits the follow header wins. If none fits, the deterministic candidate
+   chain (full word, then shortened compounds) is tried, followed by the H2's
+   content words in heading order (function words are skipped unless every word
+   is a function word), and only `AKTUELL` remains as the final guard. Re-renders
+   reuse a stored kicker that still fits. The article text is never reworded,
+   shortened or hyphenated. A
    stateless Themen visual-prompt call writes a cover and
    `ceil(content_slides / 2)` artwork prompts from the Themenentwurf only.
    Every artwork prompt must describe one continuous photograph; the writer is
    forbidden from using seam, panel, split, half, left/right portion, diptych or
-   triptych language, and a validator retries any response that does. These
-   English prompts use the same photorealistic editorial/reportage style,
+   triptych language, and a validator retries any response that does before
+   failing that Themenbeitrag at `visual_prompts`. These English prompts use the
+   same photorealistic editorial/reportage style,
    allow fictional adults and scene text, and add the deterministic no-frame
    suffix. The cover also receives the deterministic satire suffix.
    Image generation requests 4:5 artwork,
@@ -186,7 +192,6 @@ tests/
 ├── support/                   Reusable FakeLLMClient test seam
 └── manual/                    Real-API tests (not run by default)
 
-docs/agents/                   Agent workflow configuration (Pocock skills)
 local-testing/                 Local compose file and database dump
 ```
 
@@ -395,9 +400,11 @@ its own dedicated image prompt. The first slide gets the large orange number,
 one-word kicker, 3 px rule and fitted
 H2; continuation slides show the same section kicker, the zero-padded `n/N`
 counter and a 1 px hairline, with kicker and counter at `body_size + 2`. The
-Jev choice resolves the kicker from the H2 words; if no ranked choice fits, the
-heading words are tried in order, and `AKTUELL` is the final guard. THEMA never
-appears. Every
+Jev choice ranks the H2's words and their deterministic compound shortenings
+when there are at least two words; if no ranked candidate fits, the
+deterministic chain is tried, then the content words in heading order, and
+`AKTUELL` is the final guard. On re-renders a stored kicker that still fits is
+reused. THEMA never appears. Every
 content slide carries the square logo with its own white
 plate directly on the image at the bottom-right of the text block, right-aligned
 to the 600 px text column. The caption file is UTF-8, starts with
@@ -610,8 +617,9 @@ Requirements:
   requests and therefore needs network access and real API credit.
 - The configured text, image and decision models must be available; see
   `OPENROUTER_TEXT_MODEL`, `OPENROUTER_IMAGE_MODEL` and
-  `OPENROUTER_DECISION_MODEL`. The run calls the paid Decisions API for every
-  resolved topic kicker and every generated image.
+  `OPENROUTER_DECISION_MODEL`. The run calls the paid Decisions API for each
+  section that needs a new kicker and for every generated image; stored kickers
+  are reused on re-renders.
 
 ```bash
 TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/gossip_test \

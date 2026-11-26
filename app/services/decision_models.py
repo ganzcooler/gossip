@@ -3,7 +3,7 @@
 The Decisions API is not the chat endpoint: callers send one ``state`` and a
 map of typed questions, and receive one typed answer per question. These
 models are the small, strict subset the post pipeline needs (binary ``noul``
-questions about an image).
+image checks and ``choice`` kicker ranking).
 """
 
 from __future__ import annotations

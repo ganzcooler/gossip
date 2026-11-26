@@ -73,7 +73,7 @@ The gate that compares a draft against the retrieved source excerpts from the Pr
 _Avoid_: Fact Check, QA
 
 **Artefaktprüfung**:
-The decision-model gate that inspects each final generated image for unintended borders, blank bands or blocks, seams, text/watermarks and obvious generation defects. It runs on the exact asset that will be published; a flagged image is regenerated once, then replaced by the brand fallback.
+The decision-model gate that inspects each final generated image for unintended borders or blank areas, panels or seams, added watermarks or overlays, rotation, and recognizable minors. It runs on the exact asset that will be published; a flagged image is regenerated once, then replaced by the brand fallback. Scene text, logos, coats of arms, adults and deliberate satirical exaggeration are allowed.
 _Avoid_: Bildprüfung, Vision-Check
 
 **Caption**:

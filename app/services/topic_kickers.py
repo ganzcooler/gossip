@@ -1,10 +1,11 @@
 """Deterministic topic-kicker derivation, compound shortening and fit checks.
 
 A Kicker is the one-word uppercase label of a Themenabschnitt. The composer
-starts with the first meaningful word of the H2 and shortens common German
-compound suffixes only when the full word would not fit the follow-slide
-header. The renderer validates the final choice; the pipeline may ask the
-Kicker-Writer for a shorter word when no deterministic candidate fits.
+derives a deterministic candidate from the H2, shortens common German compound
+suffixes when the full word would not fit the follow-slide header, and validates
+the fit. The pipeline later resolves the visible kicker through the Jev-based
+chooser in ``topic_kicker_writer``; this module provides the deterministic
+primitives.
 """
 
 from __future__ import annotations
@@ -226,7 +227,7 @@ def fit_topic_kicker(
 
 
 def kicker_char_budget(*, body_size: int, counters: Sequence[str]) -> int:
-    """Return a conservative character budget for the Kicker-Writer prompt."""
+    """Return a conservative character budget for the kicker choice instructions."""
     _, counter_font, size = kicker_fonts(body_size)
     tracking = TOPIC_KICKER_COUNTER_TRACKING * size
     counter_width = max(
