@@ -59,6 +59,7 @@ from app.services.image_generation import (
     generate_topic_cover,
     generate_topic_pair_art,
     generate_topic_single_art,
+    with_cover_satire_suffix,
     with_image_style_suffix,
 )
 from app.services.llm_client import LLMAuthenticationError, LLMClient
@@ -1138,6 +1139,7 @@ class PostPipeline:
         # the same idempotent suffix again as a hard guard, so a direct caller
         # can never bypass the style rule while the asset keeps its trace.
         cover_prompt = with_image_style_suffix(cover_prompt)
+        cover_prompt = with_cover_satire_suffix(cover_prompt)
         asset = await self._prepare_cover_asset(db, post, cover_prompt)
 
         try:
@@ -1593,6 +1595,7 @@ class PostPipeline:
             role: with_image_style_suffix(prompt)
             for role, prompt in prompts.items()
         }
+        prompts["cover"] = with_cover_satire_suffix(prompts["cover"])
         assets = await self._prepare_topic_assets(
             db, post, list(prompts.items())
         )

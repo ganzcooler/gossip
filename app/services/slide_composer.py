@@ -342,7 +342,7 @@ TOPIC_PARAGRAPH_GAP_FACTOR = 0.72
 
 TOPIC_COVER_LABEL = "IM FOKUS"
 TOPIC_MAX_CHAPTER_SHORT = 28
-TOPIC_MIN_CONTENT_SLIDES = 4
+TOPIC_MIN_CONTENT_SLIDES = 3
 TOPIC_MAX_CONTENT_SLIDES = 7
 
 
@@ -665,7 +665,7 @@ def compose_topic_slides(
     draft: TopicDraft,
     kickers: Mapping[int, str] | None = None,
 ) -> TopicComposition:
-    """Compose the cover and 4–7 content slides for a topic ``draft``.
+    """Compose the cover and 3–7 content slides for a topic ``draft``.
 
     ``kickers`` may provide already resolved section labels, keyed by section
     index. Without an override the composer derives a kicker and applies the

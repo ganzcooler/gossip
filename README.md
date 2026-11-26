@@ -38,29 +38,30 @@ has been removed; legacy articles remain readable through the API.
    deterministically at one post-wide body size. The Summary-Beitrag also gets
    a composed caption and deterministic Alt-Texte.
 6. **Visualise the Summary** — a stateless visual-prompt call writes the cover
-   prompt from the Summary draft only. The image prompt itself is English and
-   requests photorealistic editorial and reportage photography with natural
-   light, real materials and a believable scene. The guardrails keep the logo
-   and title zones textured rather than empty, and a fixed deterministic suffix
-   is appended before every image-provider call; it requires continuous scene
-   detail and forbids illustration, comic, drawing, watercolour, 3D render,
-   frames, borders, passepartouts, polaroid edges, picture-in-picture, collages,
-   split-screens and vignettes. Image generation requests a 9:16 image
-   through the LLM port, center-fits it to exactly 1080×1920, and substitutes
-   the deterministic blue brand fallback if the provider or payload fails. The
-   final normalized cover is inspected by `typesafe/jev-1.14` through the
-   OpenRouter Decisions API for unintended borders, blank bands or blocks,
-   seams, added watermarks/UI overlays, rotation and obvious generation
-   defects. Ordinary text and numbers inside the scene are allowed. Jev receives a
-   proportional downscale capped at 1568 px per side; the stored asset keeps
-   the full publication size. A defect probability above the question-specific
-   threshold triggers one retry with a stronger
-   full-bleed/no-artifact prompt suffix and the rejected defect classes. A
-   persistent defect, a refusal or an unavailable verdict is fail-closed: the
-   cover uses the brand fallback and the asset is recorded with status
-   `fallback` and an explanatory error. The
-   renderer writes the cover and two to six cards as
-   `summary-<date>-story-<frame>.png` plus exactly one
+   prompt from the Summary draft only. Every prompt in the pipeline is English;
+   reader-facing text roles explicitly ask for German values. The cover prompt
+   asks for photorealistic editorial and reportage photography with a dry,
+   gently sarcastic, slightly exaggerated twist, while a fixed deterministic
+   suffix is appended before every image-provider call. The shared guardrails
+   allow fictional adults, scene text, numbers, signs, logos, coats of arms and
+   lettering, require continuous scene detail and forbid illustration, comic,
+   drawing, watercolour, 3D render, frames, borders, passepartouts, polaroid
+   edges, picture-in-picture, collages, split-screens and vignettes. Image
+   generation requests a 9:16 image through the LLM port, center-fits it to
+   exactly 1080×1920, and substitutes the deterministic blue brand fallback if
+   the provider or payload fails. The final normalized cover is inspected by
+   `typesafe/jev-1.14` through the OpenRouter Decisions API for unintended
+   borders/blank areas, panels/seams, added watermarks/UI overlays, rotation
+   and recognizable minors. Scene text, logos and adults are allowed; deliberate
+   satirical exaggeration and unusual proportions are not treated as defects.
+   Jev receives a proportional downscale capped at 1568 px
+   per side; the stored asset keeps the full publication size. A defect
+   probability above the question-specific threshold triggers one retry with a
+   stronger full-bleed/no-artifact prompt suffix and the rejected defect
+   classes. A persistent defect, a refusal or an unavailable verdict is
+   fail-closed: the cover uses the brand fallback and the asset is recorded with
+   status `fallback` and an explanatory error. The renderer writes the cover and
+   two to six cards as `summary-<date>-story-<frame>.png` plus exactly one
    `caption-summary-summary.txt` into the protocol folder. Only after the whole
    story and caption are written does the Summary-Beitrag become `ready`.
 7. **Write and visualise topics** — for each planned Themenbrief, the
@@ -79,27 +80,32 @@ has been removed; legacy articles remain readable through the API.
    word boundary, and in that fallback the last continuation is never a single
    complete sentence. Continuation slides carry the section kicker and the page
    counter at `body_size + 2`, while the body text keeps one post-wide body
-   size. A long compound kicker is shortened at common German compound heads;
-   if no deterministic candidate fits, a dedicated stateless Kicker-Writer
-   supplies a shorter one-word label. A generic THEMA label is never shown;
-   only after two failed Kicker-Writer attempts does the section fall back to
-   the neutral `AKTUELL` guard. The article text is never reworded, shortened
-   or hyphenated. A stateless Themen
-   visual-prompt call writes a cover and `ceil(content_slides / 2)` pair prompts
-   from the Themenentwurf only.
-   These English prompts use the same photorealistic editorial/reportage style
-   and textured logo/title zones, plus the deterministic no-frame suffix.
+   size. Kickers are resolved by a Jev `choice` question over every distinct
+   word of the H2; the highest-ranked word that fits the follow header wins,
+   then the heading words in their original order, and only `AKTUELL` as the
+   final guard. The article text is never reworded, shortened or hyphenated. A
+   stateless Themen visual-prompt call writes a cover and
+   `ceil(content_slides / 2)` artwork prompts from the Themenentwurf only.
+   Every artwork prompt must describe one continuous photograph; the writer is
+   forbidden from using seam, panel, split, half, left/right portion, diptych or
+   triptych language, and a validator retries any response that does. These
+   English prompts use the same photorealistic editorial/reportage style,
+   allow fictional adults and scene text, and add the deterministic no-frame
+   suffix. The cover also receives the deterministic satire suffix.
    Image generation requests 4:5 artwork,
    normalizes the cover to 1080×1350, and center-crops each pair to 720×1350 or
    a final unpaired strip to 360×1350. The decision-model artifact check runs
    on the exact final asset (normalized cover, cropped pair or cropped single
-   strip), so a defect outside the visible crop is ignored. A flagged border,
-   blank band or block, seam, watermark/UI overlay, rotation or generation
-   defect triggers one stronger full-bleed retry with the rejected classes.
-   The unpaired single strip has its own English image prompt so the central
-   360×1350 column is composed deliberately. A persistent defect or
-   an unavailable verdict becomes the orange brand fallback with asset status
-   `fallback` and an explanatory error. The renderer slices pairs into the
+   strip), so a defect outside the visible crop is ignored. A flagged
+   border/blank area, panel/seam, watermark/overlay, rotation or recognizable
+   minor triggers one stronger full-bleed retry with the rejected classes.
+   Deliberate satirical exaggeration, unusual proportions and invented scene
+   details are allowed and are not rejected by the artifact gate.
+   The unpaired single strip has its own English image prompt and is composed
+   with its motifs in the middle third so the later 360×1350 crop is safe. A
+   persistent defect or an unavailable verdict becomes the orange brand
+   fallback with asset status `fallback` and an explanatory error. The renderer
+   slices pairs into the
    zigzag layout and writes `topic-<date>-<slide>.png` plus exactly one
    `caption-topic-<slug>.txt` inside the topic's own `topic-<slug>/` subfolder.
    Themenbeitrag image failures produce orange brand fallbacks and the Beitrag
@@ -158,11 +164,11 @@ app/
 │   ├── fact_checker.py        Shared fact-check + one-repair hard gate
 │   ├── slide_composer.py      Deterministic Summary cards and topic slides
 │   ├── topic_kickers.py       Kicker derivation, compound shortening and width fit
-│   ├── topic_kicker_writer.py Stateless Kicker-Writer fallback for too-wide labels
+│   ├── topic_kicker_writer.py Jev choice resolution and heading-order fallback
 │   ├── caption_writer.py      Caption body role and deterministic composition
 │   ├── visual_prompts.py      Stateless visual-prompt role for covers/artwork
 │   ├── image_artifact_check.py Decision-model artifact gate for generated art
-│   ├── image_generation.py    Image decode, realism suffix, fit, brand fallbacks
+│   ├── image_generation.py    Image decode, realism/satire suffixes, fit, fallbacks
 │   ├── post_renderer.py       Deterministic Summary story renderer
 │   ├── topic_renderer.py      Deterministic topic carousel renderer
 │   ├── render_common.py       Single brand palette/token source, logo, scrim, badge, folders
@@ -271,13 +277,11 @@ Configuration is read from `.env` (see `.env.example`):
 | `OPENROUTER_IMAGE_MODEL` | Image model (default: `bytedance-seed/seedream-5-0-flash`) |
 | `OPENROUTER_DECISION_MODEL` | Artifact-check decision model (default: `typesafe/jev-1.14`) |
 | `OPENROUTER_DECISIONS_URL` | Decisions API endpoint (default: `https://openrouter.ai/api/alpha/decisions`) |
-| `IMAGE_ARTIFACT_BORDER_OR_FRAME_THRESHOLD` | Jev threshold for borders/frames (default: `0.5`) |
-| `IMAGE_ARTIFACT_BLANK_BAND_OR_STRIP_THRESHOLD` | Jev threshold for blank bands/strips (default: `0.5`) |
-| `IMAGE_ARTIFACT_FLAT_BLANK_BLOCK_THRESHOLD` | Jev threshold for flat blank blocks (default: `0.5`) |
-| `IMAGE_ARTIFACT_MULTI_PANEL_OR_SEAM_THRESHOLD` | Jev threshold for panels/seams (default: `0.5`) |
-| `IMAGE_ARTIFACT_WATERMARK_OR_UI_ELEMENT_THRESHOLD` | Jev threshold for added watermarks/UI overlays (default: `0.8`) |
+| `IMAGE_ARTIFACT_BORDER_OR_BLANK_AREA_THRESHOLD` | Jev threshold for borders/blank areas (default: `0.5`) |
+| `IMAGE_ARTIFACT_PANEL_OR_SEAM_THRESHOLD` | Jev threshold for panels/seams (default: `0.5`) |
+| `IMAGE_ARTIFACT_WATERMARK_OR_OVERLAY_THRESHOLD` | Jev threshold for added watermarks/overlays (default: `0.8`) |
 | `IMAGE_ARTIFACT_ROTATION_THRESHOLD` | Jev threshold for rotated/sideways images (default: `0.6`) |
-| `IMAGE_ARTIFACT_GENERATION_GLITCH_THRESHOLD` | Jev threshold for generation glitches (default: `0.8`) |
+| `IMAGE_ARTIFACT_MINOR_THRESHOLD` | Jev threshold for recognizable minors (default: `0.5`) |
 | `OPENROUTER_REASONING_EFFORT` | Reasoning effort for text calls (default: `max`) |
 | `SESSIONNET_BASE_URL` | SessionNet base URL |
 | `TRAEFIK_HOST` | Public hostname used by the deployment |
@@ -383,7 +387,7 @@ the exact Themenbeitrag basenames collision-free when a Sitzung has several
 Themenbeiträge, and stale-frame cleanup is limited to that Themenbeitrag's
 subfolder.
 
-A Themenbeitrag carousel has five to eight images (cover plus four to seven
+A Themenbeitrag carousel has four to eight images (cover plus three to seven
 content slides). Content slides alternate text-left/image-right and
 image-left/text-right; each 720×1350 pair artwork is split into the left and
 right 360×1350 strips, and an unpaired final slide uses a standalone strip with
@@ -391,9 +395,9 @@ its own dedicated image prompt. The first slide gets the large orange number,
 one-word kicker, 3 px rule and fitted
 H2; continuation slides show the same section kicker, the zero-padded `n/N`
 counter and a 1 px hairline, with kicker and counter at `body_size + 2`. The
-composer shortens long compounds; if no deterministic kicker fits, the
-Kicker-Writer generates one. THEMA never appears; after two failed Kicker-Writer
-attempts the neutral `AKTUELL` guard keeps the layout intact. Every
+Jev choice resolves the kicker from the H2 words; if no ranked choice fits, the
+heading words are tried in order, and `AKTUELL` is the final guard. THEMA never
+appears. Every
 content slide carries the square logo with its own white
 plate directly on the image at the bottom-right of the text block, right-aligned
 to the 600 px text column. The caption file is UTF-8, starts with
@@ -607,7 +611,7 @@ Requirements:
 - The configured text, image and decision models must be available; see
   `OPENROUTER_TEXT_MODEL`, `OPENROUTER_IMAGE_MODEL` and
   `OPENROUTER_DECISION_MODEL`. The run calls the paid Decisions API for every
-  generated image.
+  resolved topic kicker and every generated image.
 
 ```bash
 TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/gossip_test \

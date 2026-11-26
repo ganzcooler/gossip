@@ -92,8 +92,8 @@ async def test_writer_retries_once_with_validation_feedback_then_succeeds():
     assert len(fake.calls) == 2
     first_prompt = fake.calls[0].prompt
     retry_prompt = fake.calls[1].prompt
-    assert "Korrekturhinweis" not in first_prompt
-    assert "Korrekturhinweis" in retry_prompt
+    assert "Correction Note" not in first_prompt
+    assert "Correction Note" in retry_prompt
     assert "body must contain 120 to 320 characters" in retry_prompt
     assert BRIEFS[0].point in retry_prompt
     assert PROTOCOL_TEXT not in retry_prompt
@@ -120,7 +120,7 @@ async def test_writer_retries_invalid_structure_once_and_then_fails():
         await write_summary(BRIEFS, EXCERPTS, fake)
 
     assert len(fake.calls) == 2
-    assert "Korrekturhinweis" in fake.calls[1].prompt
+    assert "Correction Note" in fake.calls[1].prompt
 
 
 async def test_writer_does_not_retry_authentication_failures():

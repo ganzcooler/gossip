@@ -7,7 +7,6 @@ from app.core.post_models import (
     CaptionDraft,
     EditorialPlan,
     FactCheckResult,
-    TopicKicker,
     SourceExcerpt,
     SummaryBrief,
     SummaryDraft,
@@ -203,16 +202,6 @@ def test_empty_fact_check_result_means_pass():
     assert result.issues == []
     assert result.passed is True
     assert FactCheckResult(issues=["Zahl 12 ist nicht belegt."]).passed is False
-
-
-def test_topic_kicker_requires_exactly_one_word_with_letters():
-    assert TopicKicker(kicker="  Haushalt  ").kicker == "Haushalt"
-    with pytest.raises(ValueError, match="one word"):
-        TopicKicker(kicker="Haus halt")
-    with pytest.raises(ValueError, match="letters"):
-        TopicKicker(kicker="2024")
-    with pytest.raises(ValueError, match="40"):
-        TopicKicker(kicker="A" * 41)
 
 
 def test_fact_check_issues_must_be_non_empty_and_actionable_strings():

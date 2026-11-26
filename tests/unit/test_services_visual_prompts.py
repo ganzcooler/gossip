@@ -53,8 +53,8 @@ async def test_visual_prompt_writer_gets_only_the_summary_draft():
     assert call.schema is VisualPrompts
     assert _draft().cover_title in call.prompt
     assert _draft().points[0].heading in call.prompt
-    assert "Fotorealistische Editorial- und Reportagefotografie" in call.prompt
-    assert "Kein Rahmen" in call.prompt
+    assert "Photorealistic editorial and reportage photography" in call.prompt
+    assert "No frame" in call.prompt
     assert "atmosphärische Illustration" not in call.prompt
     assert PROTOCOL_TEXT not in call.prompt
     assert "Themenbrief" not in call.prompt
@@ -122,9 +122,9 @@ async def test_topic_visual_prompt_writer_gets_only_its_draft_and_pair_count():
     assert call.schema is VisualPrompts
     assert _topic_draft().title in call.prompt
     assert _topic_draft().sections[0].h2 in call.prompt
-    assert "genau 2 Prompts" in call.prompt
-    assert "Fotorealistische Editorial- und Reportagefotografie" in call.prompt
-    assert "Kein Rahmen" in call.prompt
+    assert "exactly 2 prompts" in call.prompt
+    assert "Photorealistic editorial and reportage photography" in call.prompt
+    assert "No frame" in call.prompt
     assert "atmosphärische Illustration" not in call.prompt
     assert PROTOCOL_TEXT not in call.prompt
     assert "Summary" not in call.prompt
@@ -150,8 +150,8 @@ async def test_topic_visual_prompt_writer_requests_a_dedicated_single_prompt():
 
     assert result.single_prompt == "Central 360 strip scene"
     assert "single_prompt" in fake.calls[0].prompt
-    assert "mittlere 360×1350-Spalte" in fake.calls[0].prompt
-    assert "zentralen Drittel" in fake.calls[0].prompt
+    assert "middle third" in fake.calls[0].prompt
+    assert "outer areas may be cropped" in fake.calls[0].prompt
 
 
 async def test_topic_visual_prompt_writer_retries_a_missing_single_prompt():
@@ -223,10 +223,10 @@ async def test_topic_visual_prompt_writer_retries_the_wrong_artwork_count():
     assert result.cover_prompt == "Neues Cover"
     assert result.artwork_prompts == ["Paar eins", "Paar zwei"]
     assert len(fake.calls) == 2
-    assert "Korrekturhinweis" not in fake.calls[0].prompt
-    assert "Korrekturhinweis" in fake.calls[1].prompt
+    assert "Correction Note" not in fake.calls[0].prompt
+    assert "Correction Note" in fake.calls[1].prompt
     assert "0 artwork prompts, expected 2" in fake.calls[1].prompt
-    assert "genau 2 Einträge" in fake.calls[1].prompt
+    assert "exactly 2 entries" in fake.calls[1].prompt
 
 
 async def test_topic_visual_prompt_writer_retries_a_schema_failure():
@@ -264,6 +264,59 @@ async def test_topic_visual_prompt_writer_rejects_the_wrong_artwork_count_after_
     )
 
     with pytest.raises(VisualPromptError, match="expected 2"):
+        await write_topic_visual_prompts(_topic_draft(), 2, fake)
+
+    assert len(fake.calls) == 2
+
+
+async def test_topic_visual_prompt_writer_retries_split_composition_language():
+    fake = FakeLLMClient(
+        json_responses={
+            TOPIC_VISUAL_PROMPTS_ROLE: [
+                VisualPrompts(
+                    cover_prompt="Cover",
+                    artwork_prompts=[
+                        "A room split into two halves with a centre seam",
+                        "A clean continuous scene",
+                    ],
+                ),
+                VisualPrompts(
+                    cover_prompt="Cover",
+                    artwork_prompts=[
+                        "A continuous council chamber scene",
+                        "A clean continuous scene",
+                    ],
+                ),
+            ]
+        }
+    )
+
+    result = await write_topic_visual_prompts(_topic_draft(), 2, fake)
+
+    assert result.artwork_prompts == [
+        "A continuous council chamber scene",
+        "A clean continuous scene",
+    ]
+    assert len(fake.calls) == 2
+    assert "split composition" in fake.calls[1].prompt
+    assert "Describe one continuous photograph" in fake.calls[1].prompt
+
+
+async def test_topic_visual_prompt_writer_rejects_split_language_after_retry():
+    broken = VisualPrompts(
+        cover_prompt="Cover",
+        artwork_prompts=[
+            "A diptych with a centre seam",
+            "A clean continuous scene",
+        ],
+    )
+    fake = FakeLLMClient(
+        json_responses={
+            TOPIC_VISUAL_PROMPTS_ROLE: [broken, broken],
+        }
+    )
+
+    with pytest.raises(VisualPromptError, match="split composition"):
         await write_topic_visual_prompts(_topic_draft(), 2, fake)
 
     assert len(fake.calls) == 2

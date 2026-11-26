@@ -145,7 +145,7 @@ def test_cover_and_every_h2_start_a_new_slide():
     assert draft.title in cover.alt_text
 
     content = _content_slides(composition)
-    assert 4 <= len(content) <= 7
+    assert 3 <= len(content) <= 7
     assert [slide.slide_index for slide in composition.slides] == list(
         range(1, len(composition.slides) + 1)
     )
@@ -282,7 +282,7 @@ def test_paragraph_that_fits_a_full_page_moves_whole_to_the_next_slide():
 
     composition = compose_topic_slides(draft)
 
-    assert 4 <= len(_content_slides(composition)) <= 7
+    assert 3 <= len(_content_slides(composition)) <= 7
     section = _section_slides(composition, 0)
     assert len(section) == 2
     heading, continuation = section
@@ -659,7 +659,7 @@ def test_common_abbreviations_are_not_treated_as_sentence_ends():
     ) == normalize_whitespace(paragraph)
 
 
-def test_body_size_choice_keeps_whole_paragraph_packing_within_four_to_seven():
+def test_body_size_choice_keeps_whole_paragraph_packing_within_three_to_seven():
     sections = [
         {
             "h2": f"Der Rat entscheidet über Thema Nummer {index}",
@@ -679,16 +679,16 @@ def test_body_size_choice_keeps_whole_paragraph_packing_within_four_to_seven():
 
     content = _content_slides(composition)
     assert composition.body_size == 39
-    assert 4 <= len(content) <= 7
+    assert 3 <= len(content) <= 7
     assert {slide.body_size for slide in content} == {composition.body_size}
 
 
-def test_all_content_slides_share_one_body_size_between_four_and_seven_slides():
+def test_all_content_slides_share_one_body_size_between_three_and_seven_slides():
     composition = compose_topic_slides(_draft())
 
     content = _content_slides(composition)
     assert composition.body_size in (42, 39, 36)
-    assert 4 <= len(content) <= 7
+    assert 3 <= len(content) <= 7
     assert {slide.body_size for slide in content} == {composition.body_size}
 
 
@@ -873,11 +873,11 @@ def test_body_size_falls_back_when_a_word_is_too_wide_at_the_larger_size():
     composition = compose_topic_slides(draft)
 
     assert composition.body_size == 39
-    assert 4 <= len(_content_slides(composition)) <= 7
+    assert 3 <= len(_content_slides(composition)) <= 7
     assert any(long_word in (slide.body or "") for slide in composition.slides)
 
 
-def test_composition_rejects_fewer_than_four_content_slides():
+def test_composition_rejects_fewer_than_three_content_slides():
     draft = _draft(
         sections=[
             {"h2": H2_ONE, "paragraphs": ["Der Haushalt ist beschlossen."]},
@@ -885,7 +885,7 @@ def test_composition_rejects_fewer_than_four_content_slides():
         ]
     )
 
-    with pytest.raises(TopicCompositionError, match="4"):
+    with pytest.raises(TopicCompositionError, match="3"):
         compose_topic_slides(draft)
 
 

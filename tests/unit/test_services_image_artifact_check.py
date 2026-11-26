@@ -34,13 +34,11 @@ def _decision_image(call) -> Image.Image:
 
 def test_question_set_covers_every_planned_defect_class():
     assert list(ARTIFACT_DEFECT_QUESTIONS) == [
-        "border_or_frame",
-        "blank_band_or_strip",
-        "flat_blank_block",
-        "multi_panel_or_seam",
-        "watermark_or_ui_element",
+        "border_or_blank_area",
+        "panel_or_seam",
+        "watermark_or_overlay",
         "rotation",
-        "generation_glitch",
+        "minor",
     ]
     for question in ARTIFACT_DEFECT_QUESTIONS.values():
         assert question.type == "noul"
@@ -71,7 +69,7 @@ async def test_summary_cover_is_downscaled_before_the_decision_call():
 async def test_clean_verdict_requires_every_probability_below_the_threshold():
     fake = FakeLLMClient(
         decision_responses={
-            "image_artifact_check": [{"border_or_frame": 0.1, "generation_glitch": 0.5}]
+            "image_artifact_check": [{"border_or_blank_area": 0.1, "minor": 0.5}]
         }
     )
 
@@ -89,7 +87,7 @@ async def test_clean_verdict_requires_every_probability_below_the_threshold():
 async def test_any_probability_above_the_threshold_is_reported():
     fake = FakeLLMClient(
         decision_responses={
-            "image_artifact_check": [{"border_or_frame": 0.9, "generation_glitch": 0.9}]
+            "image_artifact_check": [{"border_or_blank_area": 0.9, "minor": 0.9}]
         }
     )
 
@@ -98,23 +96,23 @@ async def test_any_probability_above_the_threshold_is_reported():
     assert verdict.clean is False
     assert verdict.error is None
     assert [(finding.question, finding.probability) for finding in verdict.findings] == [
-        ("border_or_frame", 0.9),
-        ("generation_glitch", 0.9),
+        ("border_or_blank_area", 0.9),
+        ("minor", 0.9),
     ]
-    assert "border_or_frame=90%" in verdict.summary()
-    assert "generation_glitch=90%" in verdict.summary()
+    assert "border_or_blank_area=90%" in verdict.summary()
+    assert "minor=90%" in verdict.summary()
 
 
 async def test_thresholds_are_calibrated_per_question():
     fake = FakeLLMClient(
         decision_responses={
             "image_artifact_check": [
-                {"border_or_frame": 0.4},
-                {"border_or_frame": 0.6},
-                {"generation_glitch": 0.7},
-                {"generation_glitch": 0.9},
-                {"watermark_or_ui_element": 0.7},
-                {"watermark_or_ui_element": 0.9},
+                {"border_or_blank_area": 0.4},
+                {"border_or_blank_area": 0.6},
+                {"minor": 0.4},
+                {"minor": 0.6},
+                {"watermark_or_overlay": 0.7},
+                {"watermark_or_overlay": 0.9},
                 {"rotation": 0.5},
                 {"rotation": 0.7},
             ]
@@ -124,25 +122,25 @@ async def test_thresholds_are_calibrated_per_question():
 
     border_clean = await check_image_artifacts(fake, image)
     border_defect = await check_image_artifacts(fake, image)
-    glitch_clean = await check_image_artifacts(fake, image)
-    glitch_defect = await check_image_artifacts(fake, image)
+    minor_clean = await check_image_artifacts(fake, image)
+    minor_defect = await check_image_artifacts(fake, image)
     watermark_clean = await check_image_artifacts(fake, image)
     watermark_defect = await check_image_artifacts(fake, image)
     rotation_clean = await check_image_artifacts(fake, image)
     rotation_defect = await check_image_artifacts(fake, image)
 
     assert border_clean.clean is True
-    assert border_defect.findings[0].question == "border_or_frame"
-    assert glitch_clean.clean is True
-    assert glitch_defect.findings[0].question == "generation_glitch"
+    assert border_defect.findings[0].question == "border_or_blank_area"
+    assert minor_clean.clean is True
+    assert minor_defect.findings[0].question == "minor"
     assert watermark_clean.clean is True
-    assert watermark_defect.findings[0].question == "watermark_or_ui_element"
+    assert watermark_defect.findings[0].question == "watermark_or_overlay"
     assert rotation_clean.clean is True
     assert rotation_defect.findings[0].question == "rotation"
 
 
 def test_watermark_question_allows_text_and_numbers_in_the_scene():
-    question = ARTIFACT_DEFECT_QUESTIONS["watermark_or_ui_element"]
+    question = ARTIFACT_DEFECT_QUESTIONS["watermark_or_overlay"]
     assert question.criteria is not None
     combined = " ".join(
         (
@@ -152,30 +150,40 @@ def test_watermark_question_allows_text_and_numbers_in_the_scene():
         )
     ).lower()
 
-    assert "ordinary text, letters, numbers" in combined
+    assert "text, letters, numbers, signs, logos" in combined
     assert "are allowed" in combined
     assert "watermark" in combined
-    assert "interface overlay" in combined
+    assert "ui element" in combined
 
 
 def test_rotation_question_is_upright_specific():
     question = ARTIFACT_DEFECT_QUESTIONS["rotation"]
     assert question.criteria is not None
 
-    assert "90, 180 or 270 degrees" in question.instructions
+    assert "rotated or sideways" in question.instructions
     assert "sideways or upside down" in question.criteria.true
     assert "the scene is upright" in question.criteria.false.lower()
 
 
+def test_minor_question_is_explicit_and_separate():
+    question = ARTIFACT_DEFECT_QUESTIONS["minor"]
+    assert question.criteria is not None
+
+    assert "minor" in question.instructions
+    assert "child or teenager under 18" in question.instructions
+    assert "under 18" in question.criteria.true
+    assert "clearly adults" in question.criteria.false
+
+
 async def test_thresholds_are_read_from_config_per_call(monkeypatch):
     monkeypatch.setitem(
-        config.IMAGE_ARTIFACT_THRESHOLDS, "border_or_frame", 0.8
+        config.IMAGE_ARTIFACT_THRESHOLDS, "border_or_blank_area", 0.8
     )
     fake = FakeLLMClient(
         decision_responses={
             "image_artifact_check": [
-                {"border_or_frame": 0.7},
-                {"border_or_frame": 0.9},
+                {"border_or_blank_area": 0.7},
+                {"border_or_blank_area": 0.9},
             ]
         }
     )
@@ -185,13 +193,13 @@ async def test_thresholds_are_read_from_config_per_call(monkeypatch):
 
     assert first.clean is True
     assert second.clean is False
-    assert second.findings[0].question == "border_or_frame"
+    assert second.findings[0].question == "border_or_blank_area"
 
 
 async def test_refusal_is_not_treated_as_clean():
     fake = FakeLLMClient(
         decision_responses={
-            "image_artifact_check": [{"answers": {"border_or_frame": {"type": "refusal"}}}]
+            "image_artifact_check": [{"answers": {"border_or_blank_area": {"type": "refusal"}}}]
         }
     )
 
@@ -199,14 +207,14 @@ async def test_refusal_is_not_treated_as_clean():
 
     assert verdict.clean is False
     assert verdict.error is not None
-    assert "border_or_frame: refusal" in verdict.error
+    assert "border_or_blank_area: refusal" in verdict.error
 
 
 async def test_missing_answer_is_not_treated_as_clean():
     fake = FakeLLMClient(
         decision_responses={
             "image_artifact_check": [
-                {"answers": {"border_or_frame": {"type": "noul", "noul": 0.0}}}
+                {"answers": {"border_or_blank_area": {"type": "noul", "noul": 0.0}}}
             ]
         }
     )
@@ -215,7 +223,7 @@ async def test_missing_answer_is_not_treated_as_clean():
 
     assert verdict.clean is False
     assert verdict.error is not None
-    assert "blank_band_or_strip: no answer" in verdict.error
+    assert "panel_or_seam: no answer" in verdict.error
 
 
 async def test_transport_failure_becomes_a_fail_closed_verdict():

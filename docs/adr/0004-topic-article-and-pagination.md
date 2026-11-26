@@ -16,3 +16,9 @@ Die folgende Verfeinerung ersetzt die ursprüngliche Aussage „Absätze laufen 
 - Ohne passende Satzgrenze wird der bestmögliche ausgewogene Wortumbruch nahe der Mitte gewählt. Der Text wird nie umformuliert, gekürzt, hypheniert oder zeichenweise getrennt; die Teile setzen sich exakt zum normalisierten Ausgangstext zusammen.
 - Die Satzgrenzenerkennung ist eine statische Heuristik über `. ! ? …` und schließende Anführungszeichen. Häufige Abkürzungen (`z. B.`, `d. h.`, `u. a.`, `usw.`, `Nr.`, `Dr.`, `St.`, `ca.`) gelten nicht als Satzende; `Test.` oder `Africa.` bleiben dagegen echte Satzenden, weil die Abkürzungsprüfung eine Wortgrenze voraussetzt.
 - Jeder Teil eines geteilten Absatzes steht als eigener Body-Block auf einer eigenen Folie. Dadurch entsteht innerhalb des Absatzes kein Absatzabstand. Die harte 4–7-Grenze und die Body-Größen 42/39/36 bleiben unverändert.
+
+## Nachtrag 2026-11-26: drei bis sieben Content-Slides und Jev-Kicker
+
+Die Untergrenze der Content-Slides wird von vier auf drei gesenkt. Ein Themenbeitrag hat damit weiterhin ein Cover und drei bis sieben Content-Slides, insgesamt vier bis acht Bilder. Die Body-Größen 42/39/36 und die Textgrenzen bleiben unverändert.
+
+Der sichtbare Kicker eines Themenabschnitts wird nicht mehr durch einen Text-Kicker-Writer erzeugt. Jev erhält die vollständige H2 als `state` und beantwortet eine `choice`-Frage, deren Optionen alle eindeutigen Wörter der H2 sind. Die Optionen werden nach den zurückgegebenen Wahrscheinlichkeiten sortiert; die erste Option, die als Ein-Wort-Label in die Kopfzeile passt, gewinnt. Passt keine Jev-Option, werden die H2-Wörter in ihrer ursprünglichen Reihenfolge probiert. `AKTUELL` bleibt der letzte Guard, wenn kein Wort passt.

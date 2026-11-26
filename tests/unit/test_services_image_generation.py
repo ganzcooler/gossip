@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 from app.services.decision_models import ImagePart
 from app.services.image_generation import (
     ARTIFACT_RETRY_SUFFIX,
+    COVER_SATIRE_SUFFIX,
     IMAGE_STYLE_SUFFIX,
     MAX_IMAGE_ATTEMPTS,
     SUMMARY_ASPECT_RATIO,
@@ -81,7 +82,9 @@ async def test_summary_cover_requests_9_16_and_normalizes_to_1080x1920():
     assert len(fake.image_calls) == 1
     assert fake.image_calls[0].role == "summary_cover"
     assert fake.image_calls[0].aspect_ratio == SUMMARY_ASPECT_RATIO == "9:16"
-    assert fake.image_calls[0].prompt == (f"A wide calm civic scene\n\n{IMAGE_STYLE_SUFFIX}")
+    assert fake.image_calls[0].prompt == (
+        f"A wide calm civic scene\n\n{COVER_SATIRE_SUFFIX}\n\n{IMAGE_STYLE_SUFFIX}"
+    )
     assert len(fake.decision_calls) == 1
     assert fake.decision_calls[0].role == "summary_cover_artifact_check"
     assert _decision_image(fake.decision_calls[0]).size == (882, 1568)
@@ -140,6 +143,9 @@ def test_image_style_suffix_forbids_illustration_and_frames():
         "passepartout",
         "polaroid",
         "picture-in-picture",
+        "diptych",
+        "triptych",
+        "multi-panel",
         "collage",
         "split screen",
         "vignette",
@@ -155,6 +161,22 @@ def test_image_style_suffix_is_deterministic_and_idempotent():
 
     assert once == f"{base}\n\n{IMAGE_STYLE_SUFFIX}"
     assert twice == once
+
+
+def test_cover_satire_suffix_is_idempotent_and_stays_before_the_style_suffix():
+    from app.services.image_generation import with_cover_satire_suffix
+
+    once = with_cover_satire_suffix("A wide calm civic scene")
+    twice = with_cover_satire_suffix(once)
+    styled = with_image_style_suffix(once)
+    styled_twice = with_cover_satire_suffix(styled)
+
+    assert once == f"A wide calm civic scene\n\n{COVER_SATIRE_SUFFIX}"
+    assert twice == once
+    assert styled == (
+        f"A wide calm civic scene\n\n{COVER_SATIRE_SUFFIX}\n\n{IMAGE_STYLE_SUFFIX}"
+    )
+    assert styled_twice == styled
 
 
 def test_normalize_image_uses_a_deterministic_center_fit():
@@ -234,7 +256,9 @@ async def test_topic_cover_requests_4_5_and_normalizes_to_1080x1350():
     assert len(fake.image_calls) == 1
     assert fake.image_calls[0].role == "topic_cover"
     assert fake.image_calls[0].aspect_ratio == TOPIC_ASPECT_RATIO == "4:5"
-    assert fake.image_calls[0].prompt == (f"A wide calm civic scene\n\n{IMAGE_STYLE_SUFFIX}")
+    assert fake.image_calls[0].prompt == (
+        f"A wide calm civic scene\n\n{COVER_SATIRE_SUFFIX}\n\n{IMAGE_STYLE_SUFFIX}"
+    )
 
 
 async def test_topic_pair_art_center_crops_the_normalized_image_to_720x1350():
@@ -319,7 +343,15 @@ def test_artifact_retry_suffix_is_deterministic_and_idempotent():
 
     assert once == f"Prompt\n\n{ARTIFACT_RETRY_SUFFIX}"
     assert twice == once
-    for required in ("Full-bleed", "edge to edge", "no white border", "split-screen"):
+    for required in (
+        "full-bleed",
+        "edge to edge",
+        "no white border",
+        "diptych",
+        "triptych",
+        "multi-panel",
+        "split-screen",
+    ):
         assert required in ARTIFACT_RETRY_SUFFIX
 
 
@@ -328,7 +360,7 @@ async def test_first_artifact_retries_once_with_the_full_bleed_suffix():
         image_responses={"summary_cover": [_png_bytes(), _png_bytes()]},
         decision_responses={
             "summary_cover_artifact_check": [
-                {"border_or_frame": 0.9},
+                {"border_or_blank_area": 0.9},
                 {},
             ]
         },
@@ -340,11 +372,14 @@ async def test_first_artifact_retries_once_with_the_full_bleed_suffix():
     assert result.error is None
     assert result.image.getpixel((540, 960)) == (90, 140, 170)
     assert len(fake.image_calls) == MAX_IMAGE_ATTEMPTS == 2
-    assert fake.image_calls[0].prompt == (f"A wide calm civic scene\n\n{IMAGE_STYLE_SUFFIX}")
-    assert fake.image_calls[1].prompt.startswith(
-        f"A wide calm civic scene\n\n{IMAGE_STYLE_SUFFIX}\n\n{ARTIFACT_RETRY_SUFFIX}"
+    assert fake.image_calls[0].prompt == (
+        f"A wide calm civic scene\n\n{COVER_SATIRE_SUFFIX}\n\n{IMAGE_STYLE_SUFFIX}"
     )
-    assert "border_or_frame" in fake.image_calls[1].prompt
+    assert fake.image_calls[1].prompt.startswith(
+        f"A wide calm civic scene\n\n{COVER_SATIRE_SUFFIX}\n\n"
+        f"{IMAGE_STYLE_SUFFIX}\n\n{ARTIFACT_RETRY_SUFFIX}"
+    )
+    assert "border_or_blank_area" in fake.image_calls[1].prompt
     assert fake.image_calls[0].role == fake.image_calls[1].role == "summary_cover"
     assert fake.image_calls[0].aspect_ratio == fake.image_calls[1].aspect_ratio == "9:16"
     assert len(fake.decision_calls) == 2
@@ -355,8 +390,8 @@ async def test_persistent_artifact_falls_back_with_an_explanatory_error():
         image_responses={"topic_cover": [_topic_png_bytes(), _topic_png_bytes()]},
         decision_responses={
             "topic_cover_artifact_check": [
-                {"flat_blank_block": 0.9},
-                {"multi_panel_or_seam": 0.8},
+                {"border_or_blank_area": 0.9},
+                {"panel_or_seam": 0.8},
             ]
         },
     )
@@ -365,8 +400,8 @@ async def test_persistent_artifact_falls_back_with_an_explanatory_error():
 
     assert result.status == "fallback"
     assert "artifact check" in result.error
-    assert "flat_blank_block" in result.error
-    assert "multi_panel_or_seam" in result.error
+    assert "border_or_blank_area" in result.error
+    assert "panel_or_seam" in result.error
     assert "typesafe/jev-1.14" in result.error
     assert len(fake.image_calls) == MAX_IMAGE_ATTEMPTS
     assert len(fake.decision_calls) == MAX_IMAGE_ATTEMPTS
@@ -378,8 +413,8 @@ async def test_rejected_attempts_are_persisted_with_prompt_and_verdict(tmp_path)
         image_responses={"topic_cover": [_topic_png_bytes(), _topic_png_bytes()]},
         decision_responses={
             "topic_cover_artifact_check": [
-                {"border_or_frame": 0.9},
-                {"generation_glitch": 0.9},
+                {"border_or_blank_area": 0.9},
+                {"minor": 0.9},
             ]
         },
     )
@@ -404,13 +439,13 @@ async def test_rejected_attempts_are_persisted_with_prompt_and_verdict(tmp_path)
     assert first_meta["role"] == "topic_cover"
     assert first_meta["attempt"] == 1
     assert first_meta["prompt"].startswith("Prompt\n\n")
-    assert first_meta["findings"][0]["question"] == "border_or_frame"
+    assert first_meta["findings"][0]["question"] == "border_or_blank_area"
     assert first_meta["findings"][0]["probability"] == 0.9
-    assert first_meta["thresholds"]["generation_glitch"] == 0.8
+    assert first_meta["thresholds"]["minor"] == 0.5
     second_meta = json.loads(
         (tmp_path / "cover-attempt-2-rejected.json").read_text(encoding="utf-8")
     )
-    assert second_meta["findings"][0]["question"] == "generation_glitch"
+    assert second_meta["findings"][0]["question"] == "minor"
 
 
 async def test_accepted_attempt_writes_no_rejected_files(tmp_path):
@@ -481,7 +516,7 @@ async def test_authentication_error_on_the_artifact_check_propagates():
         image_responses={"summary_cover": [_png_bytes(), _png_bytes()]},
         decision_responses={
             "summary_cover_artifact_check": [
-                {"border_or_frame": 0.9},
+                {"border_or_blank_area": 0.9},
                 LLMAuthenticationError("Insufficient credits"),
             ]
         },

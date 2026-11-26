@@ -86,8 +86,8 @@ async def test_writer_retries_once_with_validation_feedback_then_succeeds():
 
     assert result == expected
     assert len(fake.calls) == 2
-    assert "Korrekturhinweis" not in fake.calls[0].prompt
-    assert "Korrekturhinweis" in fake.calls[1].prompt
+    assert "Correction Note" not in fake.calls[0].prompt
+    assert "Correction Note" in fake.calls[1].prompt
     assert "h2 must contain 20 to 60 characters" in fake.calls[1].prompt
     assert PROTOCOL_TEXT not in fake.calls[1].prompt
 
@@ -101,7 +101,7 @@ async def test_writer_retries_invalid_structure_once_and_then_fails():
 
     assert error.value.step == "writer"
     assert len(fake.calls) == 2
-    assert "Korrekturhinweis" in fake.calls[1].prompt
+    assert "Correction Note" in fake.calls[1].prompt
 
 
 async def test_composition_failure_gets_one_retry_with_its_feedback():
@@ -122,7 +122,7 @@ async def test_composition_failure_gets_one_retry_with_its_feedback():
     assert result == expected
     assert len(fake.calls) == 2
     assert len(attempts) == 2
-    assert "Korrekturhinweis" in fake.calls[1].prompt
+    assert "Correction Note" in fake.calls[1].prompt
     assert "3 Content-Slides" in fake.calls[1].prompt
     assert PROTOCOL_TEXT not in fake.calls[1].prompt
 

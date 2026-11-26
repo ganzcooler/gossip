@@ -62,26 +62,20 @@ def _artifact_threshold(name: str, default: str) -> float:
 
 
 IMAGE_ARTIFACT_THRESHOLDS = {
-    "border_or_frame": _artifact_threshold(
-        "IMAGE_ARTIFACT_BORDER_OR_FRAME_THRESHOLD", "0.5"
+    "border_or_blank_area": _artifact_threshold(
+        "IMAGE_ARTIFACT_BORDER_OR_BLANK_AREA_THRESHOLD", "0.5"
     ),
-    "blank_band_or_strip": _artifact_threshold(
-        "IMAGE_ARTIFACT_BLANK_BAND_OR_STRIP_THRESHOLD", "0.5"
+    "panel_or_seam": _artifact_threshold(
+        "IMAGE_ARTIFACT_PANEL_OR_SEAM_THRESHOLD", "0.5"
     ),
-    "flat_blank_block": _artifact_threshold(
-        "IMAGE_ARTIFACT_FLAT_BLANK_BLOCK_THRESHOLD", "0.5"
-    ),
-    "multi_panel_or_seam": _artifact_threshold(
-        "IMAGE_ARTIFACT_MULTI_PANEL_OR_SEAM_THRESHOLD", "0.5"
-    ),
-    "watermark_or_ui_element": _artifact_threshold(
-        "IMAGE_ARTIFACT_WATERMARK_OR_UI_ELEMENT_THRESHOLD", "0.8"
+    "watermark_or_overlay": _artifact_threshold(
+        "IMAGE_ARTIFACT_WATERMARK_OR_OVERLAY_THRESHOLD", "0.8"
     ),
     "rotation": _artifact_threshold(
         "IMAGE_ARTIFACT_ROTATION_THRESHOLD", "0.6"
     ),
-    "generation_glitch": _artifact_threshold(
-        "IMAGE_ARTIFACT_GENERATION_GLITCH_THRESHOLD", "0.8"
+    "minor": _artifact_threshold(
+        "IMAGE_ARTIFACT_MINOR_THRESHOLD", "0.5"
     ),
 }
 OPENROUTER_REASONING_EFFORT = os.getenv("OPENROUTER_REASONING_EFFORT", "max")

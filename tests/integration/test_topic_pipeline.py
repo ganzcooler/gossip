@@ -299,7 +299,7 @@ async def test_summary_failure_does_not_block_topic_content(
         assert post.content_markdown.startswith(f"# {draft['title']}")
         assert post.slide_plan_json["family"] == "topic"
         assert post.slide_plan_json["body_size"] in (42, 39, 36)
-        assert 4 <= len(post.slide_plan_json["slides"]) <= 7
+        assert 3 <= len(post.slide_plan_json["slides"]) <= 7
         assert post.caption.startswith(f"{CAPTION_FIRST_LINE}\n")
         post_slides = await _slides(postgres_session, post)
         assert len(post.alt_text_json) == len(post_slides)
@@ -462,14 +462,14 @@ async def test_composition_failure_retries_the_writer_with_feedback(
         if plan.topic_briefs[0].focus in call.prompt
     ]
     assert len(haushalt_calls) == 2
-    assert "Korrekturhinweis" not in haushalt_calls[0].prompt
-    assert "Korrekturhinweis" in haushalt_calls[1].prompt
+    assert "Correction Note" not in haushalt_calls[0].prompt
+    assert "Correction Note" in haushalt_calls[1].prompt
     assert "content slides" in haushalt_calls[1].prompt
     assert PROTOCOL_TEXT not in haushalt_calls[1].prompt
 
     assert haushalt.status == "ready"
     assert haushalt.failed_step is None
-    assert 4 <= len(haushalt.slide_plan_json["slides"]) <= 7
+    assert 3 <= len(haushalt.slide_plan_json["slides"]) <= 7
     assert radweg_post.status == "ready"
 
 

@@ -18,10 +18,10 @@ from pydantic import BaseModel, ValidationError
 from app.core import config
 from app.services import openrouter_client
 from app.services.decision_models import (
+    DecisionQuestion,
     DecisionResponse,
     DecisionState,
     ImagePart,
-    NoulQuestion,
 )
 from app.services.openrouter_client import OpenRouterError
 
@@ -83,9 +83,9 @@ class LLMClient(Protocol):
         *,
         role: str,
         state: DecisionState,
-        questions: dict[str, NoulQuestion],
+        questions: dict[str, DecisionQuestion],
     ) -> DecisionResponse:
-        """Answer typed ``noul`` questions about ``state``."""
+        """Answer typed questions about ``state``."""
 
 
 def _is_account_error(error: OpenRouterError) -> bool:
@@ -244,7 +244,7 @@ class OpenRouterLLMClient:
         *,
         role: str,
         state: DecisionState,
-        questions: dict[str, NoulQuestion],
+        questions: dict[str, DecisionQuestion],
     ) -> DecisionResponse:
         state_payload = self._decision_state_payload(state)
         questions_payload = {

@@ -3,8 +3,10 @@
 The injected LLM port returns raw image bytes. This module decodes them,
 normalizes the result with a deterministic center fit, and substitutes the
 family-pure brand fallback when the provider or the payload fails. Generated
-artwork is inspected by a decision model for unintended borders, blank bands
-and blocks, seams, text and obvious generation defects before it is accepted.
+artwork is inspected by a decision model for unintended borders, blank areas,
+panels or seams, overlays, rotation and recognizable minors before it is
+accepted. Deliberate satirical exaggeration, unusual proportions and invented
+scene details are not treated as defects.
 An authentication/account failure is never swallowed: it stops the job.
 """
 
@@ -57,15 +59,24 @@ ASSET_STATUS_FALLBACK = "fallback"
 IMAGE_STYLE_SUFFIX = (
     "Photorealistic editorial reportage photography with natural light, real "
     "materials and a believable scene. Continuous scene detail across the full "
-    "frame; no empty margins or flat blank areas. No illustration, cartoon, "
-    "comic, drawing, watercolour or 3D render. No frame, border, passepartout, "
-    "polaroid edge, picture-in-picture, collage, split screen or vignette."
+    "frame; no empty margins or flat blank areas. One single continuous "
+    "photograph; no illustration, cartoon, comic, drawing, watercolour or 3D "
+    "render. No frame, border, passepartout, polaroid edge, diptych, triptych, "
+    "multi-panel layout, picture-in-picture, collage, split screen or vignette."
+)
+
+COVER_SATIRE_SUFFIX = (
+    "Give the cover a dry, gently sarcastic, slightly exaggerated editorial "
+    "twist: exaggerate props, scale or everyday details for visual humour, "
+    "while keeping the scene photorealistic, good-natured and free of "
+    "caricatures of real people."
 )
 
 ARTIFACT_RETRY_SUFFIX = (
-    "Full-bleed single photograph that fills the entire frame edge to edge, "
-    "with real scene detail all the way into every corner. Absolutely no white "
-    "border, frame, blank band, white block, split-screen seam or empty margin."
+    "One single continuous full-bleed photograph that fills the entire frame "
+    "edge to edge, with real scene detail all the way into every corner. "
+    "Absolutely no white border, frame, blank band, white block, diptych, "
+    "triptych, multi-panel layout, split-screen seam or empty margin."
 )
 MAX_IMAGE_ATTEMPTS = 2
 
@@ -109,6 +120,17 @@ def with_image_style_suffix(prompt: str) -> str:
     if prompt.endswith(IMAGE_STYLE_SUFFIX):
         return prompt
     return f"{prompt}\n\n{IMAGE_STYLE_SUFFIX}"
+
+
+def with_cover_satire_suffix(prompt: str) -> str:
+    """Append the cover-only satire suffix exactly once, before the style suffix."""
+    prompt = prompt.strip()
+    if COVER_SATIRE_SUFFIX in prompt:
+        return prompt
+    if prompt.endswith(IMAGE_STYLE_SUFFIX):
+        base = prompt[: -len(IMAGE_STYLE_SUFFIX)].rstrip()
+        return f"{base}\n\n{COVER_SATIRE_SUFFIX}\n\n{IMAGE_STYLE_SUFFIX}"
+    return f"{prompt}\n\n{COVER_SATIRE_SUFFIX}"
 
 
 def with_artifact_retry_suffix(prompt: str) -> str:
@@ -328,7 +350,7 @@ async def generate_summary_cover(
     """Generate and normalize the Summary cover art, or its brand fallback."""
     return await _generate_guarded_art(
         llm,
-        prompt,
+        with_cover_satire_suffix(prompt),
         role=SUMMARY_COVER_ROLE,
         aspect_ratio=SUMMARY_ASPECT_RATIO,
         label="Summary cover",
@@ -354,7 +376,7 @@ async def generate_topic_cover(
     """Generate and normalize the 1080x1350 topic cover art or its fallback."""
     return await _generate_guarded_art(
         llm,
-        prompt,
+        with_cover_satire_suffix(prompt),
         role=TOPIC_COVER_ROLE,
         aspect_ratio=TOPIC_ASPECT_RATIO,
         label="Topic cover",
@@ -414,6 +436,7 @@ __all__ = [
     "ARTIFACT_RETRY_SUFFIX",
     "ASSET_STATUS_FALLBACK",
     "ASSET_STATUS_READY",
+    "COVER_SATIRE_SUFFIX",
     "GeneratedImage",
     "IMAGE_STYLE_SUFFIX",
     "ImageGenerationError",
@@ -441,5 +464,6 @@ __all__ = [
     "topic_pair_fallback_art",
     "topic_single_fallback_art",
     "with_artifact_retry_suffix",
+    "with_cover_satire_suffix",
     "with_image_style_suffix",
 ]

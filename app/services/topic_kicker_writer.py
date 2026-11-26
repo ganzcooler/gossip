@@ -1,25 +1,28 @@
-"""Kicker-Writer fallback for topic sections that no deterministic label fits.
+"""Jev-assisted topic kickers with a deterministic word-order fallback.
 
-The composer and renderer never invent a generic visible label. If the derived
-compound and every shortened candidate still overflow the 600 px follow-header,
-this module asks a dedicated stateless LLM role for a short one-word Kicker.
-The result is width-checked and retried once; a final neutral ``AKTUELL`` label
-guards against repeated provider failures.
+The complete H2 is sent to the Decisions API as the state. A single ``choice``
+question offers every distinct word from the heading; Jev ranks them by how well
+they work as a one-word heading. The highest-ranked candidate that fits the
+follow-slide header wins. If the decision call fails or none of its candidates
+fits, the heading words are tried in their original order. ``AKTUELL`` remains
+the final guard when no heading word fits at all.
 """
 
 from __future__ import annotations
 
-import copy
 import logging
+from collections.abc import Sequence
 from dataclasses import replace
 
-from app.core.post_models import TopicDraft, TopicKicker
-from app.core.post_prompts import build_topic_kicker_prompt
-from app.services.llm_client import LLMAuthenticationError, LLMClient, LLMSchemaError
-from app.services.slide_composer import ComposedTopicSlide, TopicComposition
+from app.core.post_models import TopicDraft
+from app.services.decision_models import ChoiceAnswer, ChoiceQuestion
+from app.services.llm_client import LLMAuthenticationError, LLMClient, LLMError
+from app.services.slide_composer import TopicComposition
+from app.services.text_layout import normalize_whitespace
 from app.services.topic_kickers import (
     DEFAULT_TOPIC_KICKER,
-    fit_topic_kicker,
+    _KICKER_STOPWORDS,
+    _LABEL_PUNCTUATION,
     format_follow_counter,
     kicker_char_budget,
     kicker_fits,
@@ -28,22 +31,138 @@ from app.services.topic_kickers import (
 
 logger = logging.getLogger(__name__)
 
-TOPIC_KICKER_ROLE = "topic_kicker"
+TOPIC_KICKER_ROLE = "topic_kicker_choice"
 
 
-class TopicKickerError(Exception):
-    """The Kicker-Writer did not produce a usable one-word label."""
+def kicker_word_candidates(h2: str) -> tuple[str, ...]:
+    """Return every distinct word from ``h2`` in original order."""
+    seen: set[str] = set()
+    candidates: list[str] = []
+    for raw_word in normalize_whitespace(h2).split(" "):
+        word = raw_word.strip(_LABEL_PUNCTUATION)
+        if len(word) < 2 or not any(character.isalpha() for character in word):
+            continue
+        key = word.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(word)
+    return tuple(candidates)
 
 
-def _section_candidate(slides: list[ComposedTopicSlide]) -> str:
-    values = {
-        normalize_topic_kicker(slide.kicker or slide.label or "")
-        for slide in slides
-    }
-    values.discard("")
-    if len(values) == 1:
-        return next(iter(values))
-    return ""
+def _fallback_candidates(h2: str) -> tuple[str, ...]:
+    """Return content words in heading order, skipping function words."""
+    candidates = kicker_word_candidates(h2)
+    content = tuple(
+        word
+        for word in candidates
+        if word.casefold() not in _KICKER_STOPWORDS
+    )
+    return content or candidates
+
+
+def _fits(
+    candidate: str,
+    *,
+    body_size: int,
+    counters: Sequence[str],
+) -> bool:
+    normalized = normalize_topic_kicker(candidate)
+    return bool(normalized) and kicker_fits(
+        normalized, body_size=body_size, counters=counters
+    )
+
+
+def _ranked_candidates(
+    answer: ChoiceAnswer,
+    candidates: Sequence[str],
+) -> list[str]:
+    """Rank the answer's probabilities first, then keep heading order."""
+    known = {word.casefold(): word for word in candidates}
+    ranked: list[str] = []
+    seen: set[str] = set()
+
+    def add(word: str) -> None:
+        key = word.casefold()
+        if key in known and key not in seen:
+            seen.add(key)
+            ranked.append(known[key])
+
+    if answer.probabilities:
+        for word, _ in sorted(
+            answer.probabilities.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        ):
+            add(word)
+    add(answer.choice)
+    for word in candidates:
+        add(word)
+    return ranked
+
+
+async def choose_topic_kicker(
+    h2: str,
+    *,
+    body_size: int,
+    max_chars: int,
+    counters: Sequence[str],
+    llm: LLMClient,
+    role: str = TOPIC_KICKER_ROLE,
+) -> str | None:
+    """Ask Jev for the best heading word, falling back to heading order."""
+    candidates = kicker_word_candidates(h2)
+    if not candidates:
+        return None
+
+    ranked: list[str] = []
+    if len(candidates) >= 2:
+        question = ChoiceQuestion(
+            instructions=(
+                "Which single word from this section heading works best as a "
+                "one-word heading? Prefer a German noun that names the section; "
+                "otherwise choose the word that best names it. Ignore articles, "
+                "prepositions, conjunctions and numbers. Prefer a word that is "
+                f"clear out of context and at most {max_chars} characters."
+            ),
+            criteria={
+                word: f"Candidate word: {word}" for word in candidates
+            },
+        )
+        try:
+            response = await llm.decide(
+                role=role,
+                state=h2,
+                questions={"kicker": question},
+            )
+        except LLMAuthenticationError:
+            raise
+        except LLMError as exc:
+            logger.warning(
+                "Kicker decision failed for %r; using heading order: %s",
+                h2,
+                exc,
+            )
+        else:
+            answer = response.answers.get("kicker")
+            if isinstance(answer, ChoiceAnswer):
+                ranked = _ranked_candidates(answer, candidates)
+            else:
+                logger.warning(
+                    "Kicker decision returned no choice for %r; using heading "
+                    "order",
+                    h2,
+                )
+
+    for candidate in ranked:
+        if _fits(candidate, body_size=body_size, counters=counters):
+            return normalize_topic_kicker(candidate)
+
+    for candidate in _fallback_candidates(h2):
+        if _fits(candidate, body_size=body_size, counters=counters):
+            return normalize_topic_kicker(candidate)
+
+    return None
 
 
 def apply_topic_kickers(
@@ -60,11 +179,20 @@ def apply_topic_kickers(
         )
         for slide in composition.slides
     )
-    slide_plan = copy.deepcopy(composition.slide_plan)
-    for entry in slide_plan.get("slides", []):
-        section_index = entry.get("section_index")
-        if section_index in kickers:
-            entry["kicker"] = kickers[section_index]
+    slide_plan = {
+        **composition.slide_plan,
+        "slides": [
+            {
+                **entry,
+                **(
+                    {"kicker": kickers[entry["section_index"]]}
+                    if entry.get("section_index") in kickers
+                    else {}
+                ),
+            }
+            for entry in composition.slide_plan.get("slides", [])
+        ],
+    }
     return replace(
         composition,
         slides=slides,
@@ -72,48 +200,12 @@ def apply_topic_kickers(
     )
 
 
-async def write_topic_kicker(
-    *,
-    title: str,
-    section_h2: str,
-    max_chars: int,
-    llm: LLMClient,
-    feedback: str | None = None,
-) -> str:
-    """Ask the Kicker-Writer for one short uppercase word."""
-    prompt = build_topic_kicker_prompt(
-        title=title,
-        section_h2=section_h2,
-        max_chars=max_chars,
-        feedback=feedback,
-    )
-    try:
-        response = await llm.generate_json(
-            role=TOPIC_KICKER_ROLE,
-            prompt=prompt,
-            schema=TopicKicker,
-        )
-    except LLMAuthenticationError:
-        raise
-    except (LLMSchemaError, ValueError, TypeError) as exc:
-        raise TopicKickerError(f"Kicker-Writer response is invalid: {exc}") from exc
-
-    candidate = normalize_topic_kicker(response.kicker)
-    if not candidate:
-        raise TopicKickerError("Kicker-Writer returned an empty or multi-word label")
-    if len(candidate) > max_chars:
-        raise TopicKickerError(
-            f"Kicker-Writer label {candidate!r} exceeds {max_chars} characters"
-        )
-    return candidate
-
-
 async def resolve_topic_kickers(
     draft: TopicDraft,
     composition: TopicComposition,
     llm: LLMClient,
 ) -> TopicComposition:
-    """Resolve every visible section kicker, using the LLM only as fallback."""
+    """Resolve every visible section kicker through Jev and its fallbacks."""
     content_slides = [
         slide for slide in composition.slides if slide.slide_type != "cover"
     ]
@@ -138,68 +230,19 @@ async def resolve_topic_kickers(
         if not counters:
             continue
 
-        current = _section_candidate(slides)
-        if (
-            current
-            and current != "THEMA"
-            and kicker_fits(
-                current, body_size=composition.body_size, counters=counters
-            )
-        ):
-            continue
-
-        deterministic = fit_topic_kicker(
-            section.h2,
-            body_size=composition.body_size,
-            counters=counters,
-        )
-        if deterministic is not None:
-            resolved[section_index] = deterministic
-            continue
-
-        candidate: str | None = None
         max_chars = kicker_char_budget(
             body_size=composition.body_size, counters=counters
         )
-        feedback: str | None = None
-        for attempt in (1, 2):
-            try:
-                candidate = await write_topic_kicker(
-                    title=draft.title,
-                    section_h2=section.h2,
-                    max_chars=max_chars,
-                    llm=llm,
-                    feedback=feedback,
-                )
-            except LLMAuthenticationError:
-                raise
-            except TopicKickerError as exc:
-                logger.warning(
-                    "Kicker-Writer attempt %s for section %s failed: %s",
-                    attempt,
-                    section_index,
-                    exc,
-                )
-                candidate = None
-                max_chars = max(6, max_chars - 2)
-                feedback = str(exc)
-                continue
-
-            if kicker_fits(
-                candidate, body_size=composition.body_size, counters=counters
-            ):
-                break
-            feedback = (
-                f"Das Wort {candidate} ist mit dem Zähler zu breit für die "
-                f"600-px-Zeile. Liefere höchstens {max(6, max_chars - 2)} Zeichen."
-            )
-            max_chars = max(6, max_chars - 2)
-            candidate = None
-
+        candidate = await choose_topic_kicker(
+            section.h2,
+            body_size=composition.body_size,
+            max_chars=max_chars,
+            counters=counters,
+            llm=llm,
+        )
         if candidate is None:
             logger.warning(
-                "Kicker-Writer did not produce a fitting label for section %s; "
-                "using %s",
+                "No heading word fits section %s; using %s",
                 section_index,
                 DEFAULT_TOPIC_KICKER,
             )
@@ -211,8 +254,8 @@ async def resolve_topic_kickers(
 
 __all__ = [
     "TOPIC_KICKER_ROLE",
-    "TopicKickerError",
     "apply_topic_kickers",
+    "choose_topic_kicker",
+    "kicker_word_candidates",
     "resolve_topic_kickers",
-    "write_topic_kicker",
 ]

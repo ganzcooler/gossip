@@ -7,6 +7,8 @@ posts, or any conversation history.
 
 from __future__ import annotations
 
+import re
+
 from pydantic import ValidationError
 
 from app.core.post_models import SummaryDraft, TopicDraft, VisualPrompts
@@ -18,6 +20,62 @@ from app.services.llm_client import LLMAuthenticationError, LLMClient, LLMError
 
 SUMMARY_VISUAL_PROMPTS_ROLE = "summary_visual_prompts"
 TOPIC_VISUAL_PROMPTS_ROLE = "topic_visual_prompts"
+
+# Positive split language in a generated image prompt makes the provider draw a
+# diptych with a visible centre seam. The writer is told not to use these terms
+# at all; this validator enforces it at the step boundary.
+_SPLIT_COMPOSITION_PATTERNS = (
+    ("seam", re.compile(r"\bseams?\b", re.IGNORECASE)),
+    (
+        "panel",
+        re.compile(
+            r"\b(?:two|three|multiple|centre|center|central|vertical)\s+panels?\b"
+            r"|\bmulti-panel\b|\bpanel\s+(?:composition|layout|split)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    ("split", re.compile(r"\bsplits?\b|\bsplit-screen\b", re.IGNORECASE)),
+    (
+        "halves",
+        re.compile(
+            r"\bhalves\b|\b(?:left|right)\s+half\b|\btwo\s+halves\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "left/right portion",
+        re.compile(
+            r"\b(?:left|right)\s+(?:portion|third)\b|\bleft/right\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "diptych/triptych",
+        re.compile(r"\b(?:diptych|triptych)\b", re.IGNORECASE),
+    ),
+    ("collage", re.compile(r"\bcollages?\b", re.IGNORECASE)),
+    (
+        "vertical divider",
+        re.compile(r"\bvertical\s+(?:divider|separator)\b", re.IGNORECASE),
+    ),
+    (
+        "pair composition",
+        re.compile(
+            r"\b(?:image|artwork|photo|photograph)\s+pair\b"
+            r"|\bpair\s+(?:composition|layout|format)\b",
+            re.IGNORECASE,
+        ),
+    ),
+)
+
+
+def _split_language(prompt: str) -> tuple[str, ...]:
+    """Return the split-composition labels found in one generated prompt."""
+    return tuple(
+        label
+        for label, pattern in _SPLIT_COMPOSITION_PATTERNS
+        if pattern.search(prompt)
+    )
 
 
 class VisualPromptError(Exception):
@@ -43,6 +101,23 @@ async def write_summary_visual_prompts(
         raise
     except (LLMError, ValidationError, TypeError, ValueError) as exc:
         raise VisualPromptError(f"Visual prompt writer failed: {exc}") from exc
+
+
+def _split_findings(result: VisualPrompts) -> dict[str, tuple[str, ...]]:
+    """Return split-composition findings per generated prompt value."""
+    entries: list[tuple[str, str]] = [("cover_prompt", result.cover_prompt)]
+    entries.extend(
+        (f"artwork_prompts[{index}]", prompt)
+        for index, prompt in enumerate(result.artwork_prompts, start=1)
+    )
+    if result.single_prompt:
+        entries.append(("single_prompt", result.single_prompt))
+    findings: dict[str, tuple[str, ...]] = {}
+    for label, prompt in entries:
+        hits = _split_language(prompt)
+        if hits:
+            findings[label] = hits
+    return findings
 
 
 async def write_topic_visual_prompts(
@@ -94,6 +169,16 @@ async def write_topic_visual_prompts(
                 error = VisualPromptError(
                     "Visual prompt writer did not return a single_prompt "
                     "for the unpaired last slide"
+                )
+            elif findings := _split_findings(result):
+                error = VisualPromptError(
+                    "Visual prompt writer described a split composition ("
+                    + "; ".join(
+                        f"{label}: {', '.join(hits)}"
+                        for label, hits in findings.items()
+                    )
+                    + "). Describe one continuous photograph without seams, "
+                    "panels, halves or left/right portions."
                 )
             else:
                 return result

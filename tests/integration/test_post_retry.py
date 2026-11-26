@@ -93,6 +93,8 @@ TOPIC_STAGE_ROLES = {
         "topic_writer",
         "topic_fact_check",
         "caption_writer",
+        "topic_kicker_choice",
+        "topic_kicker_choice",
         "topic_visual_prompts",
         "topic_cover",
         "topic_cover_artifact_check",
@@ -104,6 +106,8 @@ TOPIC_STAGE_ROLES = {
     "slide_composer": [
         "topic_fact_check",
         "caption_writer",
+        "topic_kicker_choice",
+        "topic_kicker_choice",
         "topic_visual_prompts",
         "topic_cover",
         "topic_cover_artifact_check",
@@ -115,6 +119,8 @@ TOPIC_STAGE_ROLES = {
     "fact_check": [
         "topic_fact_check",
         "caption_writer",
+        "topic_kicker_choice",
+        "topic_kicker_choice",
         "topic_visual_prompts",
         "topic_cover",
         "topic_cover_artifact_check",
@@ -128,6 +134,8 @@ TOPIC_STAGE_ROLES = {
         "topic_repair",
         "topic_fact_check",
         "caption_writer",
+        "topic_kicker_choice",
+        "topic_kicker_choice",
         "topic_visual_prompts",
         "topic_cover",
         "topic_cover_artifact_check",
@@ -138,6 +146,8 @@ TOPIC_STAGE_ROLES = {
     ],
     "caption": [
         "caption_writer",
+        "topic_kicker_choice",
+        "topic_kicker_choice",
         "topic_visual_prompts",
         "topic_cover",
         "topic_cover_artifact_check",
@@ -147,6 +157,8 @@ TOPIC_STAGE_ROLES = {
         "topic_pair_art_artifact_check",
     ],
     "visual_prompts": [
+        "topic_kicker_choice",
+        "topic_kicker_choice",
         "topic_visual_prompts",
         "topic_cover",
         "topic_cover_artifact_check",
@@ -156,6 +168,8 @@ TOPIC_STAGE_ROLES = {
         "topic_pair_art_artifact_check",
     ],
     "image_generation": [
+        "topic_kicker_choice",
+        "topic_kicker_choice",
         "topic_cover",
         "topic_cover_artifact_check",
         "topic_pair_art",
@@ -164,6 +178,8 @@ TOPIC_STAGE_ROLES = {
         "topic_pair_art_artifact_check",
     ],
     "render": [
+        "topic_kicker_choice",
+        "topic_kicker_choice",
         "topic_cover",
         "topic_cover_artifact_check",
         "topic_pair_art",

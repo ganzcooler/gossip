@@ -759,10 +759,12 @@ def render_topic_frames(
     single_art: Image.Image | None = None,
     organ: str,
 ) -> list[Image.Image]:
-    """Render the cover plus 4–7 content slides in memory, in image order."""
+    """Render the cover plus 3–7 content slides in memory, in image order."""
     _require(
-        4 <= len(composition.slides) - 1 <= 7,
-        "A Themenbeitrag needs 4 to 7 content slides",
+        TOPIC_MIN_CONTENT_SLIDES
+        <= len(composition.slides) - 1
+        <= TOPIC_MAX_CONTENT_SLIDES,
+        "A Themenbeitrag needs 3 to 7 content slides",
     )
     content_slides = list(composition.slides[1:])
     content_total = len(content_slides)
@@ -1015,7 +1017,10 @@ def write_topic_output(
     the stable ``<protocol_folder>/topic-<slug>/`` subfolder so two topics in
     one protocol never overwrite each other's frames.
     """
-    _require(5 <= len(frames) <= 8, "A Themenbeitrag needs 5 to 8 images")
+    _require(
+        TOPIC_MIN_CONTENT_SLIDES + 1 <= len(frames) <= TOPIC_MAX_CONTENT_SLIDES + 1,
+        "A Themenbeitrag needs 4 to 8 images",
+    )
     for frame in frames:
         _require(
             frame.size == TOPIC_SIZE and frame.mode == "RGB",

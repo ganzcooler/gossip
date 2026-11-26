@@ -9,7 +9,12 @@ from pydantic import BaseModel, ConfigDict
 
 from app.core import config
 from app.services import llm_client as llm_client_module
-from app.services.decision_models import ImagePart, ImageURL, NoulQuestion
+from app.services.decision_models import (
+    ChoiceQuestion,
+    ImagePart,
+    ImageURL,
+    NoulQuestion,
+)
 from app.services.llm_client import (
     LLMAuthenticationError,
     LLMClient,
@@ -297,6 +302,48 @@ async def test_decide_logs_an_invalid_result_before_retrying(transport, caplog):
     assert len(results) == 2
     assert '"noul": 2.0' in results[0]
     assert '"noul": 0.1' in results[1]
+
+
+async def test_decide_supports_choice_questions_with_probabilities(transport):
+    transport.submit_decisions.return_value = {
+        "answers": {
+            "kicker": {
+                "type": "choice",
+                "choice": "HAUSHALT",
+                "confidence": 0.9,
+                "probabilities": {"HAUSHALT": 0.9, "RAT": 0.1},
+            }
+        }
+    }
+    question = ChoiceQuestion(
+        instructions="Which word is the best heading?",
+        criteria={"HAUSHALT": "Candidate", "RAT": "Candidate"},
+    )
+
+    result = await _client().decide(
+        role="topic_kicker_choice",
+        state="Der Rat hat den Haushalt beschlossen",
+        questions={"kicker": question},
+    )
+
+    answer = result.answers["kicker"]
+    assert answer.type == "choice"
+    assert answer.choice == "HAUSHALT"
+    assert answer.probabilities == {"HAUSHALT": 0.9, "RAT": 0.1}
+    transport.submit_decisions.assert_called_once_with(
+        model=config.OPENROUTER_DECISION_MODEL,
+        state="Der Rat hat den Haushalt beschlossen",
+        questions={
+            "kicker": {
+                "type": "choice",
+                "instructions": "Which word is the best heading?",
+                "criteria": {
+                    "HAUSHALT": "Candidate",
+                    "RAT": "Candidate",
+                },
+            }
+        },
+    )
 
 
 async def test_decide_uses_the_configured_model_by_default(transport):

@@ -343,9 +343,9 @@ async def test_full_protocol_renders_summary_and_topics_with_assets_and_api_path
     assert haushalt_draft.sections[0].h2 in visual_calls[0].prompt
     assert radweg_draft.title not in visual_calls[0].prompt
     assert PROTOCOL_TEXT not in visual_calls[0].prompt
-    assert "Summary-Entwurf" not in visual_calls[0].prompt
+    assert "Summary draft" not in visual_calls[0].prompt
     assert plan.summary_briefs[0].point not in visual_calls[0].prompt
-    assert "genau 2 Prompts" in visual_calls[0].prompt
+    assert "exactly 2 prompts" in visual_calls[0].prompt
     assert all(call.aspect_ratio == "4:5" for call in fake.image_calls[1:])
 
     client = await _asgi_client(postgres_session)
@@ -768,7 +768,7 @@ async def test_odd_content_count_records_a_single_last_asset_and_strip(
     )
 
     visual_call = fake.calls_for("topic_visual_prompts")[0]
-    assert "genau 2 Prompts" in visual_call.prompt
+    assert "exactly 2 prompts" in visual_call.prompt
     assert "single_prompt" in visual_call.prompt
     folder = tmp_path / "240115_gemeinderat" / "topic-haushalt"
     with Image.open(folder / "topic-2024-01-15-06.png") as last:

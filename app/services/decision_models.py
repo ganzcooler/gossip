@@ -47,6 +47,16 @@ class NoulQuestion(BaseModel):
     criteria: NoulCriteria | None = None
 
 
+class ChoiceQuestion(BaseModel):
+    """Ask for exactly one option; the criteria keys are the options."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["choice"] = "choice"
+    instructions: str | None = None
+    criteria: dict[str, str | None]
+
+
 class NoulAnswer(BaseModel):
     """Probability that the condition holds, between 0.0 and 1.0."""
 
@@ -57,6 +67,17 @@ class NoulAnswer(BaseModel):
     confidence: float | None = None
 
 
+class ChoiceAnswer(BaseModel):
+    """The selected option plus its confidence and optional probabilities."""
+
+    model_config = ConfigDict(extra="allow")
+
+    type: Literal["choice"]
+    choice: str
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    probabilities: dict[str, Annotated[float, Field(ge=0.0, le=1.0)]] | None = None
+
+
 class RefusalAnswer(BaseModel):
     """The provider declined to answer this question."""
 
@@ -65,7 +86,10 @@ class RefusalAnswer(BaseModel):
     type: Literal["refusal"]
 
 
-DecisionAnswer = Annotated[NoulAnswer | RefusalAnswer, Field(discriminator="type")]
+DecisionQuestion = NoulQuestion | ChoiceQuestion
+DecisionAnswer = Annotated[
+    NoulAnswer | ChoiceAnswer | RefusalAnswer, Field(discriminator="type")
+]
 
 
 class DecisionUsage(BaseModel):
@@ -92,7 +116,10 @@ DecisionState = str | list[str | ImagePart]
 
 
 __all__ = [
+    "ChoiceAnswer",
+    "ChoiceQuestion",
     "DecisionAnswer",
+    "DecisionQuestion",
     "DecisionResponse",
     "DecisionState",
     "DecisionUsage",

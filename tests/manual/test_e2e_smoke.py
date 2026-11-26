@@ -463,9 +463,9 @@ def _assert_topic_output(
     topic_images = [
         path for path in files if TOPIC_IMAGE_PATTERN.match(path.name)
     ]
-    assert 5 <= len(topic_images) <= 8, (
+    assert 4 <= len(topic_images) <= 8, (
         f"topic post {post_id} wrote {len(topic_images)} images "
-        f"instead of 5-8: {[path.name for path in topic_images]}"
+        f"instead of 4-8: {[path.name for path in topic_images]}"
     )
     expected_names = [
         f"topic-{FIXTURE_SESSION_DATE.isoformat()}-{index:02d}.png"

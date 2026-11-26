@@ -13,10 +13,12 @@ from typing import Any
 from pydantic import BaseModel
 
 from app.services.decision_models import (
+    ChoiceAnswer,
+    ChoiceQuestion,
+    DecisionQuestion,
     DecisionResponse,
     DecisionState,
     NoulAnswer,
-    NoulQuestion,
 )
 
 
@@ -29,7 +31,7 @@ class LLMCall:
     schema: type[BaseModel] | None = None
     aspect_ratio: str | None = None
     state: DecisionState | None = None
-    questions: dict[str, NoulQuestion] | None = None
+    questions: dict[str, DecisionQuestion] | None = None
 
 
 class FakeLLMClient:
@@ -113,9 +115,11 @@ class FakeLLMClient:
         *,
         role: str,
         state: DecisionState,
-        questions: dict[str, NoulQuestion],
+        questions: dict[str, DecisionQuestion],
     ) -> DecisionResponse:
-        prompt = state[0] if isinstance(state, list) and state else ""
+        prompt = state if isinstance(state, str) else ""
+        if isinstance(state, list) and state:
+            prompt = state[0] if isinstance(state[0], str) else ""
         self.calls.append(
             LLMCall(
                 role=role,
@@ -144,18 +148,42 @@ class FakeLLMClient:
 
     @staticmethod
     def _clean_response(
-        questions: dict[str, NoulQuestion],
+        questions: dict[str, DecisionQuestion],
     ) -> DecisionResponse:
         return FakeLLMClient._probability_response(questions, {})
 
     @staticmethod
     def _probability_response(
-        questions: dict[str, NoulQuestion],
+        questions: dict[str, DecisionQuestion],
         probabilities: Mapping[str, Any],
     ) -> DecisionResponse:
-        return DecisionResponse(
-            answers={
-                key: NoulAnswer(type="noul", noul=float(probabilities.get(key, 0.0)))
-                for key in questions
-            }
-        )
+        answers: dict[str, NoulAnswer | ChoiceAnswer] = {}
+        for key, question in questions.items():
+            if isinstance(question, ChoiceQuestion):
+                options = list(question.criteria)
+                selected = (
+                    options[0] if options else ""
+                )
+                option_probabilities = {
+                    option: (
+                        float(probabilities.get(option, 0.0))
+                        if not probabilities
+                        or set(probabilities).issubset(set(options))
+                        else 0.0
+                    )
+                    for option in options
+                }
+                if not probabilities and selected:
+                    option_probabilities[selected] = 1.0
+                answers[key] = ChoiceAnswer(
+                    type="choice",
+                    choice=selected,
+                    confidence=option_probabilities.get(selected),
+                    probabilities=option_probabilities,
+                )
+            else:
+                answers[key] = NoulAnswer(
+                    type="noul",
+                    noul=float(probabilities.get(key, 0.0)),
+                )
+        return DecisionResponse(answers=answers)

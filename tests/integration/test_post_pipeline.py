@@ -24,7 +24,7 @@ from app.main import app
 from app.models import EditorialPlan as EditorialPlanRow
 from app.models import Post, PostAsset, PostSlide, Protocol
 from app.services.caption_writer import CAPTION_FIRST_LINE
-from app.services.image_generation import IMAGE_STYLE_SUFFIX
+from app.services.image_generation import COVER_SATIRE_SUFFIX, IMAGE_STYLE_SUFFIX
 from app.services.llm_client import LLMAuthenticationError, LLMSchemaError
 from app.services.post_pipeline import PostPipeline
 from app.services.slide_composer import compose_topic_slides
@@ -386,7 +386,8 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
     assert cover_asset.error is None
     assert cover_asset.model == OPENROUTER_IMAGE_MODEL
     assert cover_asset.prompt == (
-        f"Weite, ruhige Szene am Ortsrand.\n\n{IMAGE_STYLE_SUFFIX}"
+        f"Weite, ruhige Szene am Ortsrand.\n\n"
+        f"{COVER_SATIRE_SUFFIX}\n\n{IMAGE_STYLE_SUFFIX}"
     )
     assert cover_asset.path is not None
     assert cover_asset.path.endswith("summary-2024-01-15-story-01.png")
@@ -465,6 +466,8 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
         "topic_writer",
         "topic_fact_check",
         "caption_writer",
+        "topic_kicker_choice",
+        "topic_kicker_choice",
         "topic_visual_prompts",
         "topic_cover",
         "topic_cover_artifact_check",
@@ -475,6 +478,8 @@ async def test_pipeline_persists_summary_content_slides_caption_and_alt_texts(
         "topic_writer",
         "topic_fact_check",
         "caption_writer",
+        "topic_kicker_choice",
+        "topic_kicker_choice",
         "topic_visual_prompts",
         "topic_cover",
         "topic_cover_artifact_check",
@@ -748,6 +753,8 @@ async def test_summary_writer_failure_marks_only_the_summary_failed(
         "topic_writer",
         "topic_fact_check",
         "caption_writer",
+        "topic_kicker_choice",
+        "topic_kicker_choice",
         "topic_visual_prompts",
         "topic_cover",
         "topic_cover_artifact_check",
@@ -758,6 +765,8 @@ async def test_summary_writer_failure_marks_only_the_summary_failed(
         "topic_writer",
         "topic_fact_check",
         "caption_writer",
+        "topic_kicker_choice",
+        "topic_kicker_choice",
         "topic_visual_prompts",
         "topic_cover",
         "topic_cover_artifact_check",
@@ -810,6 +819,8 @@ async def test_remaining_fact_check_issues_fail_at_fact_check_after_one_repair(
         "topic_writer",
         "topic_fact_check",
         "caption_writer",
+        "topic_kicker_choice",
+        "topic_kicker_choice",
         "topic_visual_prompts",
         "topic_cover",
         "topic_cover_artifact_check",
@@ -820,6 +831,8 @@ async def test_remaining_fact_check_issues_fail_at_fact_check_after_one_repair(
         "topic_writer",
         "topic_fact_check",
         "caption_writer",
+        "topic_kicker_choice",
+        "topic_kicker_choice",
         "topic_visual_prompts",
         "topic_cover",
         "topic_cover_artifact_check",

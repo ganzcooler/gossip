@@ -33,7 +33,7 @@ The 9:16 story frame that shows one Summary-Punkt.
 _Avoid_: Slide, Story-Frame, Karte
 
 **Themenbeitrag**:
-The orange 4:5 feed carousel that explains one topic in depth. It has a cover and four to seven content slides.
+The orange 4:5 feed carousel that explains one topic in depth. It has a cover and three to seven content slides.
 _Avoid_: Themenpost, Topic-Post, Artikel
 
 **Themenabschnitt**:

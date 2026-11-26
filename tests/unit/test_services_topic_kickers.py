@@ -1,12 +1,16 @@
-"""Behaviour tests for deterministic and LLM-assisted topic kickers."""
+"""Behaviour tests for Jev-assisted and deterministic topic kickers."""
 
 import pytest
 
-from app.core.post_models import TopicDraft, TopicKicker
+from app.core.post_models import TopicDraft
+from app.services.decision_models import ChoiceAnswer, DecisionResponse
+from app.services.llm_client import LLMError
 from app.services.slide_composer import compose_topic_slides
 from app.services.topic_kicker_writer import (
     TOPIC_KICKER_ROLE,
     apply_topic_kickers,
+    choose_topic_kicker,
+    kicker_word_candidates,
     resolve_topic_kickers,
 )
 from app.services.topic_kickers import (
@@ -67,6 +71,30 @@ def _section_slides(composition, section_index: int):
     ]
 
 
+def _counters(composition, section_index: int) -> tuple[str, ...]:
+    content_total = len(composition.slides) - 1
+    return tuple(
+        format_follow_counter(int(slide.content_position), content_total)
+        for slide in _section_slides(composition, section_index)
+    )
+
+
+def _choice(
+    *,
+    selected: str,
+    probabilities: dict[str, float] | None = None,
+) -> DecisionResponse:
+    return DecisionResponse(
+        answers={
+            "kicker": ChoiceAnswer(
+                type="choice",
+                choice=selected,
+                probabilities=probabilities,
+            )
+        }
+    )
+
+
 def test_shorten_topic_kicker_strips_common_compound_heads():
     assert shorten_topic_kicker("DRINGLICHKEITSLISTE") == "DRINGLICHKEIT"
     assert shorten_topic_kicker("HAUSHALTSPLAN") == "HAUSHALT"
@@ -79,6 +107,12 @@ def test_kicker_candidates_are_progressive_and_never_repeat():
 
     assert candidates == ("DRINGLICHKEITSLISTE", "DRINGLICHKEIT")
     assert len(set(candidates)) == len(candidates)
+
+
+def test_kicker_word_candidates_strip_punctuation_and_deduplicate():
+    assert kicker_word_candidates(
+        "Der Rat hat den Haushalt, den Haushalt beschlossen."
+    ) == ("Der", "Rat", "hat", "den", "Haushalt", "beschlossen")
 
 
 def test_kicker_fit_uses_the_combined_counter_width_at_body_size_plus_two():
@@ -126,17 +160,21 @@ def test_composer_accepts_explicit_section_kickers():
 
 
 @pytest.mark.asyncio
-async def test_resolver_uses_the_kicker_writer_when_no_deterministic_word_fits():
-    draft = _draft(first_h2="Donaudampfschifffahrt")
+async def test_resolver_sends_the_complete_h2_to_jev_and_takes_the_top_choice():
+    draft = _draft(first_h2="Der Rat hat den Haushalt beschlossen")
     composition = compose_topic_slides(draft)
-    assert {slide.kicker for slide in _section_slides(composition, 0)} == {
-        "DONAUDAMPFSCHIFFFAHRT"
-    }
-
     fake = FakeLLMClient(
-        json_responses={
+        decision_responses={
             TOPIC_KICKER_ROLE: [
-                TopicKicker(kicker="SCHIFFFAHRT"),
+                _choice(
+                    selected="Haushalt",
+                    probabilities={
+                        "Haushalt": 0.9,
+                        "Rat": 0.2,
+                        "beschlossen": 0.1,
+                    },
+                ),
+                _choice(selected="Radweg", probabilities={"Radweg": 0.9}),
             ]
         }
     )
@@ -144,28 +182,49 @@ async def test_resolver_uses_the_kicker_writer_when_no_deterministic_word_fits()
     resolved = await resolve_topic_kickers(draft, composition, fake)
 
     assert {slide.kicker for slide in _section_slides(resolved, 0)} == {
-        "SCHIFFFAHRT"
+        "HAUSHALT"
     }
-    assert {
-        entry["kicker"]
-        for entry in resolved.slide_plan["slides"]
-        if entry["section_index"] == 0
-    } == {"SCHIFFFAHRT"}
-    assert len(fake.calls_for(TOPIC_KICKER_ROLE)) == 1
-    prompt = fake.calls_for(TOPIC_KICKER_ROLE)[0].prompt
-    assert "Donaudampfschifffahrt" in prompt
-    assert "Höchstens" in prompt
+    assert {slide.kicker for slide in _section_slides(resolved, 1)} == {
+        "RADWEG"
+    }
+    call = fake.calls_for(TOPIC_KICKER_ROLE)[0]
+    assert call.state == "Der Rat hat den Haushalt beschlossen"
+    question = call.questions["kicker"]
+    assert set(question.criteria) == {
+        "Der",
+        "Rat",
+        "hat",
+        "den",
+        "Haushalt",
+        "beschlossen",
+    }
+    assert "German noun" in question.instructions
 
 
 @pytest.mark.asyncio
-async def test_resolver_retries_a_too_wide_llm_word_with_a_smaller_budget():
-    draft = _draft(first_h2="Donaudampfschifffahrt")
+async def test_resolver_skips_a_too_wide_top_choice_and_takes_the_next():
+    h2 = "Dringlichkeitsliste bis September"
+    draft = _draft(first_h2=h2)
     composition = compose_topic_slides(draft)
+    body_size = composition.body_size
+    counters = _counters(composition, 0)
+    assert not kicker_fits(
+        "DRINGLICHKEITSLISTE",
+        body_size=body_size,
+        counters=counters,
+    )
     fake = FakeLLMClient(
-        json_responses={
+        decision_responses={
             TOPIC_KICKER_ROLE: [
-                TopicKicker(kicker="WWWWWWWWWWWWWWWW"),
-                TopicKicker(kicker="SCHIFFFAHRT"),
+                _choice(
+                    selected="Dringlichkeitsliste",
+                    probabilities={
+                        "Dringlichkeitsliste": 0.9,
+                        "September": 0.8,
+                        "bis": 0.1,
+                    },
+                ),
+                _choice(selected="Radweg", probabilities={"Radweg": 0.9}),
             ]
         }
     )
@@ -173,27 +232,46 @@ async def test_resolver_retries_a_too_wide_llm_word_with_a_smaller_budget():
     resolved = await resolve_topic_kickers(draft, composition, fake)
 
     assert {slide.kicker for slide in _section_slides(resolved, 0)} == {
-        "SCHIFFFAHRT"
+        "SEPTEMBER"
     }
-    calls = fake.calls_for(TOPIC_KICKER_ROLE)
-    assert len(calls) == 2
-    assert "zu breit" in calls[1].prompt
 
 
 @pytest.mark.asyncio
-async def test_resolver_uses_a_neutral_last_resort_without_thema():
-    draft = _draft(first_h2="Donaudampfschifffahrt")
+async def test_resolver_falls_back_to_heading_word_order_when_jev_fails():
+    h2 = "Dringlichkeitsliste bis September"
+    draft = _draft(first_h2=h2)
     composition = compose_topic_slides(draft)
     fake = FakeLLMClient(
-        json_responses={
-            TOPIC_KICKER_ROLE: [
-                TopicKicker(kicker="WWWWWWWWWWWWWWWW"),
-                TopicKicker(kicker="WWWWWWWWWWWWWW"),
-            ]
+        decision_responses={
+            TOPIC_KICKER_ROLE: [LLMError("decisions unavailable")]
         }
     )
 
     resolved = await resolve_topic_kickers(draft, composition, fake)
+
+    assert {slide.kicker for slide in _section_slides(resolved, 0)} == {
+        "SEPTEMBER"
+    }
+
+
+@pytest.mark.asyncio
+async def test_resolver_uses_aktuell_when_no_heading_word_fits():
+    h2 = "Dringlichkeitsliste Dringlichkeitsliste"
+    draft = _draft(first_h2=h2)
+    composition = compose_topic_slides(draft)
+
+    candidate = await choose_topic_kicker(
+        h2,
+        body_size=composition.body_size,
+        max_chars=6,
+        counters=_counters(composition, 0),
+        llm=FakeLLMClient(),
+    )
+    assert candidate is None
+
+    resolved = await resolve_topic_kickers(
+        draft, composition, FakeLLMClient()
+    )
 
     assert {slide.kicker for slide in _section_slides(resolved, 0)} == {
         DEFAULT_TOPIC_KICKER
@@ -206,21 +284,47 @@ async def test_resolver_uses_a_neutral_last_resort_without_thema():
 
 
 @pytest.mark.asyncio
-async def test_resolver_replaces_a_legacy_thema_kicker_without_an_llm_call():
+async def test_resolver_replaces_a_legacy_thema_kicker():
     draft = _draft()
     composition = compose_topic_slides(draft)
-    legacy = apply_topic_kickers(
-        composition,
-        {0: "THEMA", 1: "THEMA"},
+    legacy = apply_topic_kickers(composition, {0: "THEMA", 1: "THEMA"})
+    fake = FakeLLMClient(
+        decision_responses={
+            TOPIC_KICKER_ROLE: [
+                _choice(selected="Haushalt", probabilities={"Haushalt": 0.9}),
+                _choice(selected="Radweg", probabilities={"Radweg": 0.9}),
+            ]
+        }
     )
-    fake = FakeLLMClient()
 
     resolved = await resolve_topic_kickers(draft, legacy, fake)
 
     assert {slide.kicker for slide in _section_slides(resolved, 0)} == {
-        "RAT"
+        "HAUSHALT"
     }
     assert {slide.kicker for slide in _section_slides(resolved, 1)} == {
         "RADWEG"
     }
-    assert not fake.calls_for(TOPIC_KICKER_ROLE)
+    assert len(fake.calls_for(TOPIC_KICKER_ROLE)) == 2
+
+
+@pytest.mark.asyncio
+async def test_resolver_updates_the_slide_plan_with_the_resolved_kickers():
+    draft = _draft()
+    composition = compose_topic_slides(draft)
+    fake = FakeLLMClient(
+        decision_responses={
+            TOPIC_KICKER_ROLE: [
+                _choice(selected="Haushalt", probabilities={"Haushalt": 0.9}),
+                _choice(selected="Radweg", probabilities={"Radweg": 0.9}),
+            ]
+        }
+    )
+
+    resolved = await resolve_topic_kickers(draft, composition, fake)
+
+    plan_kickers = {
+        entry["section_index"]: entry["kicker"]
+        for entry in resolved.slide_plan["slides"]
+    }
+    assert plan_kickers == {0: "HAUSHALT", 1: "RADWEG"}
