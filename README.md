@@ -90,8 +90,10 @@ has been removed; legacy articles remain readable through the API.
    reuse a stored kicker that still fits. The article text is never reworded,
    shortened or hyphenated. A
    stateless Themen visual-prompt call writes a cover and
-   `ceil(content_slides / 2)` artwork prompts from the Themenentwurf only.
-   Every artwork prompt must describe one continuous photograph; the writer is
+   `ceil(content_slides / 2)` artwork prompts from the Themenentwurf only. The
+   topic-specific schema requires at least one artwork prompt, and the prompt
+   states the exact number of image prompts the writer must return. Every
+   artwork prompt must describe one continuous photograph; the writer is
    forbidden from using seam, panel, split, half, left/right portion, diptych or
    triptych language, and a validator retries any response that does before
    failing that Themenbeitrag at `visual_prompts`. These English prompts use the

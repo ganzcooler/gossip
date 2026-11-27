@@ -14,6 +14,7 @@ from app.core.post_models import (
     TopicBrief,
     TopicDraft,
     TopicSection,
+    TopicVisualPrompts,
     VisualPrompts,
 )
 
@@ -368,34 +369,65 @@ def test_caption_draft_strips_and_requires_body_text():
         CaptionDraft(body="Text", prefix="Illustration")
 
 
-def test_visual_prompts_require_a_cover_and_allow_empty_artwork_for_summary():
+def test_visual_prompts_require_a_cover_for_the_summary():
     prompts = VisualPrompts(cover_prompt="  Weite, ruhige Szene am Ortsrand.  ")
 
     assert prompts.cover_prompt == "Weite, ruhige Szene am Ortsrand."
-    assert prompts.artwork_prompts == []
 
 
-def test_visual_prompts_accept_artwork_prompts_and_strip_them():
-    prompts = VisualPrompts(
-        cover_prompt="Cover",
+def test_visual_prompts_schema_is_summary_only():
+    schema = VisualPrompts.model_json_schema()
+
+    assert schema["required"] == ["cover_prompt"]
+    assert "artwork_prompts" not in schema["properties"]
+    assert "artwork prompts" not in schema["description"].casefold()
+
+
+def test_topic_visual_prompts_require_artwork_prompts_and_strip_them():
+    prompts = TopicVisualPrompts(
+        cover_prompt="  Cover  ",
         artwork_prompts=["  Paar 1  ", "Paar 2"],
         single_prompt="  Central 360 strip  ",
     )
 
+    assert prompts.cover_prompt == "Cover"
     assert prompts.artwork_prompts == ["Paar 1", "Paar 2"]
     assert prompts.single_prompt == "Central 360 strip"
 
 
+def test_topic_visual_prompts_schema_requires_artwork_prompts():
+    schema = TopicVisualPrompts.model_json_schema()
+
+    assert "artwork_prompts" in schema["required"]
+    assert schema["properties"]["artwork_prompts"]["minItems"] == 1
+    assert "optional artwork" not in schema["description"].casefold()
+
+    with pytest.raises(ValidationError):
+        TopicVisualPrompts(cover_prompt="Cover")
+    with pytest.raises(ValidationError):
+        TopicVisualPrompts(cover_prompt="Cover", artwork_prompts=[])
+
+
 @pytest.mark.parametrize("value", ["", "   "])
-def test_visual_prompts_reject_empty_prompts(value):
+def test_topic_visual_prompts_reject_empty_prompts(value):
     with pytest.raises(ValidationError):
-        VisualPrompts(cover_prompt=value)
+        TopicVisualPrompts(cover_prompt=value, artwork_prompts=["Paar"])
     with pytest.raises(ValidationError):
-        VisualPrompts(cover_prompt="Cover", artwork_prompts=[value])
+        TopicVisualPrompts(cover_prompt="Cover", artwork_prompts=[value])
     with pytest.raises(ValidationError):
-        VisualPrompts(cover_prompt="Cover", single_prompt=value)
+        TopicVisualPrompts(
+            cover_prompt="Cover",
+            artwork_prompts=["Paar"],
+            single_prompt=value,
+        )
 
 
 def test_visual_prompts_forbid_unknown_fields():
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         VisualPrompts(cover_prompt="Cover", style="photorealistic")
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        TopicVisualPrompts(
+            cover_prompt="Cover",
+            artwork_prompts=["Paar"],
+            style="photorealistic",
+        )

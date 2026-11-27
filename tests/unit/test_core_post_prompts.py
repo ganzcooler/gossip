@@ -273,7 +273,8 @@ def test_summary_visual_prompt_contains_only_the_draft_and_design_guardrails():
     assert "lower image zone" not in prompt
     assert "No logos, coats of arms" not in prompt
     assert "English only" in prompt
-    assert "artwork_prompts" in prompt
+    assert "exactly one image prompt" in prompt
+    assert "artwork_prompts" not in prompt
 
     # The visual prompt writer never sees protocol text, excerpts or topics.
     assert PROTOCOL_TEXT not in prompt
@@ -311,7 +312,10 @@ def test_topic_visual_prompt_contains_only_the_draft_and_pair_count():
     assert TOPIC_DRAFT.title in prompt
     for section in TOPIC_DRAFT.sections:
         assert section.h2 in prompt
-    assert "exactly 3 prompts" in prompt
+    assert "Return exactly 4 image prompts" in prompt
+    assert "1 cover_prompt" in prompt
+    assert "3 artwork_prompts" in prompt
+    assert "0 single_prompt values" in prompt
     assert "4:5" in prompt
     assert "Photorealistic editorial and reportage photography" in prompt
     assert "No illustration" in prompt
@@ -352,11 +356,24 @@ def test_topic_visual_prompt_requests_a_dedicated_single_prompt():
     assert "single_prompt values" in prompt
 
 
-def test_topic_visual_prompt_without_single_does_not_request_one():
+def test_topic_visual_prompt_without_single_requests_zero_single_prompts():
     prompt = build_topic_visual_prompt(TOPIC_DRAFT, 2)
 
-    assert "single_prompt" not in prompt
+    assert "0 single_prompt values" in prompt
+    assert "set single_prompt to null" in prompt
     assert "middle third" not in prompt
+
+
+def test_topic_visual_prompt_counts_all_required_images():
+    one_pair = build_topic_visual_prompt(TOPIC_DRAFT, 1)
+    two_pairs_one_single = build_topic_visual_prompt(
+        TOPIC_DRAFT, 2, has_single=True
+    )
+
+    assert "Return exactly 2 image prompts" in one_pair
+    assert "1 artwork_prompt" in one_pair
+    assert "Return exactly 4 image prompts" in two_pairs_one_single
+    assert "1 single_prompt for the unpaired last slide" in two_pairs_one_single
 
 
 def test_topic_visual_prompt_is_deterministic_and_requires_pairs():
@@ -375,5 +392,6 @@ def test_topic_visual_prompt_appends_validation_feedback():
 
     assert "## Correction Note" in prompt
     assert "0 instead of 2 prompts" in prompt
-    assert "exactly 2 entries" in prompt
+    assert "exactly 3 image prompts" in prompt
+    assert "2 artwork_prompts" in prompt
     assert prompt.index("Correction Note") < prompt.index("## Output format")

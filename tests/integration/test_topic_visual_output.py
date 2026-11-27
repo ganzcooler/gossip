@@ -16,6 +16,7 @@ from app.core.post_models import (
     SummaryDraft,
     TopicBrief,
     TopicDraft,
+    TopicVisualPrompts,
     VisualPrompts,
 )
 from app.database import get_db
@@ -179,7 +180,7 @@ def _script_success(
             [topic_visuals]
             if topic_visuals is not None
             else [
-                VisualPrompts(
+                TopicVisualPrompts(
                     cover_prompt=f"Cover {brief.slug}",
                     artwork_prompts=[
                         f"Pair {brief.slug} 1",
@@ -345,7 +346,8 @@ async def test_full_protocol_renders_summary_and_topics_with_assets_and_api_path
     assert PROTOCOL_TEXT not in visual_calls[0].prompt
     assert "Summary draft" not in visual_calls[0].prompt
     assert plan.summary_briefs[0].point not in visual_calls[0].prompt
-    assert "exactly 2 prompts" in visual_calls[0].prompt
+    assert "exactly 2 separate prompts" in visual_calls[0].prompt
+    assert "Return exactly 3 image prompts" in visual_calls[0].prompt
     assert all(call.aspect_ratio == "4:5" for call in fake.image_calls[1:])
 
     client = await _asgi_client(postgres_session)
@@ -411,7 +413,7 @@ async def test_one_topic_visual_failure_leaves_summary_and_other_topic_ready(
         "topic_visual_prompts",
         LLMSchemaError("topic visual prompts failed"),
         LLMSchemaError("topic visual prompts failed again"),
-        VisualPrompts(
+        TopicVisualPrompts(
             cover_prompt="Cover radweg",
             artwork_prompts=["Pair 1", "Pair 2"],
         ),
@@ -526,7 +528,7 @@ async def test_two_topics_keep_distinct_files_and_rerender_is_scoped(
     await postgres_session.commit()
     fake.script_json(
         "topic_visual_prompts",
-        VisualPrompts(
+        TopicVisualPrompts(
             cover_prompt="Neues Cover haushalt",
             artwork_prompts=["Neu 1", "Neu 2"],
         ),
@@ -653,7 +655,7 @@ async def test_topic_image_failures_produce_orange_fallbacks_and_stay_ready(
     fake.script_json("topic_fact_check", FactCheckResult(issues=[]))
     fake.script_json(
         "topic_visual_prompts",
-        VisualPrompts(
+        TopicVisualPrompts(
             cover_prompt="Cover haushalt",
             artwork_prompts=["Pair 1", "Pair 2"],
         ),
@@ -730,7 +732,7 @@ async def test_odd_content_count_records_a_single_last_asset_and_strip(
     fake.script_json("topic_fact_check", FactCheckResult(issues=[]))
     fake.script_json(
         "topic_visual_prompts",
-        VisualPrompts(
+        TopicVisualPrompts(
             cover_prompt="Cover haushalt",
             artwork_prompts=["Pair 1", "Pair 2"],
             single_prompt="Single",
@@ -768,7 +770,9 @@ async def test_odd_content_count_records_a_single_last_asset_and_strip(
     )
 
     visual_call = fake.calls_for("topic_visual_prompts")[0]
-    assert "exactly 2 prompts" in visual_call.prompt
+    assert "exactly 2 separate prompts" in visual_call.prompt
+    assert "Return exactly 4 image prompts" in visual_call.prompt
+    assert "1 single_prompt for the unpaired last slide" in visual_call.prompt
     assert "single_prompt" in visual_call.prompt
     folder = tmp_path / "240115_gemeinderat" / "topic-haushalt"
     with Image.open(folder / "topic-2024-01-15-06.png") as last:

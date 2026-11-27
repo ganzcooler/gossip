@@ -409,23 +409,34 @@ def build_topic_visual_prompt(
     if pair_count < 1:
         raise ValueError("pair_count must be at least 1")
 
+    single_count = 1 if has_single else 0
+    total_prompts = 1 + pair_count + single_count
+    artwork_word = "prompt" if pair_count == 1 else "prompts"
+    single_phrase = (
+        "1 single_prompt for the unpaired last slide"
+        if has_single
+        else "0 single_prompt values (set single_prompt to null)"
+    )
+    single_feedback = (
+        " and a non-empty single_prompt"
+        if has_single
+        else ""
+    )
+
     feedback_block = ""
     if feedback:
-        single_feedback = (
-            " and a non-empty single_prompt"
-            if has_single
-            else ""
-        )
         feedback_block = f"""
 ## Correction Note
 
 Your previous attempt was rejected:
 {feedback}
 
-Deliver completely new, valid image prompts. artwork_prompts must contain \
-exactly {pair_count} entries{single_feedback}. Every artwork prompt must \
-describe one continuous photograph and must not mention seams, panels, splits, \
-halves, diptychs, triptychs or left/right portions.
+Deliver completely new, valid image prompts. The JSON object must contain \
+exactly {total_prompts} image prompts: 1 cover_prompt, {pair_count} \
+artwork_prompts{single_feedback}. Every artwork prompt must describe one \
+continuous photograph and must not mention seams, panels, splits, halves, \
+diptychs, triptychs or left/right portions. Each artwork prompt produces a \
+separate image; do not combine two pair scenes into one prompt.
 """
 
     single_task = ""
@@ -456,6 +467,16 @@ image prompts for the cover and the artwork of a topic post.
 {_json(draft)}
 ```
 
+## Required output
+
+Return exactly {total_prompts} image prompts in the JSON object:
+- 1 cover_prompt.
+- {pair_count} artwork_{artwork_word}, one separate prompt per 4:5 image pair.
+- {single_phrase}.
+
+Every artwork prompt is a separate image. Do not combine the scenes of two \
+image pairs into one prompt.
+
 ## Task
 
 - cover_prompt: an English-only prompt for the cover in 4:5 feed format. The \
@@ -463,10 +484,11 @@ cover later carries the title, logo, organ badge and kicker. Give the cover a \
 dry, gently sarcastic, slightly exaggerated editorial twist: exaggerate props, \
 scale or everyday details for visual humour, but keep the scene photorealistic, \
 good-natured and free of caricatures of real people.
-- artwork_prompts: exactly {pair_count} prompts, one per 4:5 artwork. Every \
-prompt must describe one ordinary, uninterrupted photograph with a single \
-continuous scene. Do not describe separate panels, halves or a diptych. The \
-renderer performs any later cropping invisibly.{single_task}
+- artwork_prompts: exactly {pair_count} separate {artwork_word}, one per 4:5 \
+artwork pair. Every prompt must describe one ordinary, uninterrupted photograph \
+with a single continuous scene. Do not describe separate panels, halves or a \
+diptych within one prompt, and do not combine multiple pair scenes into one \
+prompt. The renderer performs any later cropping invisibly.{single_task}
 - All {prompt_values} must be English only.
 
 ## Design guardrails
@@ -515,10 +537,10 @@ exactly one image prompt for the cover of the Summary post.
 
 ## Task
 
+- Return exactly one image prompt: cover_prompt. The Summary cards reuse this \
+cover image.
 - cover_prompt: an English-only prompt for photorealistic editorial and \
 reportage photography in 9:16 story format.
-- artwork_prompts: always an empty list for the Summary post. The Summary \
-cards use the same cover image.
 - The cover_prompt must be English only.
 
 ## Design guardrails

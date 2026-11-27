@@ -16,6 +16,7 @@ from app.core.post_models import (
     SummaryDraft,
     TopicBrief,
     TopicDraft,
+    TopicVisualPrompts,
     VisualPrompts,
 )
 from app.database import get_db
@@ -190,7 +191,7 @@ def _script_topic_visuals(
         pair_count = content_count // 2
         fake.script_json(
             "topic_visual_prompts",
-            VisualPrompts(
+            TopicVisualPrompts(
                 cover_prompt=f"Cover für {draft.title}",
                 artwork_prompts=[
                     f"Paar {index} für {draft.title}"

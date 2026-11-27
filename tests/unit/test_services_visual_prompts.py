@@ -2,7 +2,12 @@
 
 import pytest
 
-from app.core.post_models import SummaryDraft, TopicDraft, VisualPrompts
+from app.core.post_models import (
+    SummaryDraft,
+    TopicDraft,
+    TopicVisualPrompts,
+    VisualPrompts,
+)
 from app.services.llm_client import LLMAuthenticationError, LLMSchemaError
 from app.services.visual_prompts import (
     SUMMARY_VISUAL_PROMPTS_ROLE,
@@ -46,7 +51,6 @@ async def test_visual_prompt_writer_gets_only_the_summary_draft():
     result = await write_summary_visual_prompts(_draft(), fake)
 
     assert result.cover_prompt == "Weite, ruhige Szene am Ortsrand."
-    assert result.artwork_prompts == []
     assert len(fake.calls) == 1
     call = fake.calls[0]
     assert call.role == "summary_visual_prompts"
@@ -104,7 +108,7 @@ async def test_topic_visual_prompt_writer_gets_only_its_draft_and_pair_count():
     fake = FakeLLMClient(
         json_responses={
             TOPIC_VISUAL_PROMPTS_ROLE: [
-                VisualPrompts(
+                TopicVisualPrompts(
                     cover_prompt="Weite, ruhige Szene am Ortsrand.",
                     artwork_prompts=["Paar eins", "Paar zwei"],
                 )
@@ -119,10 +123,11 @@ async def test_topic_visual_prompt_writer_gets_only_its_draft_and_pair_count():
     assert len(fake.calls) == 1
     call = fake.calls[0]
     assert call.role == "topic_visual_prompts"
-    assert call.schema is VisualPrompts
+    assert call.schema is TopicVisualPrompts
     assert _topic_draft().title in call.prompt
     assert _topic_draft().sections[0].h2 in call.prompt
-    assert "exactly 2 prompts" in call.prompt
+    assert "exactly 2 separate prompts" in call.prompt
+    assert "Return exactly 3 image prompts" in call.prompt
     assert "Photorealistic editorial and reportage photography" in call.prompt
     assert "No frame" in call.prompt
     assert "atmosphärische Illustration" not in call.prompt
@@ -135,7 +140,7 @@ async def test_topic_visual_prompt_writer_requests_a_dedicated_single_prompt():
     fake = FakeLLMClient(
         json_responses={
             TOPIC_VISUAL_PROMPTS_ROLE: [
-                VisualPrompts(
+                TopicVisualPrompts(
                     cover_prompt="Cover",
                     artwork_prompts=["Paar eins", "Paar zwei"],
                     single_prompt="Central 360 strip scene",
@@ -158,11 +163,11 @@ async def test_topic_visual_prompt_writer_retries_a_missing_single_prompt():
     fake = FakeLLMClient(
         json_responses={
             TOPIC_VISUAL_PROMPTS_ROLE: [
-                VisualPrompts(
+                TopicVisualPrompts(
                     cover_prompt="Cover",
                     artwork_prompts=["Paar eins", "Paar zwei"],
                 ),
-                VisualPrompts(
+                TopicVisualPrompts(
                     cover_prompt="Neues Cover",
                     artwork_prompts=["Paar eins", "Paar zwei"],
                     single_prompt="Central 360 strip scene",
@@ -185,11 +190,11 @@ async def test_topic_visual_prompt_writer_rejects_a_missing_single_prompt_after_
     fake = FakeLLMClient(
         json_responses={
             TOPIC_VISUAL_PROMPTS_ROLE: [
-                VisualPrompts(
+                TopicVisualPrompts(
                     cover_prompt="Cover",
                     artwork_prompts=["Paar eins", "Paar zwei"],
                 ),
-                VisualPrompts(
+                TopicVisualPrompts(
                     cover_prompt="Cover",
                     artwork_prompts=["Paar eins", "Paar zwei"],
                 ),
@@ -209,8 +214,11 @@ async def test_topic_visual_prompt_writer_retries_the_wrong_artwork_count():
     fake = FakeLLMClient(
         json_responses={
             TOPIC_VISUAL_PROMPTS_ROLE: [
-                VisualPrompts(cover_prompt="Cover"),
-                VisualPrompts(
+                TopicVisualPrompts(
+                    cover_prompt="Cover",
+                    artwork_prompts=["Nur ein Paar"],
+                ),
+                TopicVisualPrompts(
                     cover_prompt="Neues Cover",
                     artwork_prompts=["Paar eins", "Paar zwei"],
                 ),
@@ -225,8 +233,8 @@ async def test_topic_visual_prompt_writer_retries_the_wrong_artwork_count():
     assert len(fake.calls) == 2
     assert "Correction Note" not in fake.calls[0].prompt
     assert "Correction Note" in fake.calls[1].prompt
-    assert "0 artwork prompts, expected 2" in fake.calls[1].prompt
-    assert "exactly 2 entries" in fake.calls[1].prompt
+    assert "1 artwork prompts, expected 2" in fake.calls[1].prompt
+    assert "exactly 3 image prompts" in fake.calls[1].prompt
 
 
 async def test_topic_visual_prompt_writer_retries_a_schema_failure():
@@ -234,7 +242,7 @@ async def test_topic_visual_prompt_writer_retries_a_schema_failure():
         json_responses={
             TOPIC_VISUAL_PROMPTS_ROLE: [
                 LLMSchemaError("bad visual JSON"),
-                VisualPrompts(
+                TopicVisualPrompts(
                     cover_prompt="Neues Cover",
                     artwork_prompts=["Paar eins", "Paar zwei"],
                 ),
@@ -253,10 +261,10 @@ async def test_topic_visual_prompt_writer_rejects_the_wrong_artwork_count_after_
     fake = FakeLLMClient(
         json_responses={
             TOPIC_VISUAL_PROMPTS_ROLE: [
-                VisualPrompts(
+                TopicVisualPrompts(
                     cover_prompt="Cover", artwork_prompts=["Nur ein Paar"]
                 ),
-                VisualPrompts(
+                TopicVisualPrompts(
                     cover_prompt="Cover", artwork_prompts=["Nur ein Paar"]
                 ),
             ]
@@ -273,14 +281,14 @@ async def test_topic_visual_prompt_writer_retries_split_composition_language():
     fake = FakeLLMClient(
         json_responses={
             TOPIC_VISUAL_PROMPTS_ROLE: [
-                VisualPrompts(
+                TopicVisualPrompts(
                     cover_prompt="Cover",
                     artwork_prompts=[
                         "A room split into two halves with a centre seam",
                         "A clean continuous scene",
                     ],
                 ),
-                VisualPrompts(
+                TopicVisualPrompts(
                     cover_prompt="Cover",
                     artwork_prompts=[
                         "A continuous council chamber scene",
@@ -303,7 +311,7 @@ async def test_topic_visual_prompt_writer_retries_split_composition_language():
 
 
 async def test_topic_visual_prompt_writer_rejects_split_language_after_retry():
-    broken = VisualPrompts(
+    broken = TopicVisualPrompts(
         cover_prompt="Cover",
         artwork_prompts=[
             "A diptych with a centre seam",

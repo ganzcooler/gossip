@@ -246,15 +246,33 @@ class CaptionDraft(PipelineModel):
 
 
 class VisualPrompts(PipelineModel):
-    """The Visual-Prompt-Writer's cover plus optional artwork prompts.
+    """The Summary visual-prompt writer's single 9:16 cover prompt.
 
-    The Summary-Beitrag uses only the cover prompt; its cards reuse the cover
-    art. Themenbeiträge use one artwork prompt per pair plus an optional
-    dedicated prompt for an unpaired last strip.
+    The Summary cards reuse the cover image, so this schema intentionally has
+    no artwork prompt list. Topic posts use TopicVisualPrompts.
     """
 
     cover_prompt: str
-    artwork_prompts: list[str] = Field(default_factory=list)
+
+    @field_validator("cover_prompt")
+    @classmethod
+    def _require_cover_prompt(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("cover_prompt must not be empty")
+        return value
+
+
+class TopicVisualPrompts(PipelineModel):
+    """The topic visual-prompt writer's cover and pair artwork prompts.
+
+    The writer must return one cover prompt and at least one artwork prompt.
+    The step boundary checks the exact pair count. An unpaired last slide uses
+    the optional single_prompt.
+    """
+
+    cover_prompt: str
+    artwork_prompts: list[str] = Field(min_length=1)
     single_prompt: str | None = None
 
     @field_validator("cover_prompt")

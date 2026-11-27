@@ -15,6 +15,7 @@ from app.core.post_models import (
     SummaryDraft,
     TopicBrief,
     TopicDraft,
+    TopicVisualPrompts,
     VisualPrompts,
 )
 from app.models import EditorialPlan as EditorialPlanRow
@@ -280,7 +281,7 @@ def _script_full_success(fake: FakeLLMClient, plan: EditorialPlan) -> None:
         )
         fake.script_json(
             "topic_visual_prompts",
-            VisualPrompts(
+            TopicVisualPrompts(
                 cover_prompt=f"Cover für {brief.slug}",
                 artwork_prompts=[
                     f"Paar {number} für {brief.slug}"
@@ -384,7 +385,7 @@ def _script_topic_retry(
     }:
         fake.script_json(
             "topic_visual_prompts",
-            VisualPrompts(
+            TopicVisualPrompts(
                 cover_prompt="Neues Cover",
                 artwork_prompts=[
                     f"Neues Paar {index}"
@@ -725,7 +726,7 @@ async def test_retry_after_writer_failure_reaches_ready(postgres_session, tmp_pa
     fake.script_json("caption_writer", CaptionDraft(body="Topic caption"))
     fake.script_json(
         "topic_visual_prompts",
-        VisualPrompts(
+        TopicVisualPrompts(
             cover_prompt="Cover",
             artwork_prompts=["Paar 1", "Paar 2"],
         ),
@@ -804,7 +805,9 @@ async def test_second_failure_keeps_failed_with_the_new_step(
     fake.script_json("caption_writer", CaptionDraft(body="Topic caption"))
     fake.script_json(
         "topic_visual_prompts",
-        VisualPrompts(cover_prompt="Cover", artwork_prompts=["Paar 1", "Paar 2"]),
+        TopicVisualPrompts(
+            cover_prompt="Cover", artwork_prompts=["Paar 1", "Paar 2"]
+        ),
     )
     fake.script_image("topic_cover", _cover_png_bytes())
     fake.script_image("topic_pair_art", _cover_png_bytes(), _cover_png_bytes())
@@ -1061,7 +1064,9 @@ async def test_retry_authentication_error_propagates(postgres_session, tmp_path)
     fake.script_json("caption_writer", CaptionDraft(body="Topic caption"))
     fake.script_json(
         "topic_visual_prompts",
-        VisualPrompts(cover_prompt="Cover", artwork_prompts=["Paar 1", "Paar 2"]),
+        TopicVisualPrompts(
+            cover_prompt="Cover", artwork_prompts=["Paar 1", "Paar 2"]
+        ),
     )
     fake.script_image("topic_cover", _cover_png_bytes())
     fake.script_image("topic_pair_art", _cover_png_bytes(), _cover_png_bytes())

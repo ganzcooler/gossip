@@ -7,11 +7,17 @@ posts, or any conversation history.
 
 from __future__ import annotations
 
+import logging
 import re
 
 from pydantic import ValidationError
 
-from app.core.post_models import SummaryDraft, TopicDraft, VisualPrompts
+from app.core.post_models import (
+    SummaryDraft,
+    TopicDraft,
+    TopicVisualPrompts,
+    VisualPrompts,
+)
 from app.core.post_prompts import (
     build_summary_visual_prompt,
     build_topic_visual_prompt,
@@ -20,6 +26,8 @@ from app.services.llm_client import LLMAuthenticationError, LLMClient, LLMError
 
 SUMMARY_VISUAL_PROMPTS_ROLE = "summary_visual_prompts"
 TOPIC_VISUAL_PROMPTS_ROLE = "topic_visual_prompts"
+
+logger = logging.getLogger(__name__)
 
 # Positive split language in a generated image prompt makes the provider draw a
 # diptych with a visible centre seam. The writer is told not to use these terms
@@ -79,7 +87,7 @@ def _split_language(prompt: str) -> tuple[str, ...]:
 
 
 class VisualPromptError(Exception):
-    """The visual-prompt call did not produce a valid VisualPrompts object."""
+    """The visual-prompt call did not produce a valid prompt object."""
 
 
 async def write_summary_visual_prompts(
@@ -103,7 +111,7 @@ async def write_summary_visual_prompts(
         raise VisualPromptError(f"Visual prompt writer failed: {exc}") from exc
 
 
-def _split_findings(result: VisualPrompts) -> dict[str, tuple[str, ...]]:
+def _split_findings(result: TopicVisualPrompts) -> dict[str, tuple[str, ...]]:
     """Return split-composition findings per generated prompt value."""
     entries: list[tuple[str, str]] = [("cover_prompt", result.cover_prompt)]
     entries.extend(
@@ -127,7 +135,7 @@ async def write_topic_visual_prompts(
     *,
     has_single: bool = False,
     role: str = TOPIC_VISUAL_PROMPTS_ROLE,
-) -> VisualPrompts:
+) -> TopicVisualPrompts:
     """Generate the topic cover, pair and optional single prompts.
 
     ``pair_count`` is ``content_slides // 2``. The returned prompt set must
@@ -148,24 +156,36 @@ async def write_topic_visual_prompts(
         )
         try:
             response = await llm.generate_json(
-                role=role, prompt=prompt, schema=VisualPrompts
+                role=role, prompt=prompt, schema=TopicVisualPrompts
             )
-            if isinstance(response, VisualPrompts):
+            if isinstance(response, TopicVisualPrompts):
                 result = response
             else:
-                result = VisualPrompts.model_validate(response)
+                result = TopicVisualPrompts.model_validate(response)
         except LLMAuthenticationError:
             raise
         except (LLMError, ValidationError, TypeError, ValueError) as exc:
             error = VisualPromptError(f"Visual prompt writer failed: {exc}")
         else:
             if len(result.artwork_prompts) != pair_count:
+                logger.warning(
+                    "Topic visual prompt writer returned %s artwork prompts, "
+                    "expected %s (single_prompt set: %s)",
+                    len(result.artwork_prompts),
+                    pair_count,
+                    bool(result.single_prompt),
+                )
                 error = VisualPromptError(
                     "Visual prompt writer returned "
                     f"{len(result.artwork_prompts)} artwork prompts, expected "
                     f"{pair_count}"
                 )
             elif has_single and not result.single_prompt:
+                logger.warning(
+                    "Topic visual prompt writer returned no single_prompt for "
+                    "%s artwork prompts",
+                    len(result.artwork_prompts),
+                )
                 error = VisualPromptError(
                     "Visual prompt writer did not return a single_prompt "
                     "for the unpaired last slide"
